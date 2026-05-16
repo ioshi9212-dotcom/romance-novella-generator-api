@@ -1,0 +1,228 @@
+{
+  "session": {
+    "session_id": "",
+    "title": "New Novella Session",
+    "genre": "urban mystery romance",
+    "created_at": "",
+    "updated_at": "",
+    "status": "active"
+  },
+  "current_state": {
+    "turn_number": 0,
+    "date": "Day 1",
+    "time": "21:15",
+    "location": "old hotel corridor",
+    "active_characters": ["player", "elias_voss"],
+    "scene_goal": "The protagonist must decide whether to trust Elias enough to continue investigating the locked room.",
+    "last_player_input": "",
+    "environment_anchor": {
+      "light": "weak amber lamps, unstable shadows",
+      "sound": "rain against windows, distant elevator hum",
+      "air": "cold, damp, dusty",
+      "interactable_details": [
+        "scratched lock",
+        "wet footprints",
+        "flickering wall lamp",
+        "old service door",
+        "folded receipt under the baseboard"
+      ]
+    }
+  },
+  "player_character": {
+    "id": "player",
+    "name": "Noa Hart",
+    "age": 26,
+    "core_traits": ["observant", "sharp-tongued", "stubborn", "slow to trust"],
+    "attention_biases": ["hands", "exits", "tone changes", "small lies", "fresh traces"],
+    "inner_voice": {
+      "style": "direct, dry, human, sometimes sarcastic",
+      "allowed": [
+        "brief physical reactions",
+        "automatic observations",
+        "short intrusive thoughts",
+        "sensory impressions"
+      ],
+      "forbidden": [
+        "major decisions instead of the player",
+        "romantic consent",
+        "sudden trust",
+        "forgiveness",
+        "confessions",
+        "actions contradicting player input"
+      ]
+    }
+  },
+  "characters": {
+    "elias_voss": {
+      "id": "elias_voss",
+      "name": "Elias Voss",
+      "age": 32,
+      "role": "private investigator",
+      "appearance_locked": true,
+      "appearance": {
+        "height": "184 cm",
+        "build": "lean, tense shoulders",
+        "hair": "dark brown, messy, usually pushed back with fingers",
+        "eyes": "pale green",
+        "face": "sharp cheekbones, tired expression, faint scar under left eyebrow",
+        "hands": "long fingers, old burn mark on right wrist",
+        "clothing_style": "worn dark coat, plain shirt, practical boots"
+      },
+      "habits": [
+        "checks exits when entering a room",
+        "touches the burn mark when lying",
+        "speaks slower when angry",
+        "rarely sits with his back to the door"
+      ],
+      "speech_style": {
+        "tone": "dry, restrained",
+        "sentence_length": "short to medium",
+        "forbidden": ["therapy speeches", "long philosophical monologues", "perfect emotional analysis"]
+      },
+      "personality": {
+        "core": ["observant", "stubborn", "protective", "suspicious"],
+        "flaws": ["controlling", "bad at apologies", "jumps to conclusions"],
+        "conflict_style": "quiet pressure, refuses to easily back down"
+      },
+      "private_goals": [
+        "find the missing ledger",
+        "hide his connection to the old guard",
+        "protect his younger sister"
+      ],
+      "backstory": {
+        "summary": "Former city guard who left after a failed case ruined his reputation.",
+        "old_connections": [
+          "knows Mara from the old guard",
+          "owes money to Cassian",
+          "avoids Selene because she knows what happened during the failed case"
+        ],
+        "secrets": ["still investigates the old case privately", "lied about why he left the guard"]
+      }
+    },
+    "mara_vale": {
+      "id": "mara_vale",
+      "name": "Mara Vale",
+      "age": 29,
+      "role": "archive clerk",
+      "appearance_locked": true,
+      "appearance": {
+        "height": "171 cm",
+        "build": "straight posture, narrow shoulders",
+        "hair": "black bob, always neat",
+        "eyes": "dark gray",
+        "face": "calm face, precise expressions",
+        "hands": "ink stains on fingertips",
+        "clothing_style": "buttoned blouses, dark skirts, archive badge"
+      },
+      "habits": ["straightens papers when nervous", "locks drawers twice", "never leaves her tea unfinished"],
+      "speech_style": {
+        "tone": "polite, clipped, careful",
+        "sentence_length": "medium",
+        "forbidden": ["overexplaining emotions", "speaking like a narrator"]
+      },
+      "personality": {
+        "core": ["disciplined", "careful", "loyal", "secretive"],
+        "flaws": ["risk-avoidant", "withholds information", "judges quickly"],
+        "conflict_style": "formal refusal, quiet deflection"
+      },
+      "private_goals": ["protect her brother", "keep her position", "hide altered archive records"]
+    }
+  },
+  "relationships": {
+    "player__elias_voss": {
+      "trust": "low",
+      "tension": "high",
+      "known_history": "met recently during the hotel investigation",
+      "private_dynamic_notes": ["Elias is useful but not fully honest", "Noa notices his evasions"]
+    },
+    "elias_voss__mara_vale": {
+      "trust": "damaged",
+      "tension": "medium",
+      "known_history": "worked near each other during the old guard scandal"
+    }
+  },
+  "knowledge_map": {
+    "player": {
+      "knows": [
+        "Elias has a burn mark on his right wrist",
+        "the hotel corridor has wet footprints",
+        "someone scratched the lock recently"
+      ],
+      "does_not_know": [
+        "Elias received a threatening note earlier",
+        "Mara altered archive records"
+      ]
+    },
+    "elias_voss": {
+      "knows": [
+        "Noa is investigating the locked room",
+        "someone entered the hotel before them"
+      ],
+      "does_not_know": [
+        "Noa's private thoughts",
+        "what Mara told Noa in private scenes where Elias was absent"
+      ]
+    },
+    "mara_vale": {
+      "knows": ["archive records were altered", "Elias still asks questions about the old case"],
+      "does_not_know": ["what is happening in the hotel corridor right now", "Noa's private thoughts"]
+    }
+  },
+  "npc_life_state": {
+    "mara_vale": {
+      "current_location": "city archive",
+      "current_activity": "sorting damaged records",
+      "mood": "tense",
+      "today_plan": [
+        "close the archive at 18:00",
+        "meet Cassian near the bridge",
+        "hide one copied document if followed"
+      ],
+      "private_events": [
+        {
+          "time": "17:30",
+          "event": "noticed that one folder was missing",
+          "known_to_player": false
+        }
+      ]
+    },
+    "elias_voss": {
+      "current_location": "old hotel corridor",
+      "current_activity": "investigating the locked room with Noa",
+      "mood": "alert and irritated",
+      "today_plan": ["inspect the old hotel", "avoid city guard patrol", "question Cassian later"],
+      "private_events": [
+        {
+          "time": "16:10",
+          "event": "received a threatening note",
+          "known_to_player": false
+        }
+      ]
+    }
+  },
+  "story_compass": {
+    "main_goal": "Uncover why people connected to the old archive are disappearing.",
+    "current_act": "Act 1",
+    "act_goal": "Introduce the city, first disappearance, suspicious archive records, and three possible suspects.",
+    "active_threads": [
+      {
+        "id": "missing_ledger",
+        "status": "active",
+        "importance": "high",
+        "next_possible_steps": ["search the locked room", "question Elias", "visit the archive"]
+      },
+      {
+        "id": "mara_secret",
+        "status": "hidden",
+        "importance": "medium",
+        "next_possible_steps": ["notice Mara hiding a sealed folder", "hear her arguing with someone"]
+      }
+    ],
+    "forbidden_drift": [
+      "do not turn the story into random romance without plot movement",
+      "do not introduce major villains without setup",
+      "do not solve mysteries too early",
+      "do not replace the main conflict with NPC therapy conversations"
+    ]
+  }
+}
