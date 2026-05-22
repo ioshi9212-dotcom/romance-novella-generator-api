@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.engine import PromptEngine
@@ -10,6 +12,17 @@ session_manager = SessionManager(settings.data_dir, settings.templates_dir)
 prompt_engine = PromptEngine(settings.prompts_dir)
 
 app = FastAPI(title=settings.app_name)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/play")
+
+
+@app.get("/play")
+def play_page():
+    return FileResponse("app/static/index.html")
 
 
 @app.get("/health")
