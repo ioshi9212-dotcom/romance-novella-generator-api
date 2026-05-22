@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Novella Memory Engine Actions
-  version: 0.1.0
-  description: Actions for a Custom GPT to load novella memory, create manual prompts, and save generated scenes back to Railway.
+  version: 0.1.1
+  description: Actions for a Custom GPT to load novella memory, create prompts, and save generated scenes back to Railway.
 servers:
   - url: https://web-production-4310e.up.railway.app
 paths:
@@ -17,6 +17,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   status:
                     type: string
@@ -35,6 +36,7 @@ paths:
                 type: array
                 items:
                   type: object
+                  additionalProperties: false
                   properties:
                     session_id:
                       type: string
@@ -45,11 +47,13 @@ paths:
                     turn_number:
                       type: integer
                     current_location:
-                      type: string
-                      nullable: true
+                      type:
+                        - string
+                        - "null"
                     current_time:
-                      type: string
-                      nullable: true
+                      type:
+                        - string
+                        - "null"
     post:
       operationId: createNovellaSession
       summary: Create a new isolated novella session.
@@ -59,6 +63,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required:
                 - title
                 - genre
@@ -80,6 +85,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: true
+                properties: {}
   /api/v1/sessions/{session_id}:
     get:
       operationId: getNovellaSession
@@ -97,6 +104,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: true
+                properties: {}
   /api/v1/sessions/{session_id}/memory:
     get:
       operationId: getNovellaMemory
@@ -114,6 +123,8 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: true
+                properties: {}
   /api/v1/sessions/{session_id}/turns:
     post:
       operationId: buildNovellaPrompt
@@ -130,6 +141,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required:
                 - player_input
                 - mode
@@ -150,6 +162,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   mode:
                     type: string
@@ -173,6 +186,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               required:
                 - player_input
                 - scene_text
@@ -184,14 +198,17 @@ paths:
                 state_update:
                   type: object
                   additionalProperties: true
+                  properties: {}
                   default: {}
                 knowledge_update:
                   type: object
                   additionalProperties: true
+                  properties: {}
                   default: {}
                 npc_life_update:
                   type: object
                   additionalProperties: true
+                  properties: {}
                   default: {}
                 notes:
                   type: array
@@ -205,3 +222,5 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: true
+                properties: {}
