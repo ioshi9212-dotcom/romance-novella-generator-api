@@ -1,0 +1,207 @@
+openapi: 3.1.0
+info:
+  title: Novella Memory Engine Actions
+  version: 0.1.0
+  description: Actions for a Custom GPT to load novella memory, create manual prompts, and save generated scenes back to Railway.
+servers:
+  - url: https://web-production-4310e.up.railway.app
+paths:
+  /health:
+    get:
+      operationId: checkNovellaEngineHealth
+      summary: Check if the novella memory engine is running.
+      responses:
+        "200":
+          description: Server health status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  mode:
+                    type: string
+  /api/v1/sessions:
+    get:
+      operationId: listNovellaSessions
+      summary: List all saved novella sessions.
+      responses:
+        "200":
+          description: List of sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    session_id:
+                      type: string
+                    title:
+                      type: string
+                    genre:
+                      type: string
+                    turn_number:
+                      type: integer
+                    current_location:
+                      type: string
+                      nullable: true
+                    current_time:
+                      type: string
+                      nullable: true
+    post:
+      operationId: createNovellaSession
+      summary: Create a new isolated novella session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - genre
+                - player_name
+              properties:
+                title:
+                  type: string
+                  default: New Novella Session
+                genre:
+                  type: string
+                  default: urban mystery romance
+                player_name:
+                  type: string
+                  default: Noa Hart
+      responses:
+        "200":
+          description: Created session with full memory payload.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/sessions/{session_id}:
+    get:
+      operationId: getNovellaSession
+      summary: Get full novella session state and history.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full session state.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/sessions/{session_id}/memory:
+    get:
+      operationId: getNovellaMemory
+      summary: Get current memory files for a novella session.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current memory state.
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/v1/sessions/{session_id}/turns:
+    post:
+      operationId: buildNovellaPrompt
+      summary: Build a prompt for the next novella turn using current session memory.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - player_input
+                - mode
+              properties:
+                player_input:
+                  type: string
+                  description: The player's next action.
+                mode:
+                  type: string
+                  enum:
+                    - manual_gpt
+                    - local_stub
+                  default: manual_gpt
+      responses:
+        "200":
+          description: Generated prompt for the GPT to use.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                  instruction:
+                    type: string
+                  prompt:
+                    type: string
+  /api/v1/sessions/{session_id}/manual-results:
+    post:
+      operationId: saveNovellaTurnResult
+      summary: Save a generated novella scene and memory updates back into the session.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - player_input
+                - scene_text
+              properties:
+                player_input:
+                  type: string
+                scene_text:
+                  type: string
+                state_update:
+                  type: object
+                  additionalProperties: true
+                  default: {}
+                knowledge_update:
+                  type: object
+                  additionalProperties: true
+                  default: {}
+                npc_life_update:
+                  type: object
+                  additionalProperties: true
+                  default: {}
+                notes:
+                  type: array
+                  items:
+                    type: string
+                  default: []
+      responses:
+        "200":
+          description: Updated session after saving the generated turn.
+          content:
+            application/json:
+              schema:
+                type: object
