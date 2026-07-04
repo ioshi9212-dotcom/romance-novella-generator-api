@@ -70,12 +70,6 @@ def _short_list(items: Any, limit: int = 5) -> list[str]:
 
 
 def build_setup_preview(bootstrap_json: dict[str, Any]) -> str:
-    """Build a human-readable review before committing generated state.
-
-    This preview is intentionally derived from generated JSON and contains no
-    hidden future seeds. It lets the user confirm or request edits before the
-    session becomes active.
-    """
     protagonist = bootstrap_json.get("protagonist") or {}
     characters = bootstrap_json.get("characters") or {}
     relationships = bootstrap_json.get("relationships") or {}
@@ -335,19 +329,7 @@ class SessionManager:
         return {"session_id": session_id, "status": "active", "committed": True, "files_created": files_created}
 
     def apply_bootstrap_result(self, session_id: str, bootstrap_json: dict[str, Any]) -> dict[str, Any]:
-        required = [
-            "protagonist",
-            "characters",
-            "relationships",
-            "knowledge",
-            "story_plan",
-            "current_state",
-        ]
-        missing = [key for key in required if key not in bootstrap_json]
-        if missing:
-            raise ValueError(f"Bootstrap result missing required keys: {missing}")
-        self._write_bootstrap_files(session_id, bootstrap_json)
-        return {"session_id": session_id, "status": "active"}
+        raise ValueError("Direct bootstrap-result is disabled in v9. Use bootstrap-preview and bootstrap-confirm.")
 
     def get_memory(self, session_id: str) -> dict[str, Any]:
         return self.storage.read_session_bundle(session_id)

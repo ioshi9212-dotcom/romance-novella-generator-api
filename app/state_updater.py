@@ -4,7 +4,7 @@ from app.storage import JsonStorage
 
 
 def _append_unique(target: list[Any], items: list[Any]) -> list[Any]:
-    result = list(target)
+    result = list(target or [])
     for item in items or []:
         if item not in result:
             result.append(item)
@@ -15,6 +15,84 @@ def _append_many(target: list[Any], items: list[Any]) -> list[Any]:
     result = list(target or [])
     result.extend(items or [])
     return result
+
+
+def _merge_continuity_patch(continuity: dict[str, Any], patch: dict[str, Any], turn_number: int) -> dict[str, Any]:
+    if not isinstance(patch, dict):
+        return continuity
+
+    continuity.setdefault("open_threads", [])
+    continuity.setdefault("notes", [])
+    continuity.setdefault("warnings", [])
+
+    for key in ["open_threads", "notes", "warnings"]:
+        if isinstance(patch.get(key), list):
+            continuity[key] = _append_unique(continuity.get(key, []), patch[key])
+
+    if isinstance(patch.get("memory_compact"), dict):
+        continuity.setdefault("gpt_memory_compacts", [])
+        continuity["gpt_memory_compacts"].append({**patch["memory_compact"], "turn": turn_number, "created_at": now_iso()})
+        continuity["gpt_memory_compacts"] = continuity["gpt_memory_compacts"][-20:]
+
+    for key in ["current_arc", "current_act", "last_continuity_check"]:
+        if key in patch:
+            continuity[key] = patch[key]
+
+    return continuity
+
+
+def _auto_compact_runtime_history(
+    scene_history: list[dict[str, Any]],
+    turns: list[dict[str, Any]],
+    continuity: dict[str, Any],
+    turn_number: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], bool]:
+    """Keep runtime small. Old verbatim scenes are summarized into continuity."""
+    if turn_number <= 0 or turn_number % 15 != 0:
+        return scene_history, turns, continuity, False
+
+    compacted = False
+    continuity.setdefault("memory_compacts", [])
+    continuity.setdefault("turn_archives", [])
+
+    if len(scene_history) > 8:
+        old_scenes = scene_history[:-8]
+        continuity["memory_compacts"].append({
+            "up_to_turn": old_scenes[-1].get("turn") if old_scenes else turn_number,
+            "created_at": now_iso(),
+            "scene_summaries": [
+                {
+                    "turn": item.get("turn"),
+                    "summary": item.get("summary", ""),
+                    "important_facts": item.get("important_facts", []),
+                    "witnesses": item.get("witnesses", []),
+                }
+                for item in old_scenes
+            ],
+        })
+        scene_history = scene_history[-8:]
+        compacted = True
+
+    if len(turns) > 12:
+        old_turns = turns[:-12]
+        continuity["turn_archives"].append({
+            "up_to_turn": old_turns[-1].get("turn") if old_turns else turn_number,
+            "created_at": now_iso(),
+            "turn_summaries": [
+                {
+                    "turn": item.get("turn"),
+                    "player_input": item.get("player_input", ""),
+                    "summary": (item.get("scene_response") or {}).get("summary", ""),
+                }
+                for item in old_turns
+            ],
+        })
+        turns = turns[-12:]
+        compacted = True
+
+    continuity["memory_compacts"] = continuity.get("memory_compacts", [])[-20:]
+    continuity["turn_archives"] = continuity.get("turn_archives", [])[-20:]
+    return scene_history, turns, continuity, compacted
 
 
 class StateUpdater:
@@ -29,6 +107,7 @@ class StateUpdater:
             "characters": [],
             "scene_history": [],
             "turns": [],
+            "maintenance": [],
         }
         rejected: list[dict[str, Any]] = []
 
@@ -39,21 +118,24 @@ class StateUpdater:
         characters = bundle.get("characters", {})
         scene_history = bundle.get("scene_history", []) or []
         turns = bundle.get("turns", []) or []
+        continuity = bundle.get("continuity", {}) or {}
 
         updates = scene_response.get("proposed_updates", {})
         scene_state_patch = updates.get("scene_state_patch", {})
 
-        # Current state patch.
         for key in ["date", "time", "location", "weather", "scene_state", "outfit", "inventory", "nearby_items", "scene_goal", "active_character_ids", "nearby_character_ids", "environment", "status"]:
             if key in scene_state_patch:
                 current_state[key] = scene_state_patch[key]
                 applied["current_state"].append({"field": key, "operation": "replace"})
 
-        current_state["turn_number"] = int(current_state.get("turn_number", 0)) + 1
+        current_state["turn_number"] = int(current_state.get("turn_number", 0) or 0) + 1
         current_state["last_player_input"] = scene_response.get("player_input", current_state.get("last_player_input", ""))
         turn_number = current_state["turn_number"]
 
-        # Relationship patches: one runtime file per pair_id.
+        if isinstance(updates.get("continuity_patch"), dict):
+            continuity = _merge_continuity_patch(continuity, updates["continuity_patch"], turn_number)
+            applied["maintenance"].append({"operation": "merge_continuity_patch", "turn": turn_number})
+
         for patch in updates.get("relationship_patches", []) or []:
             pid = patch.get("pair_id")
             if not pid:
@@ -84,18 +166,14 @@ class StateUpdater:
 
             for score_key in ["trust", "tension", "attachment", "respect", "fear", "curiosity"]:
                 if score_key in patch:
-                    # Preserve legacy top-level scores and also maintain v8 scores object.
                     base[score_key] = patch[score_key]
                     base["scores"][score_key] = patch[score_key]
-
             if isinstance(patch.get("scores"), dict):
                 base["scores"].update(patch["scores"])
-
             for view_key in ["a_view_of_b", "b_view_of_a"]:
                 if isinstance(patch.get(view_key), dict):
                     base.setdefault(view_key, {})
                     base[view_key].update(patch[view_key])
-
             if patch.get("open_threads"):
                 base["open_threads"] = _append_unique(base.get("open_threads", []), patch["open_threads"])
 
@@ -103,7 +181,6 @@ class StateUpdater:
             self.storage.write_relationship_pair(session_id, pid, base)
             applied["relationships"].append({"pair_id": pid, "operation": "patch_pair_file"})
 
-        # Knowledge patches: one runtime file per character_id.
         for patch in updates.get("knowledge_patches", []) or []:
             character_id = patch.get("character_id")
             if not character_id:
@@ -123,21 +200,12 @@ class StateUpdater:
                 "must_not_assume": [],
                 "recent_memories": [],
                 "open_questions": [],
-                # legacy compatibility
                 "knows": [],
                 "history": [],
             })
+            for key in ["known_facts", "observations", "assumptions", "wrong_beliefs", "does_not_know", "must_not_assume", "recent_memories", "open_questions", "knows", "history"]:
+                base.setdefault(key, [])
             base.setdefault("character_id", character_id)
-            base.setdefault("known_facts", [])
-            base.setdefault("observations", [])
-            base.setdefault("assumptions", [])
-            base.setdefault("wrong_beliefs", [])
-            base.setdefault("does_not_know", [])
-            base.setdefault("must_not_assume", [])
-            base.setdefault("recent_memories", [])
-            base.setdefault("open_questions", [])
-            base.setdefault("knows", [])
-            base.setdefault("history", [])
 
             if patch.get("add_knows"):
                 base["knows"] = _append_unique(base.get("knows", []), patch["add_knows"])
@@ -149,10 +217,8 @@ class StateUpdater:
                         "turn": turn_number,
                         "certainty": patch.get("certainty", "medium"),
                     })
-
             if patch.get("add_known_facts"):
                 base["known_facts"] = _append_many(base.get("known_facts", []), patch["add_known_facts"])
-
             if patch.get("add_observations"):
                 observations = []
                 for item in patch["add_observations"]:
@@ -161,7 +227,6 @@ class StateUpdater:
                     else:
                         observations.append({"turn": turn_number, "saw": str(item), "source_in_scene": patch.get("source_in_scene")})
                 base["observations"] = _append_many(base.get("observations", []), observations)
-
             if patch.get("add_assumptions"):
                 assumptions = []
                 for item in patch["add_assumptions"]:
@@ -170,7 +235,6 @@ class StateUpdater:
                     else:
                         assumptions.append({"text": str(item), "based_on": patch.get("source_in_scene"), "turn": turn_number, "may_be_wrong": True})
                 base["assumptions"] = _append_many(base.get("assumptions", []), assumptions)
-
             if patch.get("add_wrong_beliefs"):
                 base["wrong_beliefs"] = _append_many(base.get("wrong_beliefs", []), patch["add_wrong_beliefs"])
             if patch.get("add_recent_memories"):
@@ -194,7 +258,6 @@ class StateUpdater:
             self.storage.write_character_knowledge(session_id, character_id, base)
             applied["knowledge"].append({"character_id": character_id, "operation": "patch_character_knowledge_file"})
 
-        # New or updated characters: one runtime card per generated character id.
         immutable_locked_fields = {"name", "age", "appearance", "personality", "past_short", "role", "goal", "habits", "likes_in_people", "dislikes_in_people", "relationship_triggers"}
         allowed_locked_runtime_fields = {"id", "introduced", "known_to_player", "last_seen", "current_mood", "temporary_state", "scene_notes", "connections", "locked"}
         for patch in updates.get("new_or_updated_characters", []) or []:
@@ -206,11 +269,7 @@ class StateUpdater:
             if existing.get("locked"):
                 changed_immutable = [field for field in immutable_locked_fields if field in patch and patch.get(field) != existing.get(field)]
                 if changed_immutable:
-                    rejected.append({
-                        "target": f"characters.{character_id}",
-                        "reason": f"locked character card immutable fields cannot be changed: {changed_immutable}",
-                        "severity": "error",
-                    })
+                    rejected.append({"target": f"characters.{character_id}", "reason": f"locked character card immutable fields cannot be changed: {changed_immutable}", "severity": "error"})
                     continue
                 runtime_patch = {key: value for key, value in patch.items() if key in allowed_locked_runtime_fields}
                 characters[character_id] = {**existing, **runtime_patch, "locked": True}
@@ -219,12 +278,10 @@ class StateUpdater:
                 continue
             characters[character_id] = {**existing, **patch, "locked": patch.get("locked", True)}
             self.storage.write_character(session_id, character_id, characters[character_id])
-            # Ensure every significant new character starts with a knowledge file.
             if character_id not in knowledge:
                 self.storage.write_character_knowledge(session_id, character_id, {"character_id": character_id, "known_facts": [], "observations": [], "assumptions": [], "wrong_beliefs": [], "does_not_know": [], "must_not_assume": [], "recent_memories": [], "open_questions": [], "knows": [], "history": []})
             applied["characters"].append({"character_id": character_id, "operation": "upsert_card_file"})
 
-        # Scene history.
         scene = scene_response.get("scene", {})
         history_entry = {
             "turn": turn_number,
@@ -245,9 +302,22 @@ class StateUpdater:
         })
         applied["turns"].append({"operation": "append", "turn": turn_number})
 
+        scene_history, turns, continuity, compacted = _auto_compact_runtime_history(scene_history, turns, continuity, turn_number)
+        maintenance = {
+            "last_saved_turn_number": turn_number,
+            "continuity_check_required_next": turn_number > 0 and turn_number % 10 == 0,
+            "memory_review_required_next": turn_number > 0 and turn_number % 15 == 0,
+            "backend_compacted_after_turn": turn_number if compacted else (current_state.get("maintenance") or {}).get("backend_compacted_after_turn"),
+            "last_compact_turn": turn_number if compacted else (current_state.get("maintenance") or {}).get("last_compact_turn"),
+            "notes": [],
+        }
+        current_state["maintenance"] = maintenance
+        applied["maintenance"].append({"operation": "update_flags", "turn": turn_number, "compacted": compacted})
+
         self.storage.write_json(session_id, "current_state.json", current_state)
         self.storage.write_json(session_id, "scene_history.json", scene_history)
         self.storage.write_json(session_id, "turns.json", turns)
+        self.storage.write_json(session_id, "continuity.json", continuity)
 
         session = self.storage.read_json(session_id, "session.json")
         session["updated_at"] = now_iso()
@@ -261,5 +331,6 @@ class StateUpdater:
                 "active_character_ids": current_state.get("active_character_ids", []),
                 "location": current_state.get("location"),
                 "repair_required": bool(rejected),
+                "maintenance": maintenance,
             },
         }

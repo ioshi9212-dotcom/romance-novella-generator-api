@@ -8,9 +8,9 @@ from app.config import get_settings
 from app.models import (
     ApplyTurnResultRequest,
     ApplyTurnResultResponse,
-    BootstrapResultRequest,
     BootstrapPreviewRequest,
     BootstrapPreviewResponse,
+    BootstrapConfirmRequest,
     BootstrapConfirmResponse,
     CreateSessionRequest,
     CreateSessionResponse,
@@ -28,22 +28,12 @@ RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
 app = FastAPI(
     title="Romance Novella Generator API",
     version="gpt-actions-v9",
-    servers=[
-        {
-            "url": RAILWAY_PUBLIC_URL,
-            "description": "Railway production",
-        }
-    ],
+    servers=[{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}],
 )
 
 
 def _ensure_object_properties(schema_part: Any) -> None:
-    """ChatGPT Actions expects every object schema to contain a properties key.
-
-    FastAPI often emits dynamic response schemas as {"type": "object"}.
-    That is valid OpenAPI, but GPT Actions rejects it with:
-    "object schema missing properties". This normalizes generated /openapi.json.
-    """
+    """GPT Actions rejects object schemas without properties; normalize FastAPI output."""
     if isinstance(schema_part, dict):
         if schema_part.get("type") == "object" and "properties" not in schema_part:
             schema_part["properties"] = {}
@@ -61,15 +51,29 @@ def custom_openapi() -> dict[str, Any]:
     schema = get_openapi(
         title=app.title,
         version=app.version,
-        description="Railway API used by a Custom GPT as memory, context builder, validator, preview gate, and state storage for generated novella sessions.",
+        description=(
+            "Railway API used by a Custom GPT as memory, context builder, "
+            "validator, preview gate, and state storage for generated novella sessions."
+        ),
         routes=app.routes,
     )
-    schema["servers"] = [
-        {
-            "url": RAILWAY_PUBLIC_URL,
-            "description": "Railway production",
-        }
+    schema["servers"] = [{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}]
+
+    # Hide manual/diagnostic/deprecated endpoints from GPT Actions.
+    hidden_paths = [
+        "/api/v1/sessions/latest",
+        "/api/v1/sessions/{session_id}/memory",
+        "/api/v1/sessions/{session_id}/scene-contract",
+        "/api/v1/sessions/{session_id}/bootstrap-result",
     ]
+    for hidden_path in hidden_paths:
+        schema.get("paths", {}).pop(hidden_path, None)
+
+    # Keep POST /api/v1/sessions visible, but hide GET /api/v1/sessions from Actions.
+    sessions_path = schema.get("paths", {}).get("/api/v1/sessions")
+    if isinstance(sessions_path, dict):
+        sessions_path.pop("get", None)
+
     _ensure_object_properties(schema)
     app.openapi_schema = schema
     return app.openapi_schema
@@ -79,11 +83,6 @@ app.openapi = custom_openapi
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
-    """Optional API key protection.
-
-    If API_KEY is set in Railway variables, every protected endpoint must receive
-    X-API-Key with the same value. If API_KEY is not set, local/dev mode stays open.
-    """
     expected = get_settings().api_key
     if expected and x_api_key != expected:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
@@ -98,7 +97,44 @@ def _require_active_session(bundle: dict, action: str) -> None:
         )
 
 
-@app.get("/health")
+def _is_explicit_confirmation(text: str) -> bool:
+    normalized = " ".join((text or "").strip().lower().replace("ё", "е").split())
+    if not normalized:
+        return False
+
+    negative_markers = [
+        "не подтверждаю",
+        "не сохраняй",
+        "не запускай",
+        "нет",
+        "стоп",
+        "правки",
+        "исправь",
+        "измени",
+        "переделай",
+    ]
+    if any(marker in normalized for marker in negative_markers):
+        return False
+
+    exact_allowed = {"ок", "ok", "okay", "да", "подтверждаю", "сохраняй", "запускай", "подходит", "оставляем"}
+    if normalized.strip(".!? ") in exact_allowed:
+        return True
+
+    allowed_markers = [
+        "подтверждаю",
+        "все подходит",
+        "всё подходит",
+        "можно сохранять",
+        "можно запускать",
+        "сохраняй",
+        "запускай",
+        "оставляем так",
+        "подходит",
+    ]
+    return any(marker in normalized for marker in allowed_markers)
+
+
+@app.get("/health", operation_id="health")
 def health() -> dict:
     settings = get_settings()
     return {
@@ -110,25 +146,36 @@ def health() -> dict:
     }
 
 
-@app.post("/api/v1/sessions", response_model=CreateSessionResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/api/v1/sessions",
+    response_model=CreateSessionResponse,
+    dependencies=[Depends(require_api_key)],
+    operation_id="createSession",
+)
 def create_session(request: CreateSessionRequest) -> dict:
     manager = SessionManager()
     return manager.create_session(request)
 
 
-@app.get("/api/v1/start-questionnaire", dependencies=[Depends(require_api_key)])
+@app.get(
+    "/api/v1/start-questionnaire",
+    dependencies=[Depends(require_api_key)],
+    operation_id="getStartQuestionnaire",
+)
 def get_start_questionnaire() -> dict:
     path = Path(__file__).resolve().parent.parent / "prompts" / "start_questionnaire.md"
     return {"questionnaire": path.read_text(encoding="utf-8")}
 
 
-@app.get("/api/v1/sessions", dependencies=[Depends(require_api_key)])
+# Manual diagnostics only. Hidden from GPT Actions schema.
+@app.get("/api/v1/sessions", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def list_sessions() -> dict:
     manager = SessionManager()
     return {"sessions": manager.list_sessions()}
 
 
-@app.get("/api/v1/sessions/latest", dependencies=[Depends(require_api_key)])
+# Manual diagnostics only. Hidden from GPT Actions schema.
+@app.get("/api/v1/sessions/latest", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_latest_session() -> dict:
     manager = SessionManager()
     latest = manager.get_latest_session_id(prefer_active=True)
@@ -137,7 +184,11 @@ def get_latest_session() -> dict:
     return {"session_id": latest, "session": manager.get_memory(latest)["session"]}
 
 
-@app.get("/api/v1/sessions/{session_id}", dependencies=[Depends(require_api_key)])
+@app.get(
+    "/api/v1/sessions/{session_id}",
+    dependencies=[Depends(require_api_key)],
+    operation_id="getSession",
+)
 def get_session(session_id: str) -> dict:
     manager = SessionManager()
     try:
@@ -146,7 +197,8 @@ def get_session(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.get("/api/v1/sessions/{session_id}/memory", dependencies=[Depends(require_api_key)])
+# Manual diagnostics only. Hidden from GPT Actions schema.
+@app.get("/api/v1/sessions/{session_id}/memory", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_memory(session_id: str) -> dict:
     manager = SessionManager()
     try:
@@ -155,25 +207,21 @@ def get_memory(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.post("/api/v1/sessions/{session_id}/bootstrap-result", dependencies=[Depends(require_api_key)])
-def apply_bootstrap_result(session_id: str, request: BootstrapResultRequest) -> dict:
-    errors = validate_bootstrap_result(request.bootstrap_json)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
-
-    manager = SessionManager()
-    try:
-        session = manager.get_memory(session_id)["session"]
-        if session.get("status") not in {"bootstrap_pending", "active"}:
-            raise HTTPException(status_code=409, detail=f"Cannot apply bootstrap to session status: {session.get('status')}")
-        return manager.apply_bootstrap_result(session_id, request.bootstrap_json)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+# Deprecated v8 endpoint. Hidden and blocked so preview-confirm cannot be bypassed.
+@app.post("/api/v1/sessions/{session_id}/bootstrap-result", dependencies=[Depends(require_api_key)], include_in_schema=False)
+def apply_bootstrap_result_disabled(session_id: str) -> dict:
+    raise HTTPException(
+        status_code=410,
+        detail="bootstrap-result is disabled in v9. Use bootstrap-preview, wait for explicit user confirmation, then bootstrap-confirm.",
+    )
 
 
-@app.post("/api/v1/sessions/{session_id}/bootstrap-preview", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/api/v1/sessions/{session_id}/bootstrap-preview",
+    response_model=BootstrapPreviewResponse,
+    dependencies=[Depends(require_api_key)],
+    operation_id="createBootstrapPreview",
+)
 def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) -> dict:
     errors = validate_bootstrap_result(request.bootstrap_json)
     if errors:
@@ -188,8 +236,22 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
         raise HTTPException(status_code=409, detail=str(exc))
 
 
-@app.post("/api/v1/sessions/{session_id}/bootstrap-confirm", response_model=BootstrapConfirmResponse, dependencies=[Depends(require_api_key)])
-def confirm_bootstrap_preview(session_id: str) -> dict:
+@app.post(
+    "/api/v1/sessions/{session_id}/bootstrap-confirm",
+    response_model=BootstrapConfirmResponse,
+    dependencies=[Depends(require_api_key)],
+    operation_id="confirmBootstrapPreview",
+)
+def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest) -> dict:
+    if not _is_explicit_confirmation(request.confirmation_text):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Bootstrap preview is not explicitly confirmed. "
+                "Pass the latest user confirmation text, e.g. 'подтверждаю', 'ок', 'сохраняй', 'запускай'."
+            ),
+        )
+
     manager = SessionManager()
     try:
         return manager.confirm_bootstrap_preview(session_id)
@@ -199,7 +261,8 @@ def confirm_bootstrap_preview(session_id: str) -> dict:
         raise HTTPException(status_code=409, detail=str(exc))
 
 
-@app.get("/api/v1/sessions/{session_id}/scene-contract", dependencies=[Depends(require_api_key)])
+# Manual diagnostics only. Hidden from GPT Actions schema.
+@app.get("/api/v1/sessions/{session_id}/scene-contract", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_scene_contract(session_id: str) -> dict:
     from app.scene_contract_builder import build_scene_contract
 
@@ -212,7 +275,12 @@ def get_scene_contract(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.post("/api/v1/sessions/{session_id}/turn", response_model=TurnResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/api/v1/sessions/{session_id}/turn",
+    response_model=TurnResponse,
+    dependencies=[Depends(require_api_key)],
+    operation_id="processTurn",
+)
 def process_turn(session_id: str, request: TurnRequest) -> dict:
     manager = SessionManager()
     try:
@@ -243,7 +311,12 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
     }
 
 
-@app.post("/api/v1/sessions/{session_id}/apply-turn-result", response_model=ApplyTurnResultResponse, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/api/v1/sessions/{session_id}/apply-turn-result",
+    response_model=ApplyTurnResultResponse,
+    dependencies=[Depends(require_api_key)],
+    operation_id="applyTurnResult",
+)
 def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
     errors = validate_scene_response(request.scene_response)
     if errors:

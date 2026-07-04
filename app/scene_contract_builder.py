@@ -14,7 +14,7 @@ def _knowledge_boundary(knowledge: dict[str, Any], character_id: str) -> dict[st
     return {
         "character_id": character_id,
         "known": entry.get("knows", []),
-        "known_facts": entry.get("known_facts", []),
+        "known_facts": entry.get("known_facts", [])[-20:],
         "observations": entry.get("observations", [])[-10:],
         "assumptions": entry.get("assumptions", [])[-10:],
         "wrong_beliefs": entry.get("wrong_beliefs", [])[-10:],
@@ -57,6 +57,19 @@ def _normalise_status(current_state: dict[str, Any], story_plan: dict[str, Any])
     }
 
 
+def _maintenance_state(current_state: dict[str, Any]) -> dict[str, Any]:
+    turn_number = int(current_state.get("turn_number", 0) or 0)
+    stored = current_state.get("maintenance") or {}
+    return {
+        "turn_number": turn_number,
+        "continuity_check_required": turn_number > 0 and turn_number % 10 == 0,
+        "memory_review_required": turn_number > 0 and turn_number % 15 == 0,
+        "backend_compacted_after_turn": stored.get("backend_compacted_after_turn"),
+        "last_compact_turn": stored.get("last_compact_turn"),
+        "notes": stored.get("notes", []),
+    }
+
+
 def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None) -> dict[str, Any]:
     current_state = bundle.get("current_state", {})
     characters = bundle.get("characters", {})
@@ -71,7 +84,6 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
     nearby_ids = current_state.get("nearby_character_ids", []) or []
     player_id = current_state.get("player_character_id") or current_state.get("player_character_character_id") or "protagonist"
 
-    # Focus controls what the model can use. Active controls what the footer may display.
     focus_ids: list[str] = []
     for cid in [player_id, *active_ids, *nearby_ids]:
         if cid and cid not in focus_ids:
@@ -97,20 +109,16 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
 
     loaded_relationships = []
     visible_relationship_pair_ids: list[str] = []
-
     for i, a in enumerate(focus_ids):
         for b in focus_ids[i + 1:]:
             pid = pair_id(a, b)
             if pid not in relationships:
                 continue
-
             both_in_scene = a in scene_ids and b in scene_ids
-            load_reason = ["both_present"] if both_in_scene else ["nearby_context"]
-
             loaded_relationships.append({
                 "pair_id": pid,
                 "display_label": f"{_display_name(characters, a)} ↔ {_display_name(characters, b)}",
-                "load_reason": load_reason,
+                "load_reason": ["both_present"] if both_in_scene else ["nearby_context"],
                 "visible_in_footer": both_in_scene,
                 "content": relationships[pid],
             })
@@ -124,6 +132,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
     return {
         "contract_version": "novella.scene_contract.v1",
         "session_id": bundle.get("session", {}).get("session_id"),
+        "maintenance": _maintenance_state(current_state),
         "current_frame": {
             "player_character_id": player_id,
             "player_display_name": _display_name(characters, player_id),
@@ -173,7 +182,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "state_update_mode": "propose_patch_only",
             "visible_scene_format": {
                 "header_required": True,
-                "header_format": "Academy-style: story/date, time/location, weather, scene_state, player character visible state, outfit, inventory; no POV/Focus/active character list",
+                "header_format": "story/date, time/location, weather, scene_state, player visible state, outfit, inventory; no POV/Focus/active list",
                 "dialogue_format": "**Name** — Dialogue. *(remark)* More dialogue.",
                 "player_options": {"thoughts": 3, "dialogue": 3, "actions": 3},
                 "status_panel_required_fields": ["hunger", "fatigue", "injuries", "emotional_state", "skills"],
@@ -185,12 +194,11 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "rules": [
                 "Не делать важный выбор за игрока.",
                 "Не менять locked-анкету персонажа через сцену.",
-                "NPC знает только то, что есть в его state/knowledge/<character_id>.json, текущей сцене или доступной relationship pair.",
+                "NPC знает только то, что есть в его knowledge file, текущей сцене или доступной relationship pair.",
                 "Новые важные NPC сохраняются через proposed_updates.new_or_updated_characters.",
                 "Сохранять порядок ввода игрока: реплика -> скобки -> реплика.",
                 "Показывать отношения внизу только по персонажам текущей сцены.",
                 "В шапке не показывать POV / Фокус / В сцене / active_character_ids.",
-                "Имена и фамилии персонажей не русские, латиница, западно-японский/англо-японский стиль.",
                 "Knowledge/relationship patches требуют reason и source_in_scene; knowledge сохраняет субъективные saw/heard/interpreted memories.",
             ],
         },

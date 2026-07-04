@@ -30,6 +30,7 @@ class CreateSessionResponse(BaseModel):
 
 
 class BootstrapResultRequest(BaseModel):
+    # Deprecated in v9. Kept only so older internal code can import the name.
     bootstrap_json: dict[str, Any]
 
 
@@ -43,6 +44,16 @@ class BootstrapPreviewResponse(BaseModel):
     preview: str
     can_confirm: bool = True
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class BootstrapConfirmRequest(BaseModel):
+    confirmation_text: str = Field(
+        ...,
+        description=(
+            "Exact latest user confirmation message. Must clearly confirm the preview, "
+            "for example: подтверждаю / ок / сохраняй / запускай / подходит."
+        ),
+    )
 
 
 class BootstrapConfirmResponse(BaseModel):

@@ -43,7 +43,7 @@ paths:
   /api/v1/sessions:
     post:
       operationId: createSession
-      summary: Create a new novella session.
+      summary: Create a new novella session or return a questionnaire if setup is too empty.
       requestBody:
         required: true
         content:
@@ -52,42 +52,11 @@ paths:
               $ref: '#/components/schemas/CreateSessionRequest'
       responses:
         '200':
-          description: New session, pending bootstrap prompt, debug session, or questionnaire.
+          description: Session created or questionnaire returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateSessionResponse'
-    get:
-      operationId: listSessions
-      summary: List saved session IDs.
-      responses:
-        '200':
-          description: Session list.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  sessions:
-                    type: array
-                    items: {type: string}
-  /api/v1/sessions/latest:
-    get:
-      operationId: getLatestSession
-      summary: Return the latest active session.
-      responses:
-        '200':
-          description: Latest session.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  session_id: {type: string}
-                  session:
-                    type: object
-                    properties: {}
-                    additionalProperties: true
   /api/v1/sessions/{session_id}:
     get:
       operationId: getSession
@@ -103,52 +72,10 @@ paths:
                 type: object
                 properties: {}
                 additionalProperties: true
-  /api/v1/sessions/{session_id}/memory:
-    get:
-      operationId: getMemory
-      summary: Get full saved session memory bundle.
-      parameters:
-        - $ref: '#/components/parameters/SessionId'
-      responses:
-        '200':
-          description: Full memory bundle.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/bootstrap-result:
-    post:
-      operationId: applyBootstrapResult
-      summary: Save GPT-generated bootstrap JSON into the pending session.
-      parameters:
-        - $ref: '#/components/parameters/SessionId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                bootstrap_json:
-                  type: object
-                  properties: {}
-                  additionalProperties: true
-              required: [bootstrap_json]
-      responses:
-        '200':
-          description: Bootstrap saved.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
   /api/v1/sessions/{session_id}/bootstrap-preview:
     post:
       operationId: createBootstrapPreview
-      summary: Validate and store bootstrap JSON as a review preview.
+      summary: Validate and store bootstrap JSON as a review preview. Does not activate the session.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:
@@ -165,7 +92,7 @@ paths:
               required: [bootstrap_json]
       responses:
         '200':
-          description: Preview ready.
+          description: Preview ready. Show preview to the user and wait for explicit confirmation.
           content:
             application/json:
               schema:
@@ -173,35 +100,26 @@ paths:
   /api/v1/sessions/{session_id}/bootstrap-confirm:
     post:
       operationId: confirmBootstrapPreview
-      summary: Commit the pending bootstrap preview.
+      summary: Commit pending bootstrap preview only after explicit user confirmation.
       parameters:
         - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapConfirmRequest'
       responses:
         '200':
-          description: Bootstrap committed.
+          description: Bootstrap committed and session became active.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BootstrapConfirmResponse'
-  /api/v1/sessions/{session_id}/scene-contract:
-    get:
-      operationId: getSceneContract
-      summary: Build the current scene contract from saved state.
-      parameters:
-        - $ref: '#/components/parameters/SessionId'
-      responses:
-        '200':
-          description: Scene contract for GPT.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
   /api/v1/sessions/{session_id}/turn:
     post:
       operationId: processTurn
-      summary: Build a GPT scene prompt from state and player input.
+      summary: Build a GPT scene prompt from active state and exact player input. Fails if session is not active.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:
@@ -300,6 +218,13 @@ components:
           type: object
           properties: {}
           additionalProperties: true
+    BootstrapConfirmRequest:
+      type: object
+      required: [confirmation_text]
+      properties:
+        confirmation_text:
+          type: string
+          description: Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит.
     BootstrapConfirmResponse:
       type: object
       properties:

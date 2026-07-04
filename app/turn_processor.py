@@ -29,11 +29,34 @@ def _read_project_file(relative_path: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _maintenance_prompt(scene_contract: dict[str, Any]) -> str:
+    maintenance = scene_contract.get("maintenance") or {}
+    notes: list[str] = []
+
+    if maintenance.get("continuity_check_required"):
+        notes.append(
+            "- INTERNAL continuity check is required before writing this scene: verify location, time, active characters, witnesses, knowledge boundaries, open threads, tone, and relationship consistency. Do not print this check to the user."
+        )
+    if maintenance.get("memory_review_required"):
+        notes.append(
+            "- INTERNAL memory review is required: keep only meaningful facts in summary/important_facts/patches. Do not recap old scenes to the user. Backend may already compact old scene_history."
+        )
+    if maintenance.get("backend_compacted_after_turn"):
+        notes.append(
+            f"- Backend compacted older history after turn {maintenance.get('backend_compacted_after_turn')}; rely on continuity.memory_compacts plus current files, not old verbatim turns."
+        )
+
+    if not notes:
+        return ""
+
+    return "\n\nMAINTENANCE_RULES_DO_NOT_SHOW_USER:\n" + "\n".join(notes)
+
+
 def build_scene_prompt(scene_contract: dict[str, Any]) -> str:
     rules = []
     for relative_path in PROMPT_FILES:
         rules.append(f"\n\n<!-- {relative_path} -->\n" + _read_project_file(relative_path))
-    return "".join(rules) + f"\n\nSCENE_CONTRACT_JSON:\n{scene_contract}"
+    return "".join(rules) + _maintenance_prompt(scene_contract) + f"\n\nSCENE_CONTRACT_JSON:\n{scene_contract}"
 
 
 def _as_list_text(value: Any, fallback: str = "нет") -> str:
@@ -115,6 +138,7 @@ def process_turn_gpt_actions(bundle: dict[str, Any], player_input: str) -> dict[
             "loaded_character_count": len(contract.get("loaded_characters", [])),
             "loaded_relationship_count": len(contract.get("loaded_relationships", [])),
             "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
+            "maintenance": contract.get("maintenance", {}),
         },
     }
 
@@ -164,10 +188,7 @@ def process_turn_debug_stub(bundle: dict[str, Any], player_input: str) -> dict[s
         "important_facts": [],
         "witnesses": current_frame.get("active_character_ids", []),
         "proposed_updates": {
-            "scene_state_patch": {
-                "scene_goal": "Продолжить сцену после последнего действия игрока.",
-                "status": status,
-            },
+            "scene_state_patch": {"scene_goal": "Продолжить сцену после последнего действия игрока.", "status": status},
             "relationship_patches": [],
             "knowledge_patches": [],
             "new_or_updated_characters": [],
@@ -192,5 +213,6 @@ def process_turn_debug_stub(bundle: dict[str, Any], player_input: str) -> dict[s
             "loaded_character_count": len(contract.get("loaded_characters", [])),
             "loaded_relationship_count": len(contract.get("loaded_relationships", [])),
             "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
+            "maintenance": contract.get("maintenance", {}),
         },
     }
