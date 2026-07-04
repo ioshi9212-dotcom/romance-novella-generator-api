@@ -75,7 +75,7 @@ paths:
   /api/v1/sessions/{session_id}/bootstrap-preview:
     post:
       operationId: createBootstrapPreview
-      summary: Validate and store bootstrap JSON as a review preview. Does not activate the session.
+      summary: Validate, normalize and store bootstrap JSON as a review preview. Does not activate the session.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:

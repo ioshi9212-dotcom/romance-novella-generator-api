@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.openapi.utils import get_openapi
 
+from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.config import get_settings
 from app.models import (
     ApplyTurnResultRequest,
@@ -33,7 +34,6 @@ app = FastAPI(
 
 
 def _ensure_object_properties(schema_part: Any) -> None:
-    """GPT Actions rejects object schemas without properties; normalize FastAPI output."""
     if isinstance(schema_part, dict):
         if schema_part.get("type") == "object" and "properties" not in schema_part:
             schema_part["properties"] = {}
@@ -59,20 +59,14 @@ def custom_openapi() -> dict[str, Any]:
     )
     schema["servers"] = [{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}]
 
-    # Hide manual/diagnostic/deprecated endpoints from GPT Actions.
-    hidden_paths = [
-        "/api/v1/sessions/latest",
+    # Do not expose diagnostic/full-memory or deprecated direct-bootstrap actions to GPT.
+    for hidden_path in [
         "/api/v1/sessions/{session_id}/memory",
         "/api/v1/sessions/{session_id}/scene-contract",
         "/api/v1/sessions/{session_id}/bootstrap-result",
-    ]
-    for hidden_path in hidden_paths:
+        "/api/v1/sessions/latest",
+    ]:
         schema.get("paths", {}).pop(hidden_path, None)
-
-    # Keep POST /api/v1/sessions visible, but hide GET /api/v1/sessions from Actions.
-    sessions_path = schema.get("paths", {}).get("/api/v1/sessions")
-    if isinstance(sessions_path, dict):
-        sessions_path.pop("get", None)
 
     _ensure_object_properties(schema)
     app.openapi_schema = schema
@@ -102,36 +96,25 @@ def _is_explicit_confirmation(text: str) -> bool:
     if not normalized:
         return False
 
-    negative_markers = [
-        "не подтверждаю",
-        "не сохраняй",
-        "не запускай",
-        "нет",
-        "стоп",
-        "правки",
-        "исправь",
-        "измени",
-        "переделай",
-    ]
+    negative_markers = ["не подтверждаю", "не сохраняй", "не запускай", "нет", "стоп", "правки", "исправь", "измени"]
     if any(marker in normalized for marker in negative_markers):
         return False
 
-    exact_allowed = {"ок", "ok", "okay", "да", "подтверждаю", "сохраняй", "запускай", "подходит", "оставляем"}
-    if normalized.strip(".!? ") in exact_allowed:
+    exact = {"подтверждаю", "ок", "okay", "ok", "сохраняй", "запускай", "подходит", "оставляем", "да"}
+    if normalized.strip(".!") in exact:
         return True
 
-    allowed_markers = [
-        "подтверждаю",
+    phrases = [
+        "да подтверждаю",
         "все подходит",
         "всё подходит",
         "можно сохранять",
         "можно запускать",
-        "сохраняй",
-        "запускай",
         "оставляем так",
-        "подходит",
+        "подтверждаю все",
+        "подтверждаю всё",
     ]
-    return any(marker in normalized for marker in allowed_markers)
+    return any(phrase in normalized for phrase in phrases)
 
 
 @app.get("/health", operation_id="health")
@@ -146,35 +129,24 @@ def health() -> dict:
     }
 
 
-@app.post(
-    "/api/v1/sessions",
-    response_model=CreateSessionResponse,
-    dependencies=[Depends(require_api_key)],
-    operation_id="createSession",
-)
+@app.post("/api/v1/sessions", response_model=CreateSessionResponse, dependencies=[Depends(require_api_key)], operation_id="createSession")
 def create_session(request: CreateSessionRequest) -> dict:
     manager = SessionManager()
     return manager.create_session(request)
 
 
-@app.get(
-    "/api/v1/start-questionnaire",
-    dependencies=[Depends(require_api_key)],
-    operation_id="getStartQuestionnaire",
-)
+@app.get("/api/v1/start-questionnaire", dependencies=[Depends(require_api_key)], operation_id="getStartQuestionnaire")
 def get_start_questionnaire() -> dict:
     path = Path(__file__).resolve().parent.parent / "prompts" / "start_questionnaire.md"
     return {"questionnaire": path.read_text(encoding="utf-8")}
 
 
-# Manual diagnostics only. Hidden from GPT Actions schema.
-@app.get("/api/v1/sessions", dependencies=[Depends(require_api_key)], include_in_schema=False)
+@app.get("/api/v1/sessions", dependencies=[Depends(require_api_key)], operation_id="listSessions", include_in_schema=False)
 def list_sessions() -> dict:
     manager = SessionManager()
     return {"sessions": manager.list_sessions()}
 
 
-# Manual diagnostics only. Hidden from GPT Actions schema.
 @app.get("/api/v1/sessions/latest", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_latest_session() -> dict:
     manager = SessionManager()
@@ -184,11 +156,7 @@ def get_latest_session() -> dict:
     return {"session_id": latest, "session": manager.get_memory(latest)["session"]}
 
 
-@app.get(
-    "/api/v1/sessions/{session_id}",
-    dependencies=[Depends(require_api_key)],
-    operation_id="getSession",
-)
+@app.get("/api/v1/sessions/{session_id}", dependencies=[Depends(require_api_key)], operation_id="getSession")
 def get_session(session_id: str) -> dict:
     manager = SessionManager()
     try:
@@ -197,7 +165,6 @@ def get_session(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-# Manual diagnostics only. Hidden from GPT Actions schema.
 @app.get("/api/v1/sessions/{session_id}/memory", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_memory(session_id: str) -> dict:
     manager = SessionManager()
@@ -207,7 +174,6 @@ def get_memory(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-# Deprecated v8 endpoint. Hidden and blocked so preview-confirm cannot be bypassed.
 @app.post("/api/v1/sessions/{session_id}/bootstrap-result", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def apply_bootstrap_result_disabled(session_id: str) -> dict:
     raise HTTPException(
@@ -223,13 +189,14 @@ def apply_bootstrap_result_disabled(session_id: str) -> dict:
     operation_id="createBootstrapPreview",
 )
 def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) -> dict:
-    errors = validate_bootstrap_result(request.bootstrap_json)
+    normalized_bootstrap = normalize_bootstrap_json(request.bootstrap_json)
+    errors = validate_bootstrap_result(normalized_bootstrap)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
     manager = SessionManager()
     try:
-        return manager.save_bootstrap_preview(session_id, request.bootstrap_json)
+        return manager.save_bootstrap_preview(session_id, normalized_bootstrap)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -246,10 +213,7 @@ def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest)
     if not _is_explicit_confirmation(request.confirmation_text):
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Bootstrap preview is not explicitly confirmed. "
-                "Pass the latest user confirmation text, e.g. 'подтверждаю', 'ок', 'сохраняй', 'запускай'."
-            ),
+            detail="Bootstrap preview is not explicitly confirmed. Use confirmation_text such as 'подтверждаю', 'ок', 'сохраняй', 'запускай'.",
         )
 
     manager = SessionManager()
@@ -261,7 +225,6 @@ def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest)
         raise HTTPException(status_code=409, detail=str(exc))
 
 
-# Manual diagnostics only. Hidden from GPT Actions schema.
 @app.get("/api/v1/sessions/{session_id}/scene-contract", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_scene_contract(session_id: str) -> dict:
     from app.scene_contract_builder import build_scene_contract
@@ -275,12 +238,7 @@ def get_scene_contract(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.post(
-    "/api/v1/sessions/{session_id}/turn",
-    response_model=TurnResponse,
-    dependencies=[Depends(require_api_key)],
-    operation_id="processTurn",
-)
+@app.post("/api/v1/sessions/{session_id}/turn", response_model=TurnResponse, dependencies=[Depends(require_api_key)], operation_id="processTurn")
 def process_turn(session_id: str, request: TurnRequest) -> dict:
     manager = SessionManager()
     try:

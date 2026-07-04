@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Any
+
+from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.bootstrapper import BASE_FILES, build_bootstrap_prompt, debug_stub_bootstrap
 from app.config import get_settings
 from app.id_utils import new_session_id, now_iso
@@ -70,13 +72,15 @@ def _short_list(items: Any, limit: int = 5) -> list[str]:
 
 
 def build_setup_preview(bootstrap_json: dict[str, Any]) -> str:
+    bootstrap_json = normalize_bootstrap_json(bootstrap_json)
+
     protagonist = bootstrap_json.get("protagonist") or {}
     characters = bootstrap_json.get("characters") or {}
     relationships = bootstrap_json.get("relationships") or {}
     story_plan = bootstrap_json.get("story_plan") or {}
     current_state = bootstrap_json.get("current_state") or {}
 
-    pc_id = protagonist.get("id") or current_state.get("player_character_id") or "player_character"
+    pc_id = protagonist.get("id") or current_state.get("player_character_id") or "pc_01"
     pc_card = characters.get(pc_id, protagonist if isinstance(protagonist, dict) else {}) or {}
 
     lines: list[str] = []
@@ -99,7 +103,7 @@ def build_setup_preview(bootstrap_json: dict[str, Any]) -> str:
     lines.append("")
 
     appearance = pc_card.get("appearance") or {}
-    if appearance:
+    if isinstance(appearance, dict) and appearance:
         lines.append("### Внешность / подача")
         for key in ["height", "build", "hair", "eyes", "face", "style"]:
             if appearance.get(key):
@@ -264,6 +268,8 @@ class SessionManager:
         }
 
     def _write_bootstrap_files(self, session_id: str, bootstrap_json: dict[str, Any]) -> list[str]:
+        bootstrap_json = normalize_bootstrap_json(bootstrap_json)
+
         session = self.storage.read_json(session_id, "session.json", default=bootstrap_json.get("session", {}))
         session["status"] = "active"
         session["updated_at"] = now_iso()
@@ -281,6 +287,8 @@ class SessionManager:
         knowledge = bootstrap_json.get("knowledge", {})
         self.storage.write_json(session_id, "state/knowledge_index.json", {"ids": list(knowledge.keys())})
         for character_id, entry in knowledge.items():
+            if character_id.startswith("_"):
+                continue
             self.storage.write_character_knowledge(session_id, character_id, entry)
 
         relationships = bootstrap_json.get("relationships", {})
@@ -298,6 +306,8 @@ class SessionManager:
         return FINAL_BOOTSTRAP_FILES
 
     def save_bootstrap_preview(self, session_id: str, bootstrap_json: dict[str, Any]) -> dict[str, Any]:
+        bootstrap_json = normalize_bootstrap_json(bootstrap_json)
+
         session = self.storage.read_json(session_id, "session.json")
         if session.get("status") not in {"bootstrap_pending", "bootstrap_review_pending"}:
             raise ValueError(f"Cannot create bootstrap preview for session status: {session.get('status')}")
@@ -317,6 +327,7 @@ class SessionManager:
                 "character_count": len(bootstrap_json.get("characters", {}) or {}),
                 "relationship_count": len(bootstrap_json.get("relationships", {}) or {}),
                 "knowledge_count": len(bootstrap_json.get("knowledge", {}) or {}),
+                "normalized": True,
             },
         }
 
