@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schemas/scene_response.schema.json",
+  "title": "Novella Scene Response",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "response_version",
+    "scene",
+    "proposed_updates",
+    "safety_checks"
+  ],
+  "properties": {
+    "response_version": {
+      "const": "novella.scene_response.v1"
+    },
+    "player_input": {
+      "type": "string"
+    },
+    "scene": {
+      "type": "object",
+      "required": [
+        "body",
+        "footer"
+      ],
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "footer": {
+          "type": "object"
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    },
+    "important_facts": {
+      "type": "array"
+    },
+    "witnesses": {
+      "type": "array"
+    },
+    "proposed_updates": {
+      "type": "object",
+      "properties": {
+        "scene_state_patch": {
+          "type": "object"
+        },
+        "relationship_patches": {
+          "type": "array"
+        },
+        "knowledge_patches": {
+          "type": "array"
+        },
+        "new_or_updated_characters": {
+          "type": "array"
+        }
+      }
+    },
+    "safety_checks": {
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "turn_number": 0,
+  "date": "Day 1",
+  "time": "",
+  "location": "",
+  "pov_character_id": "protagonist",
+  "active_character_ids": ["protagonist"],
+  "nearby_character_ids": [],
+  "scene_goal": "",
+  "last_player_input": "",
+  "environment": {
+    "light": "",
+    "sound": "",
+    "air": "",
+    "details": []
+  }
+}

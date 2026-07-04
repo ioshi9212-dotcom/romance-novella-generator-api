@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schemas/create_session_request.schema.json",
+  "title": "Create Session Request",
+  "type": "object",
+  "required": [
+    "genre"
+  ],
+  "properties": {
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "genre": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string",
+      "default": "ru"
+    },
+    "tone": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "setting_request": {
+      "type": "string"
+    },
+    "protagonist_request": {
+      "type": "string"
+    },
+    "romance_request": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rating": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "avoid": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extra": {
+      "type": "object"
+    },
+    "mode": {
+      "enum": [
+        "local_stub",
+        "manual_gpt",
+        "llm"
+      ]
+    }
+  }
+}

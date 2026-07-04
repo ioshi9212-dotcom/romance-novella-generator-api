@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schemas/scene_contract.schema.json",
+  "title": "Novella Scene Contract",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "contract_version",
+    "session_id",
+    "current_frame",
+    "loaded_characters",
+    "knowledge_boundaries",
+    "output_requirements"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "novella.scene_contract.v1"
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "current_frame": {
+      "type": "object"
+    },
+    "loaded_characters": {
+      "type": "array"
+    },
+    "loaded_relationships": {
+      "type": "array"
+    },
+    "knowledge_boundaries": {
+      "type": "array"
+    },
+    "story_compass": {
+      "type": "object"
+    },
+    "recent_scene_history": {
+      "type": "array"
+    },
+    "future_locks": {
+      "type": "object"
+    },
+    "continuity": {
+      "type": "object"
+    },
+    "output_requirements": {
+      "type": "object"
+    }
+  }
+}

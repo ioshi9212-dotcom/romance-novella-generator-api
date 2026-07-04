@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schemas/bootstrap_output.schema.json",
+  "title": "Novella Bootstrap Output",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "protagonist",
+    "characters",
+    "relationships",
+    "knowledge",
+    "story_plan",
+    "current_state"
+  ],
+  "properties": {
+    "protagonist": {
+      "type": "object"
+    },
+    "characters": {
+      "type": "object"
+    },
+    "relationships": {
+      "type": "object"
+    },
+    "knowledge": {
+      "type": "object"
+    },
+    "story_plan": {
+      "type": "object"
+    },
+    "current_state": {
+      "type": "object"
+    },
+    "npc_state": {
+      "type": "object"
+    },
+    "future_locks": {
+      "type": "object"
+    },
+    "continuity": {
+      "type": "object"
+    },
+    "scene_history": {
+      "type": "array"
+    },
+    "turns": {
+      "type": "array"
+    }
+  }
+}
