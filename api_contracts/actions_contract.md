@@ -1,4 +1,4 @@
-# Actions Contract — v6
+# Actions Contract — v8
 
 Custom GPT вызывает Railway API как Actions. Railway не пишет художественный текст самостоятельно, кроме debug_stub. Railway хранит state, собирает scene_contract, валидирует JSON и применяет патчи.
 

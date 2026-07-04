@@ -14,6 +14,12 @@ def _knowledge_boundary(knowledge: dict[str, Any], character_id: str) -> dict[st
     return {
         "character_id": character_id,
         "known": entry.get("knows", []),
+        "known_facts": entry.get("known_facts", []),
+        "observations": entry.get("observations", [])[-10:],
+        "assumptions": entry.get("assumptions", [])[-10:],
+        "wrong_beliefs": entry.get("wrong_beliefs", [])[-10:],
+        "recent_memories": entry.get("recent_memories", [])[-10:],
+        "open_questions": entry.get("open_questions", []),
         "unknown": entry.get("does_not_know", []),
         "must_not_assume": entry.get("must_not_assume", []),
     }
@@ -179,13 +185,13 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "rules": [
                 "Не делать важный выбор за игрока.",
                 "Не менять locked-анкету персонажа через сцену.",
-                "NPC знает только то, что есть в knowledge/scene/relationship.",
+                "NPC знает только то, что есть в его state/knowledge/<character_id>.json, текущей сцене или доступной relationship pair.",
                 "Новые важные NPC сохраняются через proposed_updates.new_or_updated_characters.",
                 "Сохранять порядок ввода игрока: реплика -> скобки -> реплика.",
                 "Показывать отношения внизу только по персонажам текущей сцены.",
                 "В шапке не показывать POV / Фокус / В сцене / active_character_ids.",
                 "Имена и фамилии персонажей не русские, латиница, западно-японский/англо-японский стиль.",
-                "Knowledge/relationship patches требуют reason и source_in_scene.",
+                "Knowledge/relationship patches требуют reason и source_in_scene; knowledge сохраняет субъективные saw/heard/interpreted memories.",
             ],
         },
     }

@@ -56,7 +56,7 @@ def _validate_display_name(name: Any, location: str) -> list[str]:
     if banned:
         errors.append(f"{location}.name looks Russian/Slavic and is not allowed by naming rules: {stripped!r}")
     if len(stripped.split()) < 2:
-        errors.append(f"{location}.name should include given name and surname, e.g. 'Akira Vale'")
+        errors.append(f"{location}.name should include given name and surname, with given name and surname")
     return errors
 
 
@@ -80,13 +80,17 @@ def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
 
     characters = data.get("characters")
     if characters is not None and not isinstance(characters, dict):
-        errors.append("characters must be object keyed by character_id")
+        errors.append("characters must be object keyed by generated character_id")
 
     errors.extend(_validate_character_names(characters))
+    if isinstance(characters, dict):
+        for character_id, card in characters.items():
+            if isinstance(card, dict) and card.get("id") not in {None, character_id}:
+                errors.append(f"characters.{character_id}.id must match its generated character_id key")
 
     protagonist = data.get("protagonist") or {}
     if protagonist and protagonist.get("id") not in (characters or {}):
-        errors.append("protagonist.id must exist inside characters")
+        errors.append("protagonist.id must exist inside characters and use the generated character_id")
     if protagonist and "name" in protagonist:
         errors.extend(_validate_display_name(protagonist.get("name"), "protagonist"))
 

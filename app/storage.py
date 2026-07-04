@@ -45,14 +45,57 @@ class JsonStorage:
             return []
         return sorted([p.name for p in self.sessions_dir.iterdir() if p.is_dir()], reverse=True)
 
+    def _read_dir_json_map(self, session_id: str, directory: str, key_field: str, fallback_filename: str) -> dict[str, Any]:
+        base = self.session_dir(session_id) / directory
+        if base.exists():
+            result: dict[str, Any] = {}
+            for path in sorted(base.glob("*.json")):
+                data = json.loads(path.read_text(encoding="utf-8"))
+                key = data.get(key_field) if isinstance(data, dict) else None
+                result[str(key or path.stem)] = data
+            return result
+        return self.read_json(session_id, fallback_filename, default={})
+
+    def read_characters(self, session_id: str) -> dict[str, Any]:
+        return self._read_dir_json_map(session_id, "characters", "id", "characters.json")
+
+    def read_knowledge(self, session_id: str) -> dict[str, Any]:
+        return self._read_dir_json_map(session_id, "state/knowledge", "character_id", "knowledge.json")
+
+    def read_relationships(self, session_id: str) -> dict[str, Any]:
+        return self._read_dir_json_map(session_id, "state/relationship_pairs", "pair_id", "relationships.json")
+
+    def write_character(self, session_id: str, character_id: str, card: dict[str, Any]) -> None:
+        self.write_json(session_id, f"characters/{character_id}.json", card)
+        index = self.read_json(session_id, "characters_index.json", default={"ids": []})
+        ids = index.setdefault("ids", [])
+        if character_id not in ids:
+            ids.append(character_id)
+        self.write_json(session_id, "characters_index.json", index)
+
+    def write_character_knowledge(self, session_id: str, character_id: str, entry: dict[str, Any]) -> None:
+        entry = {**entry, "character_id": entry.get("character_id") or character_id}
+        self.write_json(session_id, f"state/knowledge/{character_id}.json", entry)
+        index = self.read_json(session_id, "state/knowledge_index.json", default={"ids": []})
+        ids = index.setdefault("ids", [])
+        if character_id not in ids:
+            ids.append(character_id)
+        self.write_json(session_id, "state/knowledge_index.json", index)
+
+    def write_relationship_pair(self, session_id: str, pair_id: str, entry: dict[str, Any]) -> None:
+        entry = {**entry, "pair_id": entry.get("pair_id") or pair_id}
+        self.write_json(session_id, f"state/relationship_pairs/{pair_id}.json", entry)
+        index = self.read_json(session_id, "state/relationship_index.json", default={"pair_ids": []})
+        ids = index.setdefault("pair_ids", [])
+        if pair_id not in ids:
+            ids.append(pair_id)
+        self.write_json(session_id, "state/relationship_index.json", index)
+
     def read_session_bundle(self, session_id: str) -> dict[str, Any]:
-        files = [
+        scalar_files = [
             "session.json",
             "user_request.json",
             "protagonist.json",
-            "characters.json",
-            "relationships.json",
-            "knowledge.json",
             "story_plan.json",
             "current_state.json",
             "npc_state.json",
@@ -62,6 +105,16 @@ class JsonStorage:
             "turns.json",
         ]
         bundle: dict[str, Any] = {}
-        for filename in files:
-            bundle[filename.removesuffix(".json")] = self.read_json(session_id, filename, default={})
+        for filename in scalar_files:
+            default = [] if filename in {"scene_history.json", "turns.json"} else {}
+            bundle[filename.removesuffix(".json")] = self.read_json(session_id, filename, default=default)
+
+        # v8 runtime layout: one card / knowledge / relationship file per generated id.
+        # Legacy fallback remains for older v5-v7 sessions.
+        bundle["characters"] = self.read_characters(session_id)
+        bundle["knowledge"] = self.read_knowledge(session_id)
+        bundle["relationships"] = self.read_relationships(session_id)
+        bundle["characters_index"] = self.read_json(session_id, "characters_index.json", default={"ids": list(bundle["characters"].keys())})
+        bundle["knowledge_index"] = self.read_json(session_id, "state/knowledge_index.json", default={"ids": list(bundle["knowledge"].keys())})
+        bundle["relationship_index"] = self.read_json(session_id, "state/relationship_index.json", default={"pair_ids": list(bundle["relationships"].keys())})
         return bundle

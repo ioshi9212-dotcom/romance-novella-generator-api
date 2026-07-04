@@ -85,7 +85,7 @@ def test_apply_turn_result_saves_header_state_fields():
                 "location": "new debug room",
                 "weather": "rain",
                 "scene_state": "wet floor",
-                "player_name": "Akira Vale",
+                "player_name": "Debug Player",
                 "visible_state": "нейтрально",
                 "outfit": "new coat",
                 "inventory": "debug item, key"
@@ -250,7 +250,7 @@ def test_scene_response_rejects_knowledge_patch_without_source():
                 "location": "room",
                 "weather": "rain",
                 "scene_state": "wet floor",
-                "player_name": "Akira Vale",
+                "player_name": "Debug Player",
                 "visible_state": "neutral",
                 "outfit": "coat",
                 "inventory": "key"

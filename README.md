@@ -1,4 +1,4 @@
-# Romance Novella Generator API — GPT Actions v7
+# Romance Novella Generator API — GPT Actions v8
 
 Генератор интерактивных новелл для связки:
 
@@ -8,36 +8,28 @@ Railway API = память, state, проверки, сборка контекс
 GitHub = код, правила, схемы, промпты, шаблоны
 ```
 
-В репозитории нет готового канона, персонажей, лора или истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume.
+В репозитории нет готового канона, готовых персонажей, готового лора или готовой истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume.
 
-## Что изменилось в v7
+## Что изменилось в v8
 
-- Добавлены усиленные правила сцены и NPC.
-- Добавлены жёсткие naming rules: имена и фамилии не русские, не славянские, только латиницей.
-- Предпочтительный стиль имён: западный / японский / англо-японский / японо-западный.
-- Добавлена optional API key protection через `API_KEY` и header `X-API-Key`.
-- Добавлен endpoint `GET /api/v1/sessions/latest`.
-- Добавлены session gates: scene-contract, turn и apply-turn-result работают только для `active` session.
-- Усилена валидация knowledge/relationship patches: нужен `reason` и `source_in_scene`.
-- Усилен locked-character guard: locked анкеты нельзя менять через обычный scene patch.
-- Обновлён `openapi.yaml` под Custom GPT Actions.
-- Добавлена сухая ирония/лёгкий сарказм в режиссуре без форсирования.
-- Добавлен запрет микрострок и лишнего дробления абзацев.
-- Усилены NPC: разные реакции, неудобные персонажи, запрет психологов/философов.
-- В карточку персонажа добавлены `goal`, `likes_in_people`, `dislikes_in_people`, `relationship_triggers`.
+- Убраны готовые имена/персонажи из примеров и debug-данных.
+- Каждый персонаж создаётся внутри конкретной сессии и получает свой `character_id`.
+- Карточка персонажа хранится как `characters/<character_id>.json`.
+- Знания хранятся как `state/knowledge/<character_id>.json`.
+- Отношения хранятся как `state/relationship_pairs/<a>__<b>.json`.
+- Knowledge теперь субъективный: saw/heard/remembered_quote/interpreted_as/assumptions/wrong_beliefs.
+- Relationship pair хранит направленные взгляды: `a_view_of_b` и `b_view_of_a`.
+- Builder грузит только нужные карточки, знания и пары в scene_contract.
+- Updater сохраняет только затронутые файлы знаний/отношений/персонажей.
 
 ## Railway variables
 
-Минимум:
-
 ```env
 DATA_DIR=/app/runtime
-ENGINE_VERSION=novella-generator-gpt-actions-v7
+ENGINE_VERSION=novella-generator-gpt-actions-v8
 DEFAULT_LANGUAGE=ru
 API_KEY=your-long-random-secret
 ```
-
-`DATA_DIR` должен указывать на Railway Volume mount path. Если volume примонтирован в `/app/runtime`, оставляй `DATA_DIR=/app/runtime`.
 
 Если `API_KEY` задан, все endpoints кроме `/health` требуют header:
 
@@ -54,9 +46,16 @@ DATA_DIR/
       session.json
       user_request.json
       protagonist.json
-      characters.json
-      relationships.json
-      knowledge.json
+      characters_index.json
+      characters/
+        <character_id>.json
+      state/
+        knowledge_index.json
+        relationship_index.json
+        knowledge/
+          <character_id>.json
+        relationship_pairs/
+          <a>__<b>.json
       story_plan.json
       current_state.json
       npc_state.json
@@ -66,20 +65,69 @@ DATA_DIR/
       turns.json
 ```
 
-Один персонаж = одна короткая анкета внутри `characters.json`.
+Один персонаж = одна короткая анкета. Никаких `main.yaml / character.yaml / knowledge.yaml / past.yaml`.
 
-Не используется структура готового канона:
+## Dynamic IDs
+
+Нельзя заранее создавать файлы персонажей, потому что генератор не знает персонажей до bootstrap. GPT создаёт персонажей, выдаёт им id, и уже по этим id Railway создаёт файлы.
+
+Пример формата id:
 
 ```txt
-characters/<id>/main.yaml
-characters/<id>/character.yaml
-characters/<id>/knowledge.yaml
-characters/<id>/past.yaml
+pc_01
+friend_01
+family_01
+npc_<shortid>
+love_interest_01
 ```
 
-## Visible scene format
+Это не готовые персонажи, а только формат id.
 
-Шапка как в академическом формате, но универсальная и без `POV`, `Фокус`, `В сцене`:
+## Knowledge
+
+Знание — не объективная истина, а память конкретного персонажа.
+
+Файл:
+
+```txt
+state/knowledge/<character_id>.json
+```
+
+Хранит:
+
+```txt
+known_facts
+observations: saw / heard / remembered_quote / interpreted_as / emotional_marker
+assumptions
+wrong_beliefs
+does_not_know
+must_not_assume
+recent_memories
+open_questions
+```
+
+## Relationships
+
+Отношения — парный файл:
+
+```txt
+state/relationship_pairs/<a>__<b>.json
+```
+
+Хранит:
+
+```txt
+scores: trust/tension/attachment/respect/fear/curiosity
+a_view_of_b
+b_view_of_a
+shared_history
+recent_changes
+open_threads
+```
+
+В нижнем блоке сцены показываются только пары, где оба персонажа в сцене или прямо затронуты текущим ходом.
+
+## Visible scene format
 
 ```md
 🎭 <Название истории> · <дата / день>
@@ -94,88 +142,7 @@ characters/<id>/past.yaml
 ━━━━━━━━━━━━━━━━━━━━
 ```
 
-Диалог:
-
-```md
-**Name** — Реплика. *(короткая ремарка)* Продолжение реплики.
-```
-
-Низ сцены:
-
-```md
-━━━━━━━━━━━━━━━━━━━━
-
-✦ Что можно сделать
-◈ ...
-◈ ...
-◈ ...
-
-✦ Что можно сказать
-— ...
-— ...
-— ...
-
-✦ Мысли
-— ...
-— ...
-— ...
-
-✦ Состояние
-Голод: ...
-Усталость: ...
-Травмы: ...
-Эмоциональное состояние: ...
-Навыки / ресурс: ...
-<story slot 1>: ...
-<story slot 2>: ...
-
-✦ Отношения
-<только персонажи текущей сцены или прямо затронутые текущим ходом>
-
-━━━━━━━━━━━━━━━━━━━━
-```
-
-## Naming rules
-
-По умолчанию запрещены русские имена и фамилии. Все `name` — латиницей.
-
-Хорошо:
-
-```txt
-Akira Vale
-Raiden Sterling
-Haru Foster
-Livia Hart
-Mika Lawson
-Noah Akiyama
-Yuna Cross
-Ren Carter
-Elias Kurogane
-```
-
-Плохо:
-
-```txt
-Марина Мор
-Данил Кросс
-Иван Петров
-Анастасия Волкова
-Сергей Морозов
-```
-
-## Player input rules
-
-```txt
-Я не вернулась. (посмотреть на дверь) Просто забрала вещи.
-```
-
-Это значит:
-
-1. персонаж игрока говорит первую фразу;
-2. потом смотрит на дверь;
-3. потом говорит вторую фразу.
-
-Текст в скобках не произносится вслух, если там нет явной прямой речи в кавычках. NPC не читают мысли в скобках.
+В шапке нельзя: `POV`, `Фокус`, `В сцене`, active ids, скрытые отношения, будущие роли.
 
 ## Main endpoints
 
@@ -193,7 +160,7 @@ POST /api/v1/sessions/{session_id}/turn
 POST /api/v1/sessions/{session_id}/apply-turn-result
 ```
 
-## Startup flow for Custom GPT
+## Startup flow
 
 ```txt
 User gives setup / says начнем
@@ -220,24 +187,4 @@ For each player turn:
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload
-```
-
-Health:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Debug session:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/sessions \
-  -H "Content-Type: application/json" \
-  -d '{"genre":"debug","setting_request":"debug","protagonist_request":"debug","mode":"debug_stub"}'
-```
-
-## Tests
-
-```bash
-pytest -q
 ```

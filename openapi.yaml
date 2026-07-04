@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Romance Novella Generator API
-  version: gpt-actions-v7
+  version: gpt-actions-v8
   description: Railway API used by a Custom GPT as memory, context builder, validator, and state storage for generated novella sessions. The Custom GPT is the writer; Railway stores and validates state.
 servers:
   - url: https://YOUR-RAILWAY-DOMAIN.up.railway.app

@@ -54,9 +54,25 @@ class SessionManager:
 
         if request.mode == "debug_stub":
             bundle = debug_stub_bootstrap(session_id, user_request)
-            for filename in BASE_FILES:
-                key = filename.removesuffix(".json")
-                self.storage.write_json(session_id, filename, bundle.get(key, [] if filename in ["scene_history.json", "turns.json"] else {}))
+            self.storage.write_json(session_id, "session.json", bundle["session"])
+            self.storage.write_json(session_id, "user_request.json", bundle["user_request"])
+            self.storage.write_json(session_id, "protagonist.json", bundle["protagonist"])
+            self.storage.write_json(session_id, "story_plan.json", bundle["story_plan"])
+            self.storage.write_json(session_id, "current_state.json", bundle["current_state"])
+            self.storage.write_json(session_id, "npc_state.json", bundle.get("npc_state", {}))
+            self.storage.write_json(session_id, "future_locks.json", bundle.get("future_locks", {}))
+            self.storage.write_json(session_id, "continuity.json", bundle.get("continuity", {}))
+            self.storage.write_json(session_id, "scene_history.json", bundle.get("scene_history", []))
+            self.storage.write_json(session_id, "turns.json", bundle.get("turns", []))
+            self.storage.write_json(session_id, "characters_index.json", {"ids": list(bundle.get("characters", {}).keys())})
+            self.storage.write_json(session_id, "state/knowledge_index.json", {"ids": list(bundle.get("knowledge", {}).keys())})
+            self.storage.write_json(session_id, "state/relationship_index.json", {"pair_ids": list(bundle.get("relationships", {}).keys())})
+            for character_id, card in bundle.get("characters", {}).items():
+                self.storage.write_character(session_id, character_id, card)
+            for character_id, entry in bundle.get("knowledge", {}).items():
+                self.storage.write_character_knowledge(session_id, character_id, entry)
+            for pid, entry in bundle.get("relationships", {}).items():
+                self.storage.write_relationship_pair(session_id, pid, entry)
             return {
                 "session_id": session_id,
                 "status": "active",
@@ -82,9 +98,9 @@ class SessionManager:
             "session.json": session,
             "user_request.json": user_request,
             "protagonist.json": {},
-            "characters.json": {},
-            "relationships.json": {},
-            "knowledge.json": {},
+            "characters_index.json": {"ids": []},
+            "state/knowledge_index.json": {"ids": []},
+            "state/relationship_index.json": {"pair_ids": []},
             "story_plan.json": {},
             "current_state.json": {},
             "npc_state.json": {},
@@ -96,6 +112,10 @@ class SessionManager:
 
         for filename, data in empty_files.items():
             self.storage.write_json(session_id, filename, data)
+        # Create runtime directories for generated per-session data.
+        (session_dir / "characters").mkdir(parents=True, exist_ok=True)
+        (session_dir / "state" / "knowledge").mkdir(parents=True, exist_ok=True)
+        (session_dir / "state" / "relationship_pairs").mkdir(parents=True, exist_ok=True)
 
         prompt = build_bootstrap_prompt(user_request)
         (session_dir / "pending_bootstrap_prompt.md").write_text(prompt, encoding="utf-8")
@@ -106,7 +126,7 @@ class SessionManager:
             "mode": request.mode,
             "bootstrap_prompt": prompt,
             "questionnaire": None,
-            "files_created": list(empty_files.keys()) + ["pending_bootstrap_prompt.md"],
+            "files_created": list(empty_files.keys()) + ["characters/", "state/knowledge/", "state/relationship_pairs/", "pending_bootstrap_prompt.md"],
         }
 
     def apply_bootstrap_result(self, session_id: str, bootstrap_json: dict[str, Any]) -> dict[str, Any]:
@@ -127,9 +147,26 @@ class SessionManager:
         session["updated_at"] = now_iso()
 
         self.storage.write_json(session_id, "session.json", session)
-        for key in required:
-            self.storage.write_json(session_id, f"{key}.json", bootstrap_json[key])
+        self.storage.write_json(session_id, "user_request.json", self.storage.read_json(session_id, "user_request.json", default={}))
+        self.storage.write_json(session_id, "protagonist.json", bootstrap_json["protagonist"])
 
+        characters = bootstrap_json.get("characters", {})
+        self.storage.write_json(session_id, "characters_index.json", {"ids": list(characters.keys())})
+        for character_id, card in characters.items():
+            self.storage.write_character(session_id, character_id, {**card, "id": card.get("id") or character_id})
+
+        knowledge = bootstrap_json.get("knowledge", {})
+        self.storage.write_json(session_id, "state/knowledge_index.json", {"ids": list(knowledge.keys())})
+        for character_id, entry in knowledge.items():
+            self.storage.write_character_knowledge(session_id, character_id, entry)
+
+        relationships = bootstrap_json.get("relationships", {})
+        self.storage.write_json(session_id, "state/relationship_index.json", {"pair_ids": list(relationships.keys())})
+        for pid, entry in relationships.items():
+            self.storage.write_relationship_pair(session_id, pid, entry)
+
+        self.storage.write_json(session_id, "story_plan.json", bootstrap_json["story_plan"])
+        self.storage.write_json(session_id, "current_state.json", bootstrap_json["current_state"])
         self.storage.write_json(session_id, "npc_state.json", bootstrap_json.get("npc_state", {}))
         self.storage.write_json(session_id, "future_locks.json", bootstrap_json.get("future_locks", {}))
         self.storage.write_json(session_id, "continuity.json", bootstrap_json.get("continuity", {}))

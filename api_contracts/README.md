@@ -1,4 +1,4 @@
-# API Contracts — GPT Actions v5
+# API Contracts — GPT Actions v8
 
 Этот слой описывает работу Custom GPT с Railway API.
 

@@ -6,9 +6,9 @@ BASE_FILES = [
     "session.json",
     "user_request.json",
     "protagonist.json",
-    "characters.json",
-    "relationships.json",
-    "knowledge.json",
+    "characters_index.json",
+    "state/knowledge_index.json",
+    "state/relationship_index.json",
     "story_plan.json",
     "current_state.json",
     "npc_state.json",
@@ -28,14 +28,17 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - GitHub хранит только правила, схемы, шаблоны и сборщик.
 - Конкретные персонажи, лор, отношения, знания и сюжет создаются здесь и сохраняются в state конкретной Railway-сессии.
 - Не используй персонажей из 1206, Академии, Акиры, Райдена, Хару или любых готовых историй.
-- Один персонаж = одна короткая анкета внутри characters.json.
+- Один персонаж = одна короткая анкета в `characters/<character_id>.json`.
+- Создай для каждого значимого персонажа свой уникальный `character_id` внутри этой сессии.
+- Не используй заранее заданные id и имена из готовых историй.
 - Не создавай три файла main/character/knowledge/past на персонажа.
 - Базовые анкеты персонажей должны быть короткими, но полезными для поведения.
 - Для значимых персонажей заполни goal, habits, likes_in_people, dislikes_in_people, relationship_triggers.
 - Имена и фамилии персонажей должны быть не русскими, не славянскими, латиницей, в западно-японской/англо-японской стилистике.
-- Не используй кириллицу в поле name. Примеры: Akira Vale, Raiden Sterling, Haru Foster, Livia Hart, Mika Lawson, Noah Akiyama.
+- Не используй кириллицу в поле name. Не копируй имена из примеров, чужих новелл или старых сессий.
+- `character_id` — машинный id этой сессии: например `pc_01`, `friend_01`, `npc_7f3a`, `love_interest_01`. Он создаётся в bootstrap и дальше используется для карточки, знаний и отношений.
 - Не раскрывай будущих важных персонажей полностью, если персонаж игрока их ещё не знает.
-- Для неизвестных будущих фигур делай только seed в future_locks.hidden_character_seeds.
+- Для неизвестных будущих фигур делай только seed в future_locks.hidden_character_seeds, без имени и без полной карточки.
 - Создай ровно два story-specific status slots для нижнего блока сцены.
 - В current_state обязательно заполни: date, time, location, weather, scene_state, outfit, inventory, nearby_items.
 - В current_state.status обязательно заполни: hunger, fatigue, injuries, emotional_state, skills, custom[2].
@@ -60,12 +63,12 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
     setting_request = user_request.get("setting_request") or "debug location"
     protagonist_request = user_request.get("protagonist_request") or "debug player character"
 
-    protagonist_id = "protagonist"
-    support_id = "support_npc"
+    protagonist_id = "pc_debug_01"
+    support_id = "npc_debug_witness_01"
 
     protagonist = {
         "id": protagonist_id,
-        "name": "Akira Vale",
+        "name": "Debug Player",
         "role": "protagonist",
         "age": 25,
         "introduced": True,
@@ -84,8 +87,12 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "flaws": [],
             "speech": "нейтрально, без канона"
         },
+        "goal": "debug: проверить ход сцены",
         "past_short": f"Техническая анкета для проверки. Стартовый запрос: {protagonist_request}",
-        "habits": [],
+        "habits": ["debug placeholder habit"],
+        "likes_in_people": ["clear visible actions"],
+        "dislikes_in_people": ["unsupported assumptions"],
+        "relationship_triggers": {"improves_when": ["clear source is provided"], "worsens_when": ["source is missing"]},
         "skills": ["debug observation"],
         "connections": [
             {"character_id": support_id, "relation": "debug witness", "summary": "Техническая связь для проверки отношений."}
@@ -94,7 +101,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
 
     support_npc = {
         "id": support_id,
-        "name": "Noah Akiyama",
+        "name": "Debug Witness",
         "role": "debug witness",
         "age": 30,
         "introduced": False,
@@ -113,8 +120,12 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "flaws": [],
             "speech": "коротко"
         },
+        "goal": "debug: быть свидетелем проверки",
         "past_short": "Тестовый NPC без сюжетного канона.",
-        "habits": [],
+        "habits": ["debug placeholder habit"],
+        "likes_in_people": ["clear visible actions"],
+        "dislikes_in_people": ["unsupported assumptions"],
+        "relationship_triggers": {"improves_when": ["clear source is provided"], "worsens_when": ["source is missing"]},
         "skills": [],
         "connections": [
             {"character_id": protagonist_id, "relation": "debug witness", "summary": "Техническая связь."}
@@ -130,19 +141,38 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "attachment": 0,
             "status": "тестовая связь",
             "known_history": "нет сюжетной истории",
-            "open_threads": []
+            "open_threads": [],
+            "scores": {"trust": 50, "tension": 0, "attachment": 0, "respect": 0, "fear": 0},
+            "a_view_of_b": {"summary": "debug-only view", "current_assumption": "none"},
+            "b_view_of_a": {"summary": "debug-only view", "current_assumption": "none"}
         }
     }
     knowledge = {
         protagonist_id: {
-            "knows": ["это техническая debug-сессия"],
+            "character_id": protagonist_id,
+            "known_facts": [{"text": "это техническая debug-сессия", "source_type": "system_debug", "certainty": "high"}],
+            "observations": [],
+            "assumptions": [],
+            "wrong_beliefs": [],
             "does_not_know": [],
-            "must_not_assume": ["не считать debug-данные каноном истории"]
+            "must_not_assume": ["не считать debug-данные каноном истории"],
+            "recent_memories": [],
+            "open_questions": [],
+            "knows": ["это техническая debug-сессия"],
+            "history": []
         },
         support_id: {
-            "knows": ["это техническая debug-сессия"],
+            "character_id": support_id,
+            "known_facts": [{"text": "это техническая debug-сессия", "source_type": "system_debug", "certainty": "high"}],
+            "observations": [],
+            "assumptions": [],
+            "wrong_beliefs": [],
             "does_not_know": [],
-            "must_not_assume": []
+            "must_not_assume": [],
+            "recent_memories": [],
+            "open_questions": [],
+            "knows": ["это техническая debug-сессия"],
+            "history": []
         }
     }
     story_plan = {
@@ -193,7 +223,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "session_id": session_id,
         "title": user_request.get("title") or "Debug novella session",
         "status": "active",
-        "engine_version": "novella-generator-gpt-actions-v6",
+        "engine_version": "novella-generator-gpt-actions-v8",
         "created_at": created_at,
         "updated_at": created_at,
     }
