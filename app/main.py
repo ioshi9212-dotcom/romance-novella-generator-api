@@ -1,3 +1,4 @@
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from app.config import get_settings
 from app.models import (
@@ -11,11 +12,11 @@ from app.models import (
 )
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
-from app.turn_processor import process_turn_local_stub, process_turn_manual
+from app.turn_processor import process_turn_debug_stub, process_turn_gpt_actions
 from app.validators import validate_bootstrap_result, validate_scene_response
 
 
-app = FastAPI(title="Romance Novella Generator API", version="starter-v2")
+app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v5")
 
 
 @app.get("/health")
@@ -25,7 +26,7 @@ def health() -> dict:
         "status": "ok",
         "engine_version": settings.engine_version,
         "data_dir": str(settings.data_dir),
-        "mode": "starter",
+        "mode": "gpt_actions",
     }
 
 
@@ -37,8 +38,6 @@ def create_session(request: CreateSessionRequest) -> dict:
 
 @app.get("/api/v1/start-questionnaire")
 def get_start_questionnaire() -> dict:
-    from pathlib import Path
-
     path = Path(__file__).resolve().parent.parent / "prompts" / "start_questionnaire.md"
     return {"questionnaire": path.read_text(encoding="utf-8")}
 
@@ -102,8 +101,8 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
-    if request.mode == "local_stub":
-        result = process_turn_local_stub(bundle, request.player_input)
+    if request.mode == "debug_stub":
+        result = process_turn_debug_stub(bundle, request.player_input)
         updater = StateUpdater(manager.storage)
         apply_result = updater.apply_scene_response(session_id, result["scene_response"])
         return {
@@ -114,17 +113,14 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
             "diagnostics": result["diagnostics"] | {"apply_result": apply_result},
         }
 
-    if request.mode == "manual_gpt":
-        result = process_turn_manual(bundle, request.player_input)
-        return {
-            "session_id": session_id,
-            "status": result["status"],
-            "scene": None,
-            "scene_prompt": result["scene_prompt"],
-            "diagnostics": result["diagnostics"],
-        }
-
-    raise HTTPException(status_code=501, detail="llm mode is reserved for the next ZIP/version")
+    result = process_turn_gpt_actions(bundle, request.player_input)
+    return {
+        "session_id": session_id,
+        "status": result["status"],
+        "scene": None,
+        "scene_prompt": result["scene_prompt"],
+        "diagnostics": result["diagnostics"],
+    }
 
 
 @app.post("/api/v1/sessions/{session_id}/apply-turn-result", response_model=ApplyTurnResultResponse)

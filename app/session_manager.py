@@ -1,5 +1,6 @@
+from pathlib import Path
 from typing import Any
-from app.bootstrapper import BASE_FILES, build_bootstrap_prompt, local_stub_bootstrap
+from app.bootstrapper import BASE_FILES, build_bootstrap_prompt, debug_stub_bootstrap
 from app.config import get_settings
 from app.id_utils import new_session_id, now_iso
 from app.models import CreateSessionRequest
@@ -10,17 +11,49 @@ def get_storage() -> JsonStorage:
     return JsonStorage(get_settings().data_dir)
 
 
+def _questionnaire_text() -> str:
+    path = Path(__file__).resolve().parent.parent / "prompts" / "start_questionnaire.md"
+    return path.read_text(encoding="utf-8")
+
+
+def _needs_questionnaire(request: CreateSessionRequest) -> bool:
+    raw = (request.raw_start_text or "").strip().lower()
+    if raw in {"начнем", "начнём", "старт", "создай сессию", "новая сессия"}:
+        return True
+
+    meaningful = [
+        request.setting_request.strip(),
+        request.protagonist_request.strip(),
+        (request.romance_request or "").strip(),
+        (request.tone or "").strip(),
+    ]
+    has_meaningful_detail = any(value and value not in {"-", "—", "придумай"} for value in meaningful)
+    genre_only = bool(request.genre.strip()) and not has_meaningful_detail
+    return genre_only or not has_meaningful_detail
+
+
 class SessionManager:
     def __init__(self, storage: JsonStorage | None = None):
         self.storage = storage or get_storage()
 
     def create_session(self, request: CreateSessionRequest) -> dict[str, Any]:
-        session_id = new_session_id()
         user_request = request.model_dump()
+
+        if request.mode == "gpt_actions" and _needs_questionnaire(request):
+            return {
+                "session_id": None,
+                "status": "needs_questionnaire",
+                "mode": request.mode,
+                "bootstrap_prompt": None,
+                "questionnaire": _questionnaire_text(),
+                "files_created": [],
+            }
+
+        session_id = new_session_id()
         session_dir = self.storage.ensure_session_dir(session_id)
 
-        if request.mode == "local_stub":
-            bundle = local_stub_bootstrap(session_id, user_request)
+        if request.mode == "debug_stub":
+            bundle = debug_stub_bootstrap(session_id, user_request)
             for filename in BASE_FILES:
                 key = filename.removesuffix(".json")
                 self.storage.write_json(session_id, filename, bundle.get(key, [] if filename in ["scene_history.json", "turns.json"] else {}))
@@ -29,10 +62,12 @@ class SessionManager:
                 "status": "active",
                 "mode": request.mode,
                 "bootstrap_prompt": None,
+                "questionnaire": None,
                 "files_created": BASE_FILES,
             }
 
-        # manual_gpt / llm start as pending bootstrap.
+        # gpt_actions: Custom GPT is the writer. Railway creates empty state files
+        # and returns a bootstrap prompt for GPT to generate bootstrap JSON.
         created_at = now_iso()
         session = {
             "session_id": session_id,
@@ -70,6 +105,7 @@ class SessionManager:
             "status": "bootstrap_pending",
             "mode": request.mode,
             "bootstrap_prompt": prompt,
+            "questionnaire": None,
             "files_created": list(empty_files.keys()) + ["pending_bootstrap_prompt.md"],
         }
 

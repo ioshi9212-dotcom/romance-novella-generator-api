@@ -1,40 +1,40 @@
-# API Contracts
+# API Contracts — GPT Actions v5
 
-Контракты для генератора новелл.
+Этот слой описывает работу Custom GPT с Railway API.
 
-Этот слой не содержит готового лора или персонажей.
+В этой версии Railway **не вызывает LLM внутри себя**. GPT подключается к Railway через Actions/OpenAPI и сам пишет:
 
-## Основной поток
+- bootstrap JSON;
+- сцену;
+- proposed_updates.
 
-```txt
-create_session
-  -> bootstrap state
-  -> scene_contract
-  -> scene_response with proposed_updates
-  -> apply_turn_result
-  -> save state
+Railway отвечает за:
+
+- session state;
+- scene contract;
+- prompt builder;
+- JSON schema validation;
+- сохранение current_state, knowledge, relationships, characters, scene_history, turns.
+
+Основные файлы:
+
+```text
+openapi.yaml
+gpt/custom_gpt_instructions.md
+api_contracts/actions_contract.md
+schemas/*.schema.json
+prompts/*.md
+rules/*.md
+app/scene_contract_builder.py
+app/turn_processor.py
+app/state_updater.py
 ```
 
-## Файлы
+Режимы:
 
-- `schemas/bootstrap_output.schema.json`
-- `schemas/scene_contract.schema.json`
-- `schemas/scene_response.schema.json`
-- `schemas/apply_turn_result.schema.json`
+```text
+gpt_actions = основной режим для Custom GPT
+debug_stub = техническая проверка без GPT
+```
 
-## v2 scene layer
-
-`scene_response` now carries a full visible scene structure:
-
-- `scene.header`
-- `scene.body`
-- `scene.player_options.thoughts[3]`
-- `scene.player_options.dialogue[3]`
-- `scene.player_options.actions[3]`
-- `scene.status_panel`
-- `scene.relationships_panel`
-- `scene.rendered_text`
-
-The API saves `rendered_text` into `scene_history.visible_scene_text`.
-
-Relationships shown in the visible footer must be limited to `visible_relationship_pair_ids` from `scene_contract`, unless the current turn directly affected another pair.
+`llm`-режима здесь нет, чтобы не путать архитектуру.

@@ -2,12 +2,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-SessionMode = Literal["local_stub", "manual_gpt", "llm"]
+SessionMode = Literal["debug_stub", "gpt_actions"]
 
 
 class CreateSessionRequest(BaseModel):
     title: str | None = None
-    genre: str = Field(default="romance")
+    genre: str = Field(default="")
     language: str = Field(default="ru")
     tone: str | None = None
     setting_request: str = Field(default="")
@@ -16,15 +16,17 @@ class CreateSessionRequest(BaseModel):
     rating: str | None = None
     avoid: list[str] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
-    mode: SessionMode = "local_stub"
+    raw_start_text: str | None = None
+    mode: SessionMode = "gpt_actions"
 
 
 class CreateSessionResponse(BaseModel):
-    session_id: str
+    session_id: str | None = None
     status: str
     mode: SessionMode
     bootstrap_prompt: str | None = None
-    files_created: list[str]
+    questionnaire: str | None = None
+    files_created: list[str] = Field(default_factory=list)
 
 
 class BootstrapResultRequest(BaseModel):
@@ -33,7 +35,7 @@ class BootstrapResultRequest(BaseModel):
 
 class TurnRequest(BaseModel):
     player_input: str
-    mode: SessionMode = "manual_gpt"
+    mode: SessionMode = "gpt_actions"
 
 
 class TurnResponse(BaseModel):

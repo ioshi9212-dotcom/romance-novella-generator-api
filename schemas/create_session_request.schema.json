@@ -3,62 +3,19 @@
   "$id": "schemas/create_session_request.schema.json",
   "title": "Create Session Request",
   "type": "object",
-  "required": [
-    "genre"
-  ],
+  "additionalProperties": true,
   "properties": {
-    "title": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "genre": {
-      "type": "string"
-    },
-    "language": {
-      "type": "string",
-      "default": "ru"
-    },
-    "tone": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "setting_request": {
-      "type": "string"
-    },
-    "protagonist_request": {
-      "type": "string"
-    },
-    "romance_request": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "rating": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "avoid": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "extra": {
-      "type": "object"
-    },
-    "mode": {
-      "enum": [
-        "local_stub",
-        "manual_gpt",
-        "llm"
-      ]
-    }
+    "title": {"type": ["string", "null"]},
+    "genre": {"type": "string", "default": ""},
+    "language": {"type": "string", "default": "ru"},
+    "tone": {"type": ["string", "null"]},
+    "setting_request": {"type": "string", "default": ""},
+    "protagonist_request": {"type": "string", "default": ""},
+    "romance_request": {"type": ["string", "null"]},
+    "rating": {"type": ["string", "null"]},
+    "avoid": {"type": "array", "items": {"type": "string"}},
+    "extra": {"type": "object"},
+    "raw_start_text": {"type": ["string", "null"]},
+    "mode": {"enum": ["gpt_actions", "debug_stub"], "default": "gpt_actions"}
   }
 }

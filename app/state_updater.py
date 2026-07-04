@@ -37,7 +37,7 @@ class StateUpdater:
         scene_state_patch = updates.get("scene_state_patch", {})
 
         # Current state patch.
-        for key in ["date", "time", "location", "scene_goal", "active_character_ids", "nearby_character_ids", "environment", "status"]:
+        for key in ["date", "time", "location", "weather", "scene_state", "outfit", "inventory", "nearby_items", "scene_goal", "active_character_ids", "nearby_character_ids", "environment", "status"]:
             if key in scene_state_patch:
                 current_state[key] = scene_state_patch[key]
                 applied["current_state"].append({"field": key, "operation": "replace"})

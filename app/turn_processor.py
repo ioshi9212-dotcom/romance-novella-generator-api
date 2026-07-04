@@ -48,7 +48,7 @@ def _render_stub_scene(current_frame: dict[str, Any], player_input: str, status:
     time = current_frame.get("time") or "время не задано"
     location = current_frame.get("location") or "место сцены"
     weather = current_frame.get("weather") or "атмосфера не задана"
-    scene_state = current_frame.get("scene_state") or "тестовый режим, проверка сборки"
+    scene_state = current_frame.get("scene_state") or "debug режим, проверка сборки"
     visible_state = status.get("emotional_state", "нейтрально")
     outfit = current_frame.get("outfit") or "одежда не задана"
     inventory = _as_list_text(current_frame.get("inventory"), "ничего не указано")
@@ -104,10 +104,10 @@ def _render_stub_scene(current_frame: dict[str, Any], player_input: str, status:
 ━━━━━━━━━━━━━━━━━━━━"""
 
 
-def process_turn_manual(bundle: dict[str, Any], player_input: str) -> dict[str, Any]:
+def process_turn_gpt_actions(bundle: dict[str, Any], player_input: str) -> dict[str, Any]:
     contract = build_scene_contract(bundle, player_input=player_input)
     return {
-        "status": "manual_prompt_ready",
+        "status": "gpt_actions_prompt_ready",
         "scene_prompt": build_scene_prompt(contract),
         "diagnostics": {
             "loaded_character_count": len(contract.get("loaded_characters", [])),
@@ -117,7 +117,7 @@ def process_turn_manual(bundle: dict[str, Any], player_input: str) -> dict[str, 
     }
 
 
-def process_turn_local_stub(bundle: dict[str, Any], player_input: str) -> dict[str, Any]:
+def process_turn_debug_stub(bundle: dict[str, Any], player_input: str) -> dict[str, Any]:
     contract = build_scene_contract(bundle, player_input=player_input)
     current_frame = contract["current_frame"]
     story_title = bundle.get("session", {}).get("title") or bundle.get("story_plan", {}).get("genre") or "Новая новелла"
@@ -135,7 +135,7 @@ def process_turn_local_stub(bundle: dict[str, Any], player_input: str) -> dict[s
                 "time": current_frame.get("time") or "время не задано",
                 "location": current_frame.get("location") or "место сцены",
                 "weather": current_frame.get("weather") or "атмосфера не задана",
-                "scene_state": current_frame.get("scene_state") or "тестовый режим",
+                "scene_state": current_frame.get("scene_state") or "debug режим",
                 "player_name": current_frame.get("player_display_name") or "Героиня",
                 "visible_state": status.get("emotional_state", "нейтрально"),
                 "outfit": current_frame.get("outfit") or "одежда не задана",
@@ -158,7 +158,7 @@ def process_turn_local_stub(bundle: dict[str, Any], player_input: str) -> dict[s
             "relationships_panel": [],
             "rendered_text": rendered,
         },
-        "summary": "Тестовый ход local_stub без настоящей генерации сцены.",
+        "summary": "Тестовый ход debug_stub без настоящей генерации сцены.",
         "important_facts": [],
         "witnesses": current_frame.get("active_character_ids", []),
         "proposed_updates": {
@@ -178,7 +178,7 @@ def process_turn_local_stub(bundle: dict[str, Any], player_input: str) -> dict[s
             "respected_player_input_order": True,
             "showed_only_scene_relationships": True,
             "header_has_no_focus_or_active_list": True,
-            "notes": ["local_stub не является полноценным писателем сцены"],
+            "notes": ["debug_stub не является полноценным писателем сцены"],
         },
     }
 
