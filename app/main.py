@@ -1,5 +1,9 @@
 from pathlib import Path
+from typing import Any
+
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.openapi.utils import get_openapi
+
 from app.config import get_settings
 from app.models import (
     ApplyTurnResultRequest,
@@ -19,16 +23,59 @@ from app.turn_processor import process_turn_debug_stub, process_turn_gpt_actions
 from app.validators import validate_bootstrap_result, validate_scene_response
 
 
+RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
+
 app = FastAPI(
     title="Romance Novella Generator API",
     version="gpt-actions-v9",
     servers=[
         {
-            "url": "https://web-production-4310e.up.railway.app",
+            "url": RAILWAY_PUBLIC_URL,
             "description": "Railway production",
         }
     ],
 )
+
+
+def _ensure_object_properties(schema_part: Any) -> None:
+    """ChatGPT Actions expects every object schema to contain a properties key.
+
+    FastAPI often emits dynamic response schemas as {"type": "object"}.
+    That is valid OpenAPI, but GPT Actions rejects it with:
+    "object schema missing properties". This normalizes generated /openapi.json.
+    """
+    if isinstance(schema_part, dict):
+        if schema_part.get("type") == "object" and "properties" not in schema_part:
+            schema_part["properties"] = {}
+        for value in schema_part.values():
+            _ensure_object_properties(value)
+    elif isinstance(schema_part, list):
+        for item in schema_part:
+            _ensure_object_properties(item)
+
+
+def custom_openapi() -> dict[str, Any]:
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description="Railway API used by a Custom GPT as memory, context builder, validator, preview gate, and state storage for generated novella sessions.",
+        routes=app.routes,
+    )
+    schema["servers"] = [
+        {
+            "url": RAILWAY_PUBLIC_URL,
+            "description": "Railway production",
+        }
+    ]
+    _ensure_object_properties(schema)
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:

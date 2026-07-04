@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Romance Novella Generator API
   version: gpt-actions-v9
-  description: Railway API used by a Custom GPT as memory, context builder, validator, preview gate, and state storage for generated novella sessions. The Custom GPT is the writer; Railway stores and validates state only after user confirmation.
+  description: Railway API used by a Custom GPT as memory, context builder, validator, preview gate, and state storage for generated novella sessions.
 servers:
   - url: https://web-production-4310e.up.railway.app
     description: Railway production
@@ -21,10 +21,16 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  status: {type: string}
+                  engine_version: {type: string}
+                  data_dir: {type: string}
+                  mode: {type: string}
+                  api_key_required: {type: boolean}
   /api/v1/start-questionnaire:
     get:
       operationId: getStartQuestionnaire
-      summary: Return the short start questionnaire when the user gives too little story setup.
+      summary: Return the short start questionnaire.
       responses:
         '200':
           description: Questionnaire text.
@@ -33,12 +39,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  questionnaire:
-                    type: string
+                  questionnaire: {type: string}
   /api/v1/sessions:
     post:
       operationId: createSession
-      summary: Create a new novella session or return a questionnaire if the request is too empty.
+      summary: Create a new novella session.
       requestBody:
         required: true
         content:
@@ -52,8 +57,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateSessionResponse'
-        '401':
-          description: Missing or invalid X-API-Key when API_KEY is configured.
     get:
       operationId: listSessions
       summary: List saved session IDs.
@@ -67,12 +70,11 @@ paths:
                 properties:
                   sessions:
                     type: array
-                    items:
-                      type: string
+                    items: {type: string}
   /api/v1/sessions/latest:
     get:
       operationId: getLatestSession
-      summary: Return the latest active session ID and session metadata.
+      summary: Return the latest active session.
       responses:
         '200':
           description: Latest session.
@@ -81,12 +83,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  session_id:
-                    type: string
+                  session_id: {type: string}
                   session:
                     type: object
-        '404':
-          description: No sessions found.
+                    properties: {}
+                    additionalProperties: true
   /api/v1/sessions/{session_id}:
     get:
       operationId: getSession
@@ -100,10 +101,12 @@ paths:
             application/json:
               schema:
                 type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/memory:
     get:
       operationId: getMemory
-      summary: Get full saved session memory bundle for diagnostics.
+      summary: Get full saved session memory bundle.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       responses:
@@ -113,6 +116,8 @@ paths:
             application/json:
               schema:
                 type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/bootstrap-result:
     post:
       operationId: applyBootstrapResult
@@ -125,24 +130,25 @@ paths:
           application/json:
             schema:
               type: object
-              required: [bootstrap_json]
               properties:
                 bootstrap_json:
                   type: object
+                  properties: {}
                   additionalProperties: true
+              required: [bootstrap_json]
       responses:
         '200':
-          description: Bootstrap saved and session became active.
+          description: Bootstrap saved.
           content:
             application/json:
               schema:
                 type: object
-        '422':
-          description: Bootstrap JSON failed schema or naming validation.
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/bootstrap-preview:
     post:
       operationId: createBootstrapPreview
-      summary: Validate and store GPT-generated bootstrap JSON as a review preview, without activating the session.
+      summary: Validate and store bootstrap JSON as a review preview.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:
@@ -151,37 +157,32 @@ paths:
           application/json:
             schema:
               type: object
-              required: [bootstrap_json]
               properties:
                 bootstrap_json:
                   type: object
+                  properties: {}
                   additionalProperties: true
+              required: [bootstrap_json]
       responses:
         '200':
-          description: Preview ready. Show preview to the user and wait for confirmation.
+          description: Preview ready.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BootstrapPreviewResponse'
-        '422':
-          description: Bootstrap JSON failed schema or naming validation.
-        '409':
-          description: Session is not in bootstrap_pending/bootstrap_review_pending status.
   /api/v1/sessions/{session_id}/bootstrap-confirm:
     post:
       operationId: confirmBootstrapPreview
-      summary: Commit the pending bootstrap preview after explicit user confirmation, creating character/state files and activating the session.
+      summary: Commit the pending bootstrap preview.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       responses:
         '200':
-          description: Bootstrap committed and session became active.
+          description: Bootstrap committed.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BootstrapConfirmResponse'
-        '409':
-          description: No bootstrap preview is waiting for confirmation.
   /api/v1/sessions/{session_id}/scene-contract:
     get:
       operationId: getSceneContract
@@ -195,12 +196,12 @@ paths:
             application/json:
               schema:
                 type: object
-        '409':
-          description: Session is not active yet; bootstrap must be saved first.
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/turn:
     post:
       operationId: processTurn
-      summary: Build a GPT scene prompt from state and player input. In debug_stub mode it returns a fake scene.
+      summary: Build a GPT scene prompt from state and player input.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:
@@ -216,8 +217,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TurnResponse'
-        '409':
-          description: Session is not active yet.
   /api/v1/sessions/{session_id}/apply-turn-result:
     post:
       operationId: applyTurnResult
@@ -230,11 +229,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [scene_response]
               properties:
                 scene_response:
                   type: object
+                  properties: {}
                   additionalProperties: true
+              required: [scene_response]
       responses:
         '200':
           description: State updates applied or partially applied.
@@ -242,10 +242,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApplyTurnResultResponse'
-        '422':
-          description: Scene response failed schema, naming, or source validation.
-        '409':
-          description: Session is not active yet.
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -257,46 +253,27 @@ components:
       name: session_id
       in: path
       required: true
-      schema:
-        type: string
+      schema: {type: string}
   schemas:
     CreateSessionRequest:
       type: object
       properties:
-        title:
-          type: string
-          nullable: true
-        genre:
-          type: string
-          default: ''
-        language:
-          type: string
-          default: ru
-        tone:
-          type: string
-          nullable: true
-        setting_request:
-          type: string
-          default: ''
-        protagonist_request:
-          type: string
-          default: ''
-        romance_request:
-          type: string
-          nullable: true
-        rating:
-          type: string
-          nullable: true
+        title: {type: string, nullable: true}
+        genre: {type: string, default: ''}
+        language: {type: string, default: ru}
+        tone: {type: string, nullable: true}
+        setting_request: {type: string, default: ''}
+        protagonist_request: {type: string, default: ''}
+        romance_request: {type: string, nullable: true}
+        rating: {type: string, nullable: true}
         avoid:
           type: array
-          items:
-            type: string
+          items: {type: string}
         extra:
           type: object
+          properties: {}
           additionalProperties: true
-        raw_start_text:
-          type: string
-          nullable: true
+        raw_start_text: {type: string, nullable: true}
         mode:
           type: string
           enum: [gpt_actions, debug_stub]
@@ -304,56 +281,39 @@ components:
     CreateSessionResponse:
       type: object
       properties:
-        session_id:
-          type: string
-          nullable: true
-        status:
-          type: string
-        mode:
-          type: string
-        bootstrap_prompt:
-          type: string
-          nullable: true
-        questionnaire:
-          type: string
-          nullable: true
+        session_id: {type: string, nullable: true}
+        status: {type: string}
+        mode: {type: string}
+        bootstrap_prompt: {type: string, nullable: true}
+        questionnaire: {type: string, nullable: true}
         files_created:
           type: array
-          items:
-            type: string
+          items: {type: string}
     BootstrapPreviewResponse:
       type: object
       properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        preview:
-          type: string
-        can_confirm:
-          type: boolean
+        session_id: {type: string}
+        status: {type: string}
+        preview: {type: string}
+        can_confirm: {type: boolean}
         diagnostics:
           type: object
+          properties: {}
           additionalProperties: true
     BootstrapConfirmResponse:
       type: object
       properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        committed:
-          type: boolean
+        session_id: {type: string}
+        status: {type: string}
+        committed: {type: boolean}
         files_created:
           type: array
-          items:
-            type: string
+          items: {type: string}
     TurnRequest:
       type: object
       required: [player_input]
       properties:
-        player_input:
-          type: string
+        player_input: {type: string}
         mode:
           type: string
           enum: [gpt_actions, debug_stub]
@@ -361,33 +321,30 @@ components:
     TurnResponse:
       type: object
       properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        scene:
-          type: string
-          nullable: true
-        scene_prompt:
-          type: string
-          nullable: true
+        session_id: {type: string}
+        status: {type: string}
+        scene: {type: string, nullable: true}
+        scene_prompt: {type: string, nullable: true}
         diagnostics:
           type: object
+          properties: {}
           additionalProperties: true
     ApplyTurnResultResponse:
       type: object
       properties:
-        session_id:
-          type: string
-        status:
-          type: string
+        session_id: {type: string}
+        status: {type: string}
         applied:
           type: object
+          properties: {}
           additionalProperties: true
         rejected:
           type: array
           items:
             type: object
+            properties: {}
+            additionalProperties: true
         next_builder_hints:
           type: object
+          properties: {}
           additionalProperties: true
