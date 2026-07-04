@@ -4,6 +4,10 @@
   "tone": "",
   "main_premise": "",
   "act_structure": [],
+  "status_slots": [
+    {"id": "story_slot_1", "label": "Поле истории 1", "description": "Заполняется при bootstrap", "initial_value": "не задано"},
+    {"id": "story_slot_2", "label": "Поле истории 2", "description": "Заполняется при bootstrap", "initial_value": "не задано"}
+  ],
   "forbidden_drift": [],
   "current_story_position": "act_1_start"
 }

@@ -37,7 +37,7 @@ class StateUpdater:
         scene_state_patch = updates.get("scene_state_patch", {})
 
         # Current state patch.
-        for key in ["date", "time", "location", "scene_goal", "active_character_ids", "nearby_character_ids", "environment"]:
+        for key in ["date", "time", "location", "scene_goal", "active_character_ids", "nearby_character_ids", "environment", "status"]:
             if key in scene_state_patch:
                 current_state[key] = scene_state_patch[key]
                 applied["current_state"].append({"field": key, "operation": "replace"})
@@ -99,7 +99,7 @@ class StateUpdater:
         history_entry = {
             "turn": current_state["turn_number"],
             "summary": scene_response.get("summary", ""),
-            "visible_scene_text": scene.get("body", ""),
+            "visible_scene_text": scene.get("rendered_text") or scene.get("body", ""),
             "important_facts": scene_response.get("important_facts", []),
             "witnesses": scene_response.get("witnesses", current_state.get("active_character_ids", [])),
             "created_at": now_iso(),

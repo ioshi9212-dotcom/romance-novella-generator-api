@@ -19,6 +19,38 @@ def _knowledge_boundary(knowledge: dict[str, Any], character_id: str) -> dict[st
     }
 
 
+def _display_name(characters: dict[str, Any], character_id: str) -> str:
+    card = _get_character(characters, character_id)
+    if not card:
+        return character_id
+    return card.get("name") or character_id
+
+
+def _normalise_status(current_state: dict[str, Any], story_plan: dict[str, Any]) -> dict[str, Any]:
+    status = current_state.get("status") or {}
+    status_slots = story_plan.get("status_slots") or []
+
+    custom = status.get("custom") or []
+    if len(custom) < 2:
+        custom = []
+        for index in range(2):
+            slot = status_slots[index] if index < len(status_slots) else {}
+            custom.append({
+                "id": slot.get("id", f"story_slot_{index + 1}"),
+                "label": slot.get("label", f"Поле истории {index + 1}"),
+                "value": slot.get("initial_value", "не задано"),
+            })
+
+    return {
+        "hunger": status.get("hunger", "норма"),
+        "fatigue": status.get("fatigue", "низкая"),
+        "injuries": status.get("injuries", []),
+        "emotional_state": status.get("emotional_state", "нейтрально"),
+        "skills": status.get("skills", []),
+        "custom": custom[:2],
+    }
+
+
 def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None) -> dict[str, Any]:
     current_state = bundle.get("current_state", {})
     characters = bundle.get("characters", {})
@@ -31,54 +63,83 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
 
     active_ids = current_state.get("active_character_ids", []) or []
     nearby_ids = current_state.get("nearby_character_ids", []) or []
-    pov_id = current_state.get("pov_character_id") or "protagonist"
+    player_id = current_state.get("player_character_id") or current_state.get("player_character_character_id") or "protagonist"
 
-    focus_ids = []
-    for cid in [pov_id, *active_ids, *nearby_ids]:
+    # Focus controls what the model can use. Active controls what the footer may display.
+    focus_ids: list[str] = []
+    for cid in [player_id, *active_ids, *nearby_ids]:
         if cid and cid not in focus_ids:
             focus_ids.append(cid)
+
+    scene_ids: list[str] = []
+    for cid in [player_id, *active_ids]:
+        if cid and cid not in scene_ids:
+            scene_ids.append(cid)
 
     loaded_characters = []
     for cid in focus_ids:
         card = _get_character(characters, cid)
         if not card:
             continue
+        load_reason = ["player_character"] if cid == player_id else (["physically_present"] if cid in scene_ids else ["nearby_context"])
         loaded_characters.append({
             "character_id": cid,
             "display_name": card.get("name", cid),
-            "load_reason": ["pov"] if cid == pov_id else ["physically_present"],
+            "load_reason": load_reason,
             "card": card,
         })
 
     loaded_relationships = []
+    visible_relationship_pair_ids: list[str] = []
+
     for i, a in enumerate(focus_ids):
         for b in focus_ids[i + 1:]:
             pid = pair_id(a, b)
-            if pid in relationships:
-                loaded_relationships.append({
-                    "pair_id": pid,
-                    "load_reason": ["both_present"],
-                    "content": relationships[pid],
-                })
+            if pid not in relationships:
+                continue
+
+            both_in_scene = a in scene_ids and b in scene_ids
+            load_reason = ["both_present"] if both_in_scene else ["nearby_context"]
+
+            loaded_relationships.append({
+                "pair_id": pid,
+                "display_label": f"{_display_name(characters, a)} ↔ {_display_name(characters, b)}",
+                "load_reason": load_reason,
+                "visible_in_footer": both_in_scene,
+                "content": relationships[pid],
+            })
+            if both_in_scene:
+                visible_relationship_pair_ids.append(pid)
 
     boundaries = [_knowledge_boundary(knowledge, cid) for cid in focus_ids if cid in knowledge]
+    status = _normalise_status(current_state, story_plan)
+    status_slots = story_plan.get("status_slots") or status.get("custom", [])
 
     return {
         "contract_version": "novella.scene_contract.v1",
         "session_id": bundle.get("session", {}).get("session_id"),
         "current_frame": {
-            "pov_character_id": pov_id,
+            "player_character_id": player_id,
+            "player_display_name": _display_name(characters, player_id),
             "date": current_state.get("date"),
             "time": current_state.get("time"),
             "location": current_state.get("location"),
+            "weather": current_state.get("weather", ""),
+            "scene_state": current_state.get("scene_state", ""),
+            "outfit": current_state.get("outfit", ""),
+            "inventory": current_state.get("inventory", []),
+            "nearby_items": current_state.get("nearby_items", []),
             "scene_goal": current_state.get("scene_goal"),
             "last_player_input": player_input if player_input is not None else current_state.get("last_player_input", ""),
             "active_character_ids": active_ids,
+            "active_character_display_names": [_display_name(characters, cid) for cid in active_ids],
             "nearby_character_ids": nearby_ids,
             "environment": current_state.get("environment", {}),
+            "status": status,
         },
         "loaded_characters": loaded_characters,
         "loaded_relationships": loaded_relationships,
+        "visible_relationship_pair_ids": visible_relationship_pair_ids,
         "knowledge_boundaries": boundaries,
         "story_compass": {
             "genre": story_plan.get("genre"),
@@ -87,20 +148,41 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "active_act": story_plan.get("act_structure", [])[:1],
             "forbidden_drift": story_plan.get("forbidden_drift", []),
         },
+        "status_slots": status_slots[:2] if isinstance(status_slots, list) else [],
         "recent_scene_history": scene_history[-5:] if isinstance(scene_history, list) else [],
         "future_locks": {
             "do_not_reveal_yet": future_locks.get("do_not_reveal_yet", []),
             "hidden_character_seeds": future_locks.get("hidden_character_seeds", []),
         },
         "continuity": continuity,
+        "player_input_rules": {
+            "outside_parentheses": "spoken dialogue by the player character",
+            "inside_parentheses": "action/thought/pause/remark, not spoken unless explicit quoted speech",
+            "preserve_order": "dialogue/action/dialogue order from player input must be preserved",
+            "neutral_player_character_answer_allowed_only_if": "low-stakes, obvious from state, no relationship/story weight",
+            "important_answer_must_remain_player_choice": True,
+        },
         "output_requirements": {
             "response_schema": "schemas/scene_response.schema.json",
             "state_update_mode": "propose_patch_only",
+            "visible_scene_format": {
+                "header_required": True,
+                "header_format": "Academy-style: story/date, time/location, weather, scene_state, player character visible state, outfit, inventory; no POV/Focus/active character list",
+                "dialogue_format": "**Name** — Dialogue. *(remark)* More dialogue.",
+                "player_options": {"thoughts": 3, "dialogue": 3, "actions": 3},
+                "status_panel_required_fields": ["hunger", "fatigue", "injuries", "emotional_state", "skills"],
+                "custom_status_slots": 2,
+                "relationships_panel": "show only visible_relationship_pair_ids or directly affected current-scene pairs",
+                "forbidden_header_fields": ["POV", "pov", "focus", "active_characters", "active_character_ids"],
+            },
             "rules": [
                 "Не делать важный выбор за игрока.",
                 "Не менять locked-анкету персонажа через сцену.",
                 "NPC знает только то, что есть в knowledge/scene/relationship.",
                 "Новые важные NPC сохраняются через proposed_updates.new_or_updated_characters.",
+                "Сохранять порядок ввода игрока: реплика -> скобки -> реплика.",
+                "Показывать отношения внизу только по персонажам текущей сцены.",
+                "В шапке не показывать POV / Фокус / В сцене / active_character_ids.",
             ],
         },
     }

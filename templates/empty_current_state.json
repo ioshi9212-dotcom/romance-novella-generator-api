@@ -3,15 +3,41 @@
   "date": "Day 1",
   "time": "",
   "location": "",
-  "pov_character_id": "protagonist",
-  "active_character_ids": ["protagonist"],
+  "weather": "",
+  "scene_state": "",
+  "active_character_ids": [
+    "protagonist"
+  ],
   "nearby_character_ids": [],
   "scene_goal": "",
   "last_player_input": "",
+  "outfit": "",
+  "inventory": [],
+  "nearby_items": [],
   "environment": {
     "light": "",
     "sound": "",
     "air": "",
     "details": []
-  }
+  },
+  "status": {
+    "hunger": "норма",
+    "fatigue": "низкая",
+    "injuries": [],
+    "emotional_state": "нейтрально",
+    "skills": [],
+    "custom": [
+      {
+        "id": "story_slot_1",
+        "label": "Поле истории 1",
+        "value": "не задано"
+      },
+      {
+        "id": "story_slot_2",
+        "label": "Поле истории 2",
+        "value": "не задано"
+      }
+    ]
+  },
+  "player_character_id": "protagonist"
 }

@@ -6,7 +6,7 @@ import os
 
 class Settings(BaseModel):
     data_dir: Path = Path(os.getenv("DATA_DIR", "./data"))
-    engine_version: str = os.getenv("ENGINE_VERSION", "novella-generator-starter-v1")
+    engine_version: str = os.getenv("ENGINE_VERSION", "novella-generator-starter-v2")
     default_language: str = os.getenv("DEFAULT_LANGUAGE", "ru")
 
 

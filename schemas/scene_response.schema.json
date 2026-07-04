@@ -20,15 +20,197 @@
     "scene": {
       "type": "object",
       "required": [
+        "header",
         "body",
-        "footer"
+        "player_options",
+        "status_panel",
+        "relationships_panel",
+        "rendered_text"
       ],
       "properties": {
+        "header": {
+          "type": "object",
+          "required": [
+            "story_title",
+            "date",
+            "time",
+            "location",
+            "weather",
+            "scene_state",
+            "player_name",
+            "visible_state",
+            "outfit",
+            "inventory"
+          ],
+          "properties": {
+            "story_title": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "weather": {
+              "type": "string"
+            },
+            "scene_state": {
+              "type": "string"
+            },
+            "visible_state": {
+              "type": "string"
+            },
+            "outfit": {
+              "type": "string"
+            },
+            "inventory": {
+              "type": "string"
+            },
+            "player_name": {
+              "type": "string"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "pov"
+                ]
+              },
+              {
+                "required": [
+                  "focus"
+                ]
+              },
+              {
+                "required": [
+                  "active_characters"
+                ]
+              },
+              {
+                "required": [
+                  "active_character_ids"
+                ]
+              }
+            ]
+          }
+        },
         "body": {
           "type": "string"
         },
-        "footer": {
-          "type": "object"
+        "player_options": {
+          "type": "object",
+          "required": [
+            "thoughts",
+            "dialogue",
+            "actions"
+          ],
+          "properties": {
+            "thoughts": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "string"
+              }
+            },
+            "dialogue": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "string"
+              }
+            },
+            "actions": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "status_panel": {
+          "type": "object",
+          "required": [
+            "hunger",
+            "fatigue",
+            "injuries",
+            "emotional_state",
+            "skills",
+            "custom"
+          ],
+          "properties": {
+            "hunger": {
+              "type": "string"
+            },
+            "fatigue": {
+              "type": "string"
+            },
+            "injuries": {
+              "type": "string"
+            },
+            "emotional_state": {
+              "type": "string"
+            },
+            "skills": {
+              "type": "string"
+            },
+            "custom": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "label",
+                  "value"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "relationships_panel": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "label",
+              "value"
+            ],
+            "properties": {
+              "pair_id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "rendered_text": {
+          "type": "string"
         }
       }
     },
@@ -59,7 +241,36 @@
       }
     },
     "safety_checks": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "used_only_loaded_characters": {
+          "type": "boolean"
+        },
+        "respected_knowledge_boundaries": {
+          "type": "boolean"
+        },
+        "no_hidden_future_reveal": {
+          "type": "boolean"
+        },
+        "respected_player_input_order": {
+          "type": "boolean"
+        },
+        "showed_only_scene_relationships": {
+          "type": "boolean"
+        },
+        "header_has_no_focus_or_active_list": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "no_major_player_character_choice": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }

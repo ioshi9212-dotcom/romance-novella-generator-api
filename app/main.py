@@ -15,7 +15,7 @@ from app.turn_processor import process_turn_local_stub, process_turn_manual
 from app.validators import validate_bootstrap_result, validate_scene_response
 
 
-app = FastAPI(title="Romance Novella Generator API", version="starter-v1")
+app = FastAPI(title="Romance Novella Generator API", version="starter-v2")
 
 
 @app.get("/health")
@@ -33,6 +33,14 @@ def health() -> dict:
 def create_session(request: CreateSessionRequest) -> dict:
     manager = SessionManager()
     return manager.create_session(request)
+
+
+@app.get("/api/v1/start-questionnaire")
+def get_start_questionnaire() -> dict:
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "prompts" / "start_questionnaire.md"
+    return {"questionnaire": path.read_text(encoding="utf-8")}
 
 
 @app.get("/api/v1/sessions")

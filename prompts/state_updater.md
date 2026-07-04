@@ -26,3 +26,8 @@ ChatGPT не пишет state напрямую.
 - locked base character card;
 - жанр и основной тон без запроса пользователя;
 - скрытую будущую правду без сценического триггера.
+
+
+## Header/state fields
+
+Если сцена изменила игровой кадр, обновляй через `scene_state_patch`: date, time, location, weather, scene_state, outfit, inventory, nearby_items. Не меняй одежду/инвентарь без видимого действия или причины.

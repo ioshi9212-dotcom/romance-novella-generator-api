@@ -25,6 +25,19 @@ def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
     if protagonist and protagonist.get("id") not in (characters or {}):
         errors.append("protagonist.id must exist inside characters")
 
+    story_plan = data.get("story_plan") or {}
+    status_slots = story_plan.get("status_slots") or []
+    if len(status_slots) != 2:
+        errors.append("story_plan.status_slots must contain exactly 2 story-specific slots")
+
+    current_state = data.get("current_state") or {}
+    status = current_state.get("status") or {}
+    for key in ["hunger", "fatigue", "injuries", "emotional_state", "skills", "custom"]:
+        if key not in status:
+            errors.append(f"current_state.status missing key: {key}")
+    if len(status.get("custom") or []) != 2:
+        errors.append("current_state.status.custom must contain exactly 2 story-specific slots")
+
     return errors
 
 

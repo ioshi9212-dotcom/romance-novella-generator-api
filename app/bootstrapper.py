@@ -33,6 +33,13 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - Не создавай три файла main/character/knowledge.
 - Не раскрывай будущих важных персонажей полностью, если героиня/герой их ещё не знает.
 - Для неизвестных будущих фигур делай только seed.
+- Создай ровно два story-specific status slots для нижнего блока сцены.
+- В current_state обязательно заполни: date, time, location, weather, scene_state, outfit, inventory, nearby_items.
+- В current_state.status обязательно заполни: hunger, fatigue, injuries, emotional_state, skills, custom[2].
+- Будущие сцены должны поддерживать шапку, 3 мысли, 3 реплики, 3 действия, состояние и отношения в сцене.
+
+ЕСЛИ ДАННЫХ СЛИШКОМ МАЛО:
+- Если запрос похож только на «начнем/начнём/старт», верни анкету из prompts/start_questionnaire.md вместо случайного bootstrap.
 
 ЗАПРОС ПОЛЬЗОВАТЕЛЯ:
 {user_request}
@@ -79,6 +86,7 @@ def local_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "отвечает спокойнее, чем чувствует",
             "трогает рукав, когда нервничает"
         ],
+        "skills": ["наблюдательность", "самоконтроль"],
         "connections": [
             {"character_id": mother_id, "relation": "mother", "summary": "Любят друг друга, но избегают прямых разговоров."},
             {"character_id": friend_id, "relation": "old friend", "summary": "Дружба сохранилась, но между ними есть пропущенные годы."},
@@ -262,6 +270,20 @@ def local_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
                 "must_happen": ["одна старая ложь или ошибка выходит наружу", "отношения меняются, но не чинятся мгновенно"]
             }
         ],
+        "status_slots": [
+            {
+                "id": "story_slot_1",
+                "label": "Репутация в городе",
+                "description": "Как местные воспринимают возвращение героини и слухи вокруг неё.",
+                "initial_value": "нейтрально, но слухи могут всплыть"
+            },
+            {
+                "id": "story_slot_2",
+                "label": "Давление старой тайны",
+                "description": "Насколько близко сцена подходит к скрытой причине прошлого конфликта.",
+                "initial_value": "низкое"
+            }
+        ],
         "forbidden_drift": [
             "не решать главный конфликт слишком рано",
             "не делать NPC терапевтами",
@@ -276,16 +298,32 @@ def local_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "date": "Day 1",
         "time": "17:40",
         "location": "автостанция у маленького приморского города",
-        "pov_character_id": protagonist_id,
+        "weather": "пасмурно, холодный ветер с моря",
+        "scene_state": "мокрый асфальт, остывающий автобус, редкие машины, город кажется знакомым и чужим",
+        "player_character_id": protagonist_id,
         "active_character_ids": [protagonist_id],
         "nearby_character_ids": [],
         "scene_goal": "Начать историю с возвращения героини и дать игроку почувствовать место.",
         "last_player_input": "",
+        "outfit": "старая тёмная куртка, свитер, дорожные ботинки",
+        "inventory": ["телефон", "сумка", "билет", "ключи"],
+        "nearby_items": ["старое табло", "закрытый цветочный киоск", "остановившийся автобус"],
         "environment": {
             "light": "пасмурный вечер",
             "sound": "остывающий автобус, чайки, редкие машины",
             "air": "соль, мокрый асфальт, холодный ветер",
             "details": ["старое табло", "закрытый цветочный киоск", "море между домами"]
+        },
+        "status": {
+            "hunger": "лёгкий голод",
+            "fatigue": "средняя после дороги",
+            "injuries": [],
+            "emotional_state": "собранная, закрытая",
+            "skills": ["наблюдательность", "самоконтроль"],
+            "custom": [
+                {"id": "story_slot_1", "label": "Репутация в городе", "value": "нейтрально, но слухи могут всплыть"},
+                {"id": "story_slot_2", "label": "Давление старой тайны", "value": "низкое"}
+            ]
         }
     }
 
@@ -294,7 +332,7 @@ def local_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "session_id": session_id,
             "title": user_request.get("title") or "Untitled novella",
             "status": "active",
-            "engine_version": "novella-generator-starter-v1",
+            "engine_version": "novella-generator-starter-v4",
             "created_at": now_iso(),
             "updated_at": now_iso()
         },

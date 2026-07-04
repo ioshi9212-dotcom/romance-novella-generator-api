@@ -23,7 +23,30 @@
       ]
     },
     "current_frame": {
-      "type": "object"
+      "type": "object",
+      "required": [
+        "player_character_id",
+        "date",
+        "time",
+        "location",
+        "scene_goal",
+        "last_player_input",
+        "status"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "pov_character_id"
+            ]
+          },
+          {
+            "required": [
+              "pov_display_name"
+            ]
+          }
+        ]
+      }
     },
     "loaded_characters": {
       "type": "array"
@@ -37,6 +60,11 @@
     "story_compass": {
       "type": "object"
     },
+    "status_slots": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2
+    },
     "recent_scene_history": {
       "type": "array"
     },
@@ -44,6 +72,9 @@
       "type": "object"
     },
     "continuity": {
+      "type": "object"
+    },
+    "player_input_rules": {
       "type": "object"
     },
     "output_requirements": {
