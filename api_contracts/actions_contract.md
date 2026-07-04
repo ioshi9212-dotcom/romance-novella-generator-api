@@ -1,82 +1,53 @@
-# Actions Contract — v8
+# GPT Actions Contract — v9
 
-Custom GPT вызывает Railway API как Actions. Railway не пишет художественный текст самостоятельно, кроме debug_stub. Railway хранит state, собирает scene_contract, валидирует JSON и применяет патчи.
+Custom GPT is the writer. Railway stores memory, validates JSON, builds scene prompts, and applies state updates.
 
-## Auth
+## Required launch flow
 
-Если в Railway задан `API_KEY`, GPT Action должен отправлять header:
+1. User says `начнем` or gives too little setup.
+2. GPT calls `getStartQuestionnaire`.
+3. User answers the questionnaire in one message.
+4. GPT calls `createSession` with `mode: gpt_actions`.
+5. Railway returns `bootstrap_prompt` and `session_id`; session status is `bootstrap_pending`.
+6. GPT creates bootstrap JSON, but does not save active state.
+7. GPT calls `createBootstrapPreview`.
+8. Railway validates bootstrap JSON, saves it as `pending_bootstrap.json`, returns human-readable `preview`, and marks session `bootstrap_review_pending`.
+9. GPT shows preview to user and waits.
+10. If user asks edits, GPT revises bootstrap JSON and calls `createBootstrapPreview` again.
+11. If user confirms, GPT calls `confirmBootstrapPreview`.
+12. Railway commits state files and session becomes `active`.
+13. GPT may now call `processTurn` with `(начать первую сцену)`.
 
-```txt
-X-API-Key: <secret>
-```
+## Hard rules
 
-`/health` открыт без ключа.
+- Do not call `applyBootstrapResult` during normal Custom GPT launch flow. It is legacy/direct save.
+- Do not call `processTurn` before `confirmBootstrapPreview` succeeds.
+- Do not show raw bootstrap JSON to the user unless they explicitly ask.
+- Show only the preview during setup review.
+- After normal turns, show only `scene.rendered_text`.
 
-## Required flow
-
-### 1. Create session
-
-```txt
-POST /api/v1/sessions
-```
-
-Если ответ:
-
-```json
-{"status":"needs_questionnaire"}
-```
-
-показать пользователю `questionnaire` и не создавать историю.
-
-Если ответ:
-
-```json
-{"status":"bootstrap_pending"}
-```
-
-GPT должен сгенерировать bootstrap JSON из `bootstrap_prompt`.
-
-### 2. Apply bootstrap
+## State layout after confirm
 
 ```txt
-POST /api/v1/sessions/{session_id}/bootstrap-result
+characters/<character_id>.json
+state/knowledge/<character_id>.json
+state/relationship_pairs/<a>__<b>.json
+story_plan.json
+current_state.json
 ```
 
-После успеха session becomes `active`.
+## Bootstrap JSON must include
 
-### 3. Turn
+- protagonist
+- characters
+- relationships
+- knowledge
+- story_plan
+- current_state
+- npc_state
+- future_locks
+- continuity
+- scene_history
+- turns
 
-```txt
-POST /api/v1/sessions/{session_id}/turn
-```
-
-Возвращает `scene_prompt`. GPT пишет `scene_response` JSON.
-
-### 4. Apply turn result
-
-```txt
-POST /api/v1/sessions/{session_id}/apply-turn-result
-```
-
-Railway валидирует и сохраняет state. Пользователю показывается только `scene.rendered_text`.
-
-## Gates
-
-`scene-contract`, `turn`, `apply-turn-result` работают только если session status = `active`.
-
-## Validation rules
-
-Bootstrap and scene responses are validated by JSON Schema plus semantic validators:
-
-- names must be Latin script and non-Russian;
-- knowledge patches require `reason` and `source_in_scene`;
-- relationship patches require `pair_id`, `change_type`, `entry`, `reason`, `source_in_scene`;
-- locked character cards cannot change immutable fields.
-
-## Visible scene header
-
-No `POV`, no `Фокус`, no `В сцене`, no active_character_ids.
-
-## Naming
-
-All generated character `name` values must use Latin script and non-Russian naming style.
+`story_plan` must include `setting_summary`, `main_premise`, `protagonist_start`, `player_goal`, `central_conflict`, `central_question`, `opening_scene_intent`, `act_structure`, `character_arcs`, `relationship_focus`, `open_threads`, `forbidden_drift`, `current_story_position`, `status_slots`.

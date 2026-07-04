@@ -26,8 +26,8 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 ВАЖНО:
 - Это генератор, готового канона нет.
 - GitHub хранит только правила, схемы, шаблоны и сборщик.
-- Конкретные персонажи, лор, отношения, знания и сюжет создаются здесь и сохраняются в state конкретной Railway-сессии.
-- Не используй персонажей из 1206, Академии, Акиры, Райдена, Хару или любых готовых историй.
+- Конкретные персонажи, лор, отношения, знания и сюжет создаются здесь. Сначала они показываются пользователю как preview, и только после подтверждения сохраняются в state конкретной Railway-сессии.
+- Не используй персонажей, имена, id, лор или связи из старых новелл, старых сессий или любых готовых историй.
 - Один персонаж = одна короткая анкета в `characters/<character_id>.json`.
 - Создай для каждого значимого персонажа свой уникальный `character_id` внутри этой сессии.
 - Не используй заранее заданные id и имена из готовых историй.
@@ -36,10 +36,10 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - Для значимых персонажей заполни goal, habits, likes_in_people, dislikes_in_people, relationship_triggers.
 - Имена и фамилии персонажей должны быть не русскими, не славянскими, латиницей, в западно-японской/англо-японской стилистике.
 - Не используй кириллицу в поле name. Не копируй имена из примеров, чужих новелл или старых сессий.
-- `character_id` — машинный id этой сессии: например `pc_01`, `friend_01`, `npc_7f3a`, `love_interest_01`. Он создаётся в bootstrap и дальше используется для карточки, знаний и отношений.
+- `character_id` — машинный id этой сессии. Он создаётся в bootstrap и дальше используется для карточки, знаний и отношений. Не привязывай id к готовым именам.
 - Не раскрывай будущих важных персонажей полностью, если персонаж игрока их ещё не знает.
 - Для неизвестных будущих фигур делай только seed в future_locks.hidden_character_seeds, без имени и без полной карточки.
-- Создай ровно два story-specific status slots для нижнего блока сцены.
+- Создай подробный story_plan: setting_summary, main_premise, protagonist_start, player_goal, central_conflict, central_question, opening_scene_intent, act_structure, character_arcs, relationship_focus, open_threads, forbidden_drift и ровно два story-specific status slots.
 - В current_state обязательно заполни: date, time, location, weather, scene_state, outfit, inventory, nearby_items.
 - В current_state.status обязательно заполни: hunger, fatigue, injuries, emotional_state, skills, custom[2].
 - Будущие сцены должны поддерживать игровую шапку без POV, 3 мысли, 3 реплики, 3 действия, состояние и отношения в сцене.
@@ -51,7 +51,7 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 ЗАПРОС ПОЛЬЗОВАТЕЛЯ:
 {user_request}
 
-Верни СТРОГО JSON без markdown по схеме prompts/bootstrap_story.md.
+Верни СТРОГО JSON без markdown по схеме prompts/bootstrap_story.md. Не пиши первую сцену: этот JSON сначала будет превращён в preview для подтверждения пользователя.
 """.strip()
 
 

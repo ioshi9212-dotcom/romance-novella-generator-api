@@ -294,3 +294,150 @@ def test_scene_response_rejects_knowledge_patch_without_source():
     response = client.post(f"/api/v1/sessions/{session_id}/apply-turn-result", json={"scene_response": scene_response})
     assert response.status_code == 422
     assert "source_in_scene" in str(response.json()["detail"])
+
+
+def _valid_bootstrap():
+    return {
+        "protagonist": {"id": "pc_01", "name": "Generated Person", "role": "player_character"},
+        "characters": {
+            "pc_01": {
+                "id": "pc_01",
+                "name": "Generated Person",
+                "role": "player_character",
+                "age": 26,
+                "introduced": True,
+                "known_to_player": True,
+                "locked": True,
+                "appearance": {"height": "average", "build": "lean", "hair": "dark", "eyes": "gray", "face": "calm", "style": "simple coat"},
+                "personality": {"core": ["guarded", "observant"], "flaws": ["cuts off hard conversations"], "speech": "short, dry"},
+                "goal": "find out why she was called back",
+                "past_short": "Returned to a place she left after a difficult break.",
+                "habits": ["checks exits", "answers too calmly"],
+                "likes_in_people": ["directness", "restraint"],
+                "dislikes_in_people": ["pressure", "false pity"],
+                "relationship_triggers": {"improves_when": ["given space"], "worsens_when": ["cornered with questions"]},
+                "skills": ["observation"],
+                "connections": [{"character_id": "contact_01", "relation": "old contact", "summary": "They know each other but do not trust easily."}],
+            },
+            "contact_01": {
+                "id": "contact_01",
+                "name": "Generated Contact",
+                "role": "old_contact",
+                "age": 28,
+                "introduced": True,
+                "known_to_player": True,
+                "locked": True,
+                "appearance": {"height": "tall", "build": "spare", "hair": "black", "eyes": "brown", "face": "tired", "style": "work jacket"},
+                "personality": {"core": ["blunt", "practical"], "flaws": ["assumes the worst"], "speech": "dry and clipped"},
+                "goal": "keep the situation controlled",
+                "past_short": "Knows the player character from before.",
+                "habits": ["checks the time", "keeps near the door"],
+                "likes_in_people": ["honesty", "competence"],
+                "dislikes_in_people": ["evasiveness", "public scenes"],
+                "relationship_triggers": {"improves_when": ["clear answers"], "worsens_when": ["dodged questions"]},
+                "skills": ["local knowledge"],
+                "connections": [{"character_id": "pc_01", "relation": "old contact", "summary": "Unfinished tension."}],
+            },
+        },
+        "relationships": {
+            "contact_01__pc_01": {
+                "pair_id": "contact_01__pc_01",
+                "character_a": "contact_01",
+                "character_b": "pc_01",
+                "type": "old_contact",
+                "status": "tense but familiar",
+                "scores": {"trust": 35, "tension": 60, "attachment": 20, "respect": 45, "fear": 0, "curiosity": 55},
+                "a_view_of_b": {"summary": "contact_01 thinks pc_01 hides something", "current_assumption": "she came back unwillingly"},
+                "b_view_of_a": {"summary": "pc_01 sees contact_01 as useful but intrusive", "current_assumption": "he will ask too much"},
+                "shared_history": [],
+                "recent_changes": [],
+                "open_threads": ["why she returned"],
+            }
+        },
+        "knowledge": {
+            "pc_01": {"character_id": "pc_01", "known_facts": [], "observations": [], "assumptions": [], "wrong_beliefs": [], "does_not_know": [], "must_not_assume": [], "recent_memories": [], "open_questions": [], "knows": []},
+            "contact_01": {"character_id": "contact_01", "known_facts": [], "observations": [], "assumptions": [], "wrong_beliefs": [], "does_not_know": [], "must_not_assume": [], "recent_memories": [], "open_questions": [], "knows": []},
+        },
+        "story_plan": {
+            "genre": "slow-burn drama",
+            "language": "ru",
+            "tone": "adult, restrained, dry irony when fitting",
+            "setting_summary": "small coastal city",
+            "main_premise": "A guarded person returns after an old message.",
+            "protagonist_start": "player character works freelance and arrives with little luggage",
+            "player_goal": "understand why she was called back",
+            "central_conflict": "old trust and new pressure collide",
+            "central_question": "who sent the message and why now",
+            "opening_scene_intent": "arrive at the station and meet the old contact",
+            "act_structure": [{"act": 1, "goal": "arrival and discomfort", "must_happen": ["arrival", "first contact"], "must_not_resolve_yet": ["message origin"]}],
+            "character_arcs": {"pc_01": {"start_point": "guarded", "pressure": "return", "possible_direction": "learn to choose who to trust"}},
+            "relationship_focus": [{"pair_id": "contact_01__pc_01", "starting_dynamic": "tense familiarity", "slow_burn_rule": "do not soften too early"}],
+            "status_slots": [
+                {"id": "story_slot_1", "label": "Риск слухов", "description": "public attention", "initial_value": "низкий"},
+                {"id": "story_slot_2", "label": "Давление прошлого", "description": "old pressure", "initial_value": "среднее"},
+            ],
+            "open_threads": ["message origin"],
+            "forbidden_drift": ["instant reconciliation"],
+            "current_story_position": "act_1_start",
+        },
+        "current_state": {
+            "turn_number": 0,
+            "date": "Day 1",
+            "time": "21:10",
+            "location": "station",
+            "weather": "cold rain",
+            "scene_state": "arrival before first conversation",
+            "player_character_id": "pc_01",
+            "active_character_ids": ["pc_01"],
+            "nearby_character_ids": ["contact_01"],
+            "scene_goal": "start first scene",
+            "last_player_input": "",
+            "outfit": "dark coat",
+            "inventory": ["phone", "bag"],
+            "nearby_items": ["ticket machine"],
+            "environment": {"light": "cold lamps", "sound": "rain", "air": "wet", "details": []},
+            "status": {"hunger": "норма", "fatigue": "средняя", "injuries": [], "emotional_state": "сдержанно", "skills": ["observation"], "custom": [
+                {"id": "story_slot_1", "label": "Риск слухов", "value": "низкий"},
+                {"id": "story_slot_2", "label": "Давление прошлого", "value": "среднее"},
+            ]},
+        },
+        "npc_state": {},
+        "future_locks": {},
+        "continuity": {},
+        "scene_history": [],
+        "turns": [],
+    }
+
+
+def test_bootstrap_preview_requires_confirmation_before_scene_contract():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "slow-burn drama",
+        "setting_request": "small coastal city",
+        "protagonist_request": "guarded adult heroine",
+        "mode": "gpt_actions",
+    }).json()
+    session_id = created["session_id"]
+    assert created["status"] == "bootstrap_pending"
+
+    before = client.get(f"/api/v1/sessions/{session_id}/scene-contract")
+    assert before.status_code == 409
+
+    preview = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()})
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["status"] == "bootstrap_review_pending"
+    assert "Черновик новеллы" in body["preview"]
+    assert "Главная героиня" in body["preview"]
+
+    still_blocked = client.get(f"/api/v1/sessions/{session_id}/scene-contract")
+    assert still_blocked.status_code == 409
+
+    confirmed = client.post(f"/api/v1/sessions/{session_id}/bootstrap-confirm")
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "active"
+
+    after = client.get(f"/api/v1/sessions/{session_id}/scene-contract")
+    assert after.status_code == 200
+    contract = after.json()
+    assert contract["current_frame"]["player_character_id"] == "pc_01"

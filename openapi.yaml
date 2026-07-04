@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Romance Novella Generator API
-  version: gpt-actions-v8
-  description: Railway API used by a Custom GPT as memory, context builder, validator, and state storage for generated novella sessions. The Custom GPT is the writer; Railway stores and validates state.
+  version: gpt-actions-v9
+  description: Railway API used by a Custom GPT as memory, context builder, validator, preview gate, and state storage for generated novella sessions. The Custom GPT is the writer; Railway stores and validates state only after user confirmation.
 servers:
   - url: https://YOUR-RAILWAY-DOMAIN.up.railway.app
     description: Replace with your Railway public domain.
@@ -139,6 +139,49 @@ paths:
                 type: object
         '422':
           description: Bootstrap JSON failed schema or naming validation.
+  /api/v1/sessions/{session_id}/bootstrap-preview:
+    post:
+      operationId: createBootstrapPreview
+      summary: Validate and store GPT-generated bootstrap JSON as a review preview, without activating the session.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bootstrap_json]
+              properties:
+                bootstrap_json:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Preview ready. Show preview to the user and wait for confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapPreviewResponse'
+        '422':
+          description: Bootstrap JSON failed schema or naming validation.
+        '409':
+          description: Session is not in bootstrap_pending/bootstrap_review_pending status.
+  /api/v1/sessions/{session_id}/bootstrap-confirm:
+    post:
+      operationId: confirmBootstrapPreview
+      summary: Commit the pending bootstrap preview after explicit user confirmation, creating character/state files and activating the session.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Bootstrap committed and session became active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapConfirmResponse'
+        '409':
+          description: No bootstrap preview is waiting for confirmation.
   /api/v1/sessions/{session_id}/scene-contract:
     get:
       operationId: getSceneContract
@@ -274,6 +317,33 @@ components:
         questionnaire:
           type: string
           nullable: true
+        files_created:
+          type: array
+          items:
+            type: string
+    BootstrapPreviewResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        status:
+          type: string
+        preview:
+          type: string
+        can_confirm:
+          type: boolean
+        diagnostics:
+          type: object
+          additionalProperties: true
+    BootstrapConfirmResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        status:
+          type: string
+        committed:
+          type: boolean
         files_created:
           type: array
           items:

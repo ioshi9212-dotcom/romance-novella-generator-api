@@ -33,6 +33,25 @@ class BootstrapResultRequest(BaseModel):
     bootstrap_json: dict[str, Any]
 
 
+class BootstrapPreviewRequest(BaseModel):
+    bootstrap_json: dict[str, Any]
+
+
+class BootstrapPreviewResponse(BaseModel):
+    session_id: str
+    status: str
+    preview: str
+    can_confirm: bool = True
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class BootstrapConfirmResponse(BaseModel):
+    session_id: str
+    status: str
+    committed: bool = True
+    files_created: list[str] = Field(default_factory=list)
+
+
 class TurnRequest(BaseModel):
     player_input: str
     mode: SessionMode = "gpt_actions"

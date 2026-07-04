@@ -1,40 +1,71 @@
-# Romance Novella Generator API — GPT Actions v8
+# Romance Novella Generator API — GPT Actions v9
 
 Генератор интерактивных новелл для связки:
 
 ```txt
-Custom GPT = писатель сцены
-Railway API = память, state, проверки, сборка контекста
+Custom GPT = писатель и сборщик bootstrap-preview
+Railway API = память, state, проверки, preview gate, сборка контекста
 GitHub = код, правила, схемы, промпты, шаблоны
 ```
 
-В репозитории нет готового канона, готовых персонажей, готового лора или готовой истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume.
+В репозитории нет готового канона, персонажей, лора или истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume только после подтверждения пользователем.
 
-## Что изменилось в v8
+## Что изменилось в v9
 
-- Убраны готовые имена/персонажи из примеров и debug-данных.
-- Каждый персонаж создаётся внутри конкретной сессии и получает свой `character_id`.
-- Карточка персонажа хранится как `characters/<character_id>.json`.
-- Знания хранятся как `state/knowledge/<character_id>.json`.
-- Отношения хранятся как `state/relationship_pairs/<a>__<b>.json`.
-- Knowledge теперь субъективный: saw/heard/remembered_quote/interpreted_as/assumptions/wrong_beliefs.
-- Relationship pair хранит направленные взгляды: `a_view_of_b` и `b_view_of_a`.
-- Builder грузит только нужные карточки, знания и пары в scene_contract.
-- Updater сохраняет только затронутые файлы знаний/отношений/персонажей.
+- Добавлен обязательный launch-flow с preview перед первой сценой.
+- `createBootstrapPreview` валидирует и сохраняет `pending_bootstrap.json`, но не активирует игру.
+- `confirmBootstrapPreview` после явного подтверждения пользователя раскладывает персонажей/знания/отношения по state-файлам и активирует сессию.
+- Первая сцена пишется только после подтверждения preview.
+- `story_plan.json` усилен: цель новеллы, цель героини, центральный конфликт, центральный вопрос, opening intent, character_arcs, relationship_focus, open_threads.
+- Сохранена архитектура v8: персонажи и их state создаются динамически внутри каждой сессии по generated `character_id`.
 
 ## Railway variables
 
 ```env
 DATA_DIR=/app/runtime
-ENGINE_VERSION=novella-generator-gpt-actions-v8
+ENGINE_VERSION=novella-generator-gpt-actions-v9
 DEFAULT_LANGUAGE=ru
 API_KEY=your-long-random-secret
 ```
+
+`DATA_DIR` должен указывать на Railway Volume mount path. Если volume примонтирован в `/app/runtime`, оставляй `DATA_DIR=/app/runtime`.
 
 Если `API_KEY` задан, все endpoints кроме `/health` требуют header:
 
 ```txt
 X-API-Key: your-long-random-secret
+```
+
+## Launch flow
+
+```txt
+User: начнем
+↓
+GPT calls GET /api/v1/start-questionnaire
+↓
+User answers questionnaire in one message
+↓
+GPT calls POST /api/v1/sessions
+↓
+API returns bootstrap_prompt, session remains bootstrap_pending
+↓
+GPT creates bootstrap JSON but DOES NOT save active state
+↓
+GPT calls POST /api/v1/sessions/{session_id}/bootstrap-preview
+↓
+API validates JSON and returns human-readable preview
+↓
+User confirms or asks edits
+↓
+If edits: GPT creates revised bootstrap JSON and calls bootstrap-preview again
+↓
+If confirmed: GPT calls POST /api/v1/sessions/{session_id}/bootstrap-confirm
+↓
+API writes state files and session becomes active
+↓
+GPT calls POST /api/v1/sessions/{session_id}/turn with player_input="(начать первую сцену)"
+↓
+GPT writes scene_response, calls apply-turn-result, shows scene.rendered_text
 ```
 
 ## Session state layout
@@ -46,6 +77,13 @@ DATA_DIR/
       session.json
       user_request.json
       protagonist.json
+      story_plan.json
+      current_state.json
+      npc_state.json
+      future_locks.json
+      continuity.json
+      scene_history.json
+      turns.json
       characters_index.json
       characters/
         <character_id>.json
@@ -56,76 +94,13 @@ DATA_DIR/
           <character_id>.json
         relationship_pairs/
           <a>__<b>.json
-      story_plan.json
-      current_state.json
-      npc_state.json
-      future_locks.json
-      continuity.json
-      scene_history.json
-      turns.json
 ```
 
-Один персонаж = одна короткая анкета. Никаких `main.yaml / character.yaml / knowledge.yaml / past.yaml`.
+Один персонаж = одна короткая карточка в `characters/<character_id>.json`.
 
-## Dynamic IDs
+Знания = субъективная память конкретного персонажа в `state/knowledge/<character_id>.json`: что видел, слышал, как понял, что запомнил, где может ошибаться.
 
-Нельзя заранее создавать файлы персонажей, потому что генератор не знает персонажей до bootstrap. GPT создаёт персонажей, выдаёт им id, и уже по этим id Railway создаёт файлы.
-
-Пример формата id:
-
-```txt
-pc_01
-friend_01
-family_01
-npc_<shortid>
-love_interest_01
-```
-
-Это не готовые персонажи, а только формат id.
-
-## Knowledge
-
-Знание — не объективная истина, а память конкретного персонажа.
-
-Файл:
-
-```txt
-state/knowledge/<character_id>.json
-```
-
-Хранит:
-
-```txt
-known_facts
-observations: saw / heard / remembered_quote / interpreted_as / emotional_marker
-assumptions
-wrong_beliefs
-does_not_know
-must_not_assume
-recent_memories
-open_questions
-```
-
-## Relationships
-
-Отношения — парный файл:
-
-```txt
-state/relationship_pairs/<a>__<b>.json
-```
-
-Хранит:
-
-```txt
-scores: trust/tension/attachment/respect/fear/curiosity
-a_view_of_b
-b_view_of_a
-shared_history
-recent_changes
-open_threads
-```
-
-В нижнем блоке сцены показываются только пары, где оба персонажа в сцене или прямо затронуты текущим ходом.
+Отношения = парный файл `state/relationship_pairs/<a>__<b>.json` с общими scores и направленными взглядами `a_view_of_b` / `b_view_of_a`.
 
 ## Visible scene format
 
@@ -142,7 +117,11 @@ open_threads
 ━━━━━━━━━━━━━━━━━━━━
 ```
 
-В шапке нельзя: `POV`, `Фокус`, `В сцене`, active ids, скрытые отношения, будущие роли.
+Диалог:
+
+```md
+**Name** — Реплика. *(короткая ремарка)* Продолжение реплики.
+```
 
 ## Main endpoints
 
@@ -154,32 +133,12 @@ GET  /api/v1/sessions
 GET  /api/v1/sessions/latest
 GET  /api/v1/sessions/{session_id}
 GET  /api/v1/sessions/{session_id}/memory
-POST /api/v1/sessions/{session_id}/bootstrap-result
+POST /api/v1/sessions/{session_id}/bootstrap-preview
+POST /api/v1/sessions/{session_id}/bootstrap-confirm
+POST /api/v1/sessions/{session_id}/bootstrap-result   # legacy/direct save, не основной GPT-flow
 GET  /api/v1/sessions/{session_id}/scene-contract
 POST /api/v1/sessions/{session_id}/turn
 POST /api/v1/sessions/{session_id}/apply-turn-result
-```
-
-## Startup flow
-
-```txt
-User gives setup / says начнем
-↓
-GPT calls POST /api/v1/sessions
-↓
-If status = needs_questionnaire, show questionnaire
-↓
-If status = bootstrap_pending, GPT generates bootstrap JSON from bootstrap_prompt
-↓
-GPT calls POST /bootstrap-result
-↓
-Session becomes active
-↓
-For each player turn:
-  POST /turn → get scene_prompt
-  GPT writes scene_response JSON
-  POST /apply-turn-result → save state
-  show final scene text to user
 ```
 
 ## Local run

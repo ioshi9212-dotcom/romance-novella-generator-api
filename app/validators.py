@@ -95,6 +95,28 @@ def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
         errors.extend(_validate_display_name(protagonist.get("name"), "protagonist"))
 
     story_plan = data.get("story_plan") or {}
+    required_story_plan = [
+        "genre",
+        "language",
+        "tone",
+        "setting_summary",
+        "main_premise",
+        "protagonist_start",
+        "player_goal",
+        "central_conflict",
+        "central_question",
+        "opening_scene_intent",
+        "act_structure",
+        "character_arcs",
+        "relationship_focus",
+        "open_threads",
+        "forbidden_drift",
+        "current_story_position",
+        "status_slots",
+    ]
+    for key in required_story_plan:
+        if key not in story_plan:
+            errors.append(f"story_plan missing key: {key}")
     status_slots = story_plan.get("status_slots") or []
     if len(status_slots) != 2:
         errors.append("story_plan.status_slots must contain exactly 2 story-specific slots")

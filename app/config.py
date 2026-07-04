@@ -6,7 +6,7 @@ import os
 
 class Settings(BaseModel):
     data_dir: Path = Path(os.getenv("DATA_DIR", "./data"))
-    engine_version: str = os.getenv("ENGINE_VERSION", "novella-generator-gpt-actions-v8")
+    engine_version: str = os.getenv("ENGINE_VERSION", "novella-generator-gpt-actions-v9")
     default_language: str = os.getenv("DEFAULT_LANGUAGE", "ru")
     api_key: str | None = os.getenv("API_KEY") or None
 

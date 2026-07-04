@@ -5,6 +5,9 @@ from app.models import (
     ApplyTurnResultRequest,
     ApplyTurnResultResponse,
     BootstrapResultRequest,
+    BootstrapPreviewRequest,
+    BootstrapPreviewResponse,
+    BootstrapConfirmResponse,
     CreateSessionRequest,
     CreateSessionResponse,
     TurnRequest,
@@ -16,7 +19,7 @@ from app.turn_processor import process_turn_debug_stub, process_turn_gpt_actions
 from app.validators import validate_bootstrap_result, validate_scene_response
 
 
-app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v8")
+app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v9")
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -112,6 +115,32 @@ def apply_bootstrap_result(session_id: str, request: BootstrapResultRequest) -> 
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/api/v1/sessions/{session_id}/bootstrap-preview", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)])
+def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) -> dict:
+    errors = validate_bootstrap_result(request.bootstrap_json)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    manager = SessionManager()
+    try:
+        return manager.save_bootstrap_preview(session_id, request.bootstrap_json)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.post("/api/v1/sessions/{session_id}/bootstrap-confirm", response_model=BootstrapConfirmResponse, dependencies=[Depends(require_api_key)])
+def confirm_bootstrap_preview(session_id: str) -> dict:
+    manager = SessionManager()
+    try:
+        return manager.confirm_bootstrap_preview(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @app.get("/api/v1/sessions/{session_id}/scene-contract", dependencies=[Depends(require_api_key)])
