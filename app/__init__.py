@@ -1,1 +1,0 @@
-"""Living novella generator backend."""
