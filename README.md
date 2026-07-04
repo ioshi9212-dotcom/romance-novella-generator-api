@@ -1,4 +1,4 @@
-# Romance Novella Generator API — GPT Actions v6
+# Romance Novella Generator API — GPT Actions v7
 
 Генератор интерактивных новелл для связки:
 
@@ -10,7 +10,7 @@ GitHub = код, правила, схемы, промпты, шаблоны
 
 В репозитории нет готового канона, персонажей, лора или истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume.
 
-## Что изменилось в v6
+## Что изменилось в v7
 
 - Добавлены усиленные правила сцены и NPC.
 - Добавлены жёсткие naming rules: имена и фамилии не русские, не славянские, только латиницей.
@@ -21,6 +21,10 @@ GitHub = код, правила, схемы, промпты, шаблоны
 - Усилена валидация knowledge/relationship patches: нужен `reason` и `source_in_scene`.
 - Усилен locked-character guard: locked анкеты нельзя менять через обычный scene patch.
 - Обновлён `openapi.yaml` под Custom GPT Actions.
+- Добавлена сухая ирония/лёгкий сарказм в режиссуре без форсирования.
+- Добавлен запрет микрострок и лишнего дробления абзацев.
+- Усилены NPC: разные реакции, неудобные персонажи, запрет психологов/философов.
+- В карточку персонажа добавлены `goal`, `likes_in_people`, `dislikes_in_people`, `relationship_triggers`.
 
 ## Railway variables
 
@@ -28,7 +32,7 @@ GitHub = код, правила, схемы, промпты, шаблоны
 
 ```env
 DATA_DIR=/app/runtime
-ENGINE_VERSION=novella-generator-gpt-actions-v6
+ENGINE_VERSION=novella-generator-gpt-actions-v7
 DEFAULT_LANGUAGE=ru
 API_KEY=your-long-random-secret
 ```

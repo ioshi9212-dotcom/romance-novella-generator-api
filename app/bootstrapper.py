@@ -31,6 +31,7 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - Один персонаж = одна короткая анкета внутри characters.json.
 - Не создавай три файла main/character/knowledge/past на персонажа.
 - Базовые анкеты персонажей должны быть короткими, но полезными для поведения.
+- Для значимых персонажей заполни goal, habits, likes_in_people, dislikes_in_people, relationship_triggers.
 - Имена и фамилии персонажей должны быть не русскими, не славянскими, латиницей, в западно-японской/англо-японской стилистике.
 - Не используй кириллицу в поле name. Примеры: Akira Vale, Raiden Sterling, Haru Foster, Livia Hart, Mika Lawson, Noah Akiyama.
 - Не раскрывай будущих важных персонажей полностью, если персонаж игрока их ещё не знает.

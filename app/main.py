@@ -16,7 +16,7 @@ from app.turn_processor import process_turn_debug_stub, process_turn_gpt_actions
 from app.validators import validate_bootstrap_result, validate_scene_response
 
 
-app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v6")
+app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v7")
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
