@@ -4,8 +4,8 @@ info:
   version: gpt-actions-v9
   description: Railway API used by a Custom GPT as memory, context builder, validator, preview gate, and state storage for generated novella sessions. The Custom GPT is the writer; Railway stores and validates state only after user confirmation.
 servers:
-  - url: https://YOUR-RAILWAY-DOMAIN.up.railway.app
-    description: Replace with your Railway public domain.
+  - url: https://web-production-4310e.up.railway.app
+    description: Railway production
 security:
   - ApiKeyAuth: []
 paths:
