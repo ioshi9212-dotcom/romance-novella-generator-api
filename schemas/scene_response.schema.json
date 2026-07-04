@@ -8,7 +8,10 @@
     "response_version",
     "scene",
     "proposed_updates",
-    "safety_checks"
+    "safety_checks",
+    "summary",
+    "important_facts",
+    "witnesses"
   ],
   "properties": {
     "response_version": {
@@ -230,13 +233,123 @@
           "type": "object"
         },
         "relationship_patches": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "pair_id",
+              "change_type",
+              "entry",
+              "reason",
+              "source_in_scene"
+            ],
+            "properties": {
+              "pair_id": {
+                "type": "string"
+              },
+              "change_type": {
+                "type": "string"
+              },
+              "entry": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "source_in_scene": {
+                "type": "string"
+              },
+              "trust": {
+                "type": "number"
+              },
+              "tension": {
+                "type": "number"
+              },
+              "attachment": {
+                "type": "number"
+              },
+              "respect": {
+                "type": "number"
+              },
+              "fear": {
+                "type": "number"
+              }
+            }
+          }
         },
         "knowledge_patches": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "character_id",
+              "reason",
+              "source_in_scene"
+            ],
+            "properties": {
+              "character_id": {
+                "type": "string"
+              },
+              "add_knows": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "remove_does_not_know": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "add_assumptions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reason": {
+                "type": "string"
+              },
+              "source_in_scene": {
+                "type": "string"
+              }
+            }
+          }
         },
         "new_or_updated_characters": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "name",
+              "role"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "introduced": {
+                "type": "boolean"
+              },
+              "known_to_player": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            }
+          }
         }
       }
     },

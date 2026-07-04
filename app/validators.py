@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 import json
+import re
 from jsonschema import Draft202012Validator
 
 
@@ -12,6 +13,16 @@ REQUIRED_BOOTSTRAP_KEYS = [
     "story_plan",
     "current_state",
 ]
+
+CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+BANNED_RUSSIAN_NAME_PARTS = {
+    "ivan", "petr", "peter", "sergey", "sergei", "alexey", "aleksey", "dmitry", "dimitri",
+    "oleg", "egor", "yegor", "vladimir", "mikhail", "nikolai", "andrei", "andrey",
+    "anastasia", "nastya", "anna", "anya", "ekaterina", "katya", "maria", "masha",
+    "marina", "svetlana", "olga", "tatiana", "tatyana", "irina", "ivanov", "ivanova",
+    "petrov", "petrova", "sidorov", "sidorova", "morozov", "morozova", "volkov", "volkova",
+    "sokolov", "sokolova", "kuznetsov", "kuznetsova", "orlov", "orlova",
+}
 
 
 def _schema_path(filename: str) -> Path:
@@ -32,6 +43,33 @@ def _validate_with_schema(data: dict[str, Any], filename: str) -> list[str]:
     return result
 
 
+def _validate_display_name(name: Any, location: str) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(name, str) or not name.strip():
+        errors.append(f"{location}.name must be a non-empty string")
+        return errors
+    stripped = name.strip()
+    if CYRILLIC_RE.search(stripped):
+        errors.append(f"{location}.name must use Latin script only, not Cyrillic: {stripped!r}")
+    parts = {part.lower().strip("-_. '") for part in re.split(r"\s+", stripped) if part.strip()}
+    banned = parts & BANNED_RUSSIAN_NAME_PARTS
+    if banned:
+        errors.append(f"{location}.name looks Russian/Slavic and is not allowed by naming rules: {stripped!r}")
+    if len(stripped.split()) < 2:
+        errors.append(f"{location}.name should include given name and surname, e.g. 'Akira Vale'")
+    return errors
+
+
+def _validate_character_names(characters: Any, prefix: str = "characters") -> list[str]:
+    errors: list[str] = []
+    if not isinstance(characters, dict):
+        return errors
+    for character_id, card in characters.items():
+        if isinstance(card, dict) and "name" in card:
+            errors.extend(_validate_display_name(card.get("name"), f"{prefix}.{character_id}"))
+    return errors
+
+
 def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     errors.extend(_validate_with_schema(data, "bootstrap_output.schema.json"))
@@ -44,9 +82,13 @@ def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
     if characters is not None and not isinstance(characters, dict):
         errors.append("characters must be object keyed by character_id")
 
+    errors.extend(_validate_character_names(characters))
+
     protagonist = data.get("protagonist") or {}
     if protagonist and protagonist.get("id") not in (characters or {}):
         errors.append("protagonist.id must exist inside characters")
+    if protagonist and "name" in protagonist:
+        errors.extend(_validate_display_name(protagonist.get("name"), "protagonist"))
 
     story_plan = data.get("story_plan") or {}
     status_slots = story_plan.get("status_slots") or []
@@ -77,4 +119,26 @@ def validate_scene_response(data: dict[str, Any]) -> list[str]:
         errors.append("missing scene")
     if "proposed_updates" not in data:
         errors.append("missing proposed_updates")
+
+    scene = data.get("scene") or {}
+    header = scene.get("header") or {}
+    if "player_name" in header:
+        errors.extend(_validate_display_name(header.get("player_name"), "scene.header.player_name"))
+
+    updates = data.get("proposed_updates") or {}
+    for index, patch in enumerate(updates.get("knowledge_patches") or []):
+        if not patch.get("source_in_scene"):
+            errors.append(f"proposed_updates.knowledge_patches[{index}].source_in_scene is required")
+        if not patch.get("reason"):
+            errors.append(f"proposed_updates.knowledge_patches[{index}].reason is required")
+
+    for index, patch in enumerate(updates.get("relationship_patches") or []):
+        for key in ["pair_id", "change_type", "entry", "reason", "source_in_scene"]:
+            if not patch.get(key):
+                errors.append(f"proposed_updates.relationship_patches[{index}].{key} is required")
+
+    for index, card in enumerate(updates.get("new_or_updated_characters") or []):
+        if isinstance(card, dict) and "name" in card:
+            errors.extend(_validate_display_name(card.get("name"), f"proposed_updates.new_or_updated_characters[{index}]"))
+
     return errors

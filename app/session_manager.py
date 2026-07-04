@@ -143,3 +143,23 @@ class SessionManager:
 
     def list_sessions(self) -> list[str]:
         return self.storage.list_sessions()
+
+    def get_latest_session_id(self, prefer_active: bool = True) -> str | None:
+        sessions = self.storage.list_sessions()
+        if not sessions:
+            return None
+
+        records: list[tuple[str, str, str]] = []
+        for session_id in sessions:
+            try:
+                session = self.storage.read_json(session_id, "session.json")
+            except FileNotFoundError:
+                continue
+            records.append((session.get("created_at") or session_id, session.get("status") or "", session_id))
+
+        records.sort(reverse=True)
+        if prefer_active:
+            for _, status, session_id in records:
+                if status == "active":
+                    return session_id
+        return records[0][2] if records else None

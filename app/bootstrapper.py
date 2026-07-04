@@ -31,6 +31,8 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - Один персонаж = одна короткая анкета внутри characters.json.
 - Не создавай три файла main/character/knowledge/past на персонажа.
 - Базовые анкеты персонажей должны быть короткими, но полезными для поведения.
+- Имена и фамилии персонажей должны быть не русскими, не славянскими, латиницей, в западно-японской/англо-японской стилистике.
+- Не используй кириллицу в поле name. Примеры: Akira Vale, Raiden Sterling, Haru Foster, Livia Hart, Mika Lawson, Noah Akiyama.
 - Не раскрывай будущих важных персонажей полностью, если персонаж игрока их ещё не знает.
 - Для неизвестных будущих фигур делай только seed в future_locks.hidden_character_seeds.
 - Создай ровно два story-specific status slots для нижнего блока сцены.
@@ -62,7 +64,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
 
     protagonist = {
         "id": protagonist_id,
-        "name": "Тестовый персонаж",
+        "name": "Akira Vale",
         "role": "protagonist",
         "age": 25,
         "introduced": True,
@@ -85,13 +87,13 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "habits": [],
         "skills": ["debug observation"],
         "connections": [
-            {"character_id": support_id, "relation": "debug witness", "summary": "Тестовая связь для проверки отношений."}
+            {"character_id": support_id, "relation": "debug witness", "summary": "Техническая связь для проверки отношений."}
         ]
     }
 
     support_npc = {
         "id": support_id,
-        "name": "Тестовый NPC",
+        "name": "Noah Akiyama",
         "role": "debug witness",
         "age": 30,
         "introduced": False,
@@ -114,7 +116,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "habits": [],
         "skills": [],
         "connections": [
-            {"character_id": protagonist_id, "relation": "debug witness", "summary": "Тестовая связь."}
+            {"character_id": protagonist_id, "relation": "debug witness", "summary": "Техническая связь."}
         ]
     }
 
@@ -190,7 +192,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "session_id": session_id,
         "title": user_request.get("title") or "Debug novella session",
         "status": "active",
-        "engine_version": "novella-generator-gpt-actions-v5",
+        "engine_version": "novella-generator-gpt-actions-v6",
         "created_at": created_at,
         "updated_at": created_at,
     }

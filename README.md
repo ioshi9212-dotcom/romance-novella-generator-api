@@ -1,29 +1,47 @@
-# Romance Novella Generator API — GPT Actions Starter v5
+# Romance Novella Generator API — GPT Actions v6
 
-Стартовая болванка под генератор интерактивных новелл, где **Custom GPT пишет сцену**, а **Railway API хранит память, собирает контекст и сохраняет state**.
+Генератор интерактивных новелл для связки:
 
-## Архитектура
-
-```text
-Custom GPT / ChatGPT Actions = писатель сцены и генератор JSON
-Railway API = state, context builder, validation, save/apply
+```txt
+Custom GPT = писатель сцены
+Railway API = память, state, проверки, сборка контекста
 GitHub = код, правила, схемы, промпты, шаблоны
 ```
 
-В репозитории **нет готовых персонажей, готового лора, готовой истории или канона**.
+В репозитории нет готового канона, персонажей, лора или истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume.
 
-GitHub хранит только:
+## Что изменилось в v6
 
-- FastAPI-движок;
-- OpenAPI-схему для GPT Actions;
-- инструкции для Custom GPT;
-- prompt builder;
-- схемы JSON;
-- правила сцены, NPC, знаний, отношений и agency;
-- шаблоны пустых state-файлов;
-- сохранение и применение patches.
+- Добавлены усиленные правила сцены и NPC.
+- Добавлены жёсткие naming rules: имена и фамилии не русские, не славянские, только латиницей.
+- Предпочтительный стиль имён: западный / японский / англо-японский / японо-западный.
+- Добавлена optional API key protection через `API_KEY` и header `X-API-Key`.
+- Добавлен endpoint `GET /api/v1/sessions/latest`.
+- Добавлены session gates: scene-contract, turn и apply-turn-result работают только для `active` session.
+- Усилена валидация knowledge/relationship patches: нужен `reason` и `source_in_scene`.
+- Усилен locked-character guard: locked анкеты нельзя менять через обычный scene patch.
+- Обновлён `openapi.yaml` под Custom GPT Actions.
 
-Вся конкретная история создаётся при старте новой сессии и хранится в Railway volume:
+## Railway variables
+
+Минимум:
+
+```env
+DATA_DIR=/app/runtime
+ENGINE_VERSION=novella-generator-gpt-actions-v6
+DEFAULT_LANGUAGE=ru
+API_KEY=your-long-random-secret
+```
+
+`DATA_DIR` должен указывать на Railway Volume mount path. Если volume примонтирован в `/app/runtime`, оставляй `DATA_DIR=/app/runtime`.
+
+Если `API_KEY` задан, все endpoints кроме `/health` требуют header:
+
+```txt
+X-API-Key: your-long-random-secret
+```
+
+## Session state layout
 
 ```txt
 DATA_DIR/
@@ -44,8 +62,6 @@ DATA_DIR/
       turns.json
 ```
 
-## Главное правило персонажей
-
 Один персонаж = одна короткая анкета внутри `characters.json`.
 
 Не используется структура готового канона:
@@ -57,51 +73,9 @@ characters/<id>/knowledge.yaml
 characters/<id>/past.yaml
 ```
 
-Это был формат готовых историй. Здесь — генератор.
+## Visible scene format
 
-## Режимы
-
-### `gpt_actions`
-
-Основной режим.
-
-Railway не вызывает LLM сам. Custom GPT вызывает Railway как Action:
-
-```text
-player input
-↓
-Railway builds scene_prompt / scene_contract
-↓
-GPT writes scene_response JSON
-↓
-Railway validates and saves proposed_updates
-↓
-GPT shows scene.rendered_text to user
-```
-
-### `debug_stub`
-
-Технический режим без творческой модели. Нужен только для проверки API, файлов, scene_contract и сохранения.
-
-Внутри debug_stub нет канона — только нейтральные placeholder-данные.
-
-## Что изменилось в v5
-
-- Убран внутренний `llm`-режим.
-- `manual_gpt` переименован в `gpt_actions`.
-- `local_stub` переименован в `debug_stub`.
-- Добавлен `openapi.yaml` для подключения GPT Actions.
-- Добавлены `gpt/custom_gpt_instructions.md` и `api_contracts/actions_contract.md`.
-- README очищен от старого v2-формата шапки.
-- Версия обновлена до `novella-generator-gpt-actions-v5`.
-- `StateUpdater` теперь сохраняет `weather`, `scene_state`, `outfit`, `inventory`, `nearby_items`.
-- `validators.py` теперь использует `jsonschema` для проверки schema-файлов.
-- Добавлена авто-логика: если данных мало, API возвращает `needs_questionnaire`.
-- Добавлены тесты на создание сессии, questionnaire, turn, state patch.
-
-## Видимая шапка сцены
-
-Сцена начинается строго так:
+Шапка как в академическом формате, но универсальная и без `POV`, `Фокус`, `В сцене`:
 
 ```md
 🎭 <Название истории> · <дата / день>
@@ -116,48 +90,13 @@ GPT shows scene.rendered_text to user
 ━━━━━━━━━━━━━━━━━━━━
 ```
 
-В шапке нельзя показывать:
-
-- `POV`;
-- `Фокус`;
-- `В сцене`;
-- active character list;
-- technical ids;
-- скрытые отношения;
-- будущие роли;
-- авторские подсказки.
-
-## Формат диалогов
+Диалог:
 
 ```md
-**Имя или видимый дескриптор** — Реплика. *(короткая ремарка)* Продолжение реплики.
+**Name** — Реплика. *(короткая ремарка)* Продолжение реплики.
 ```
 
-Короткое отдельное действие:
-
-```md
-*Дверь закрывается слишком тихо.*
-```
-
-## Ввод игрока
-
-```txt
-Я не вернулась. (посмотреть на дверь) Просто забрала вещи.
-```
-
-Означает:
-
-1. персонаж игрока говорит первую фразу;
-2. потом смотрит на дверь;
-3. потом говорит вторую фразу.
-
-Порядок нельзя переставлять.
-
-Текст в скобках не произносится вслух, если там нет явной прямой речи. NPC не читают мысли и скрытые мотивы.
-
-## Нижний блок сцены
-
-В конце всегда:
+Низ сцены:
 
 ```md
 ━━━━━━━━━━━━━━━━━━━━
@@ -192,125 +131,109 @@ GPT shows scene.rendered_text to user
 ━━━━━━━━━━━━━━━━━━━━
 ```
 
-## Стартовая анкета
+## Naming rules
 
-Если пользователь написал только «начнем» или дал слишком мало данных, API вернёт `needs_questionnaire` или можно вызвать:
+По умолчанию запрещены русские имена и фамилии. Все `name` — латиницей.
 
-```txt
-GET /api/v1/start-questionnaire
-```
-
-Анкета лежит в:
+Хорошо:
 
 ```txt
-prompts/start_questionnaire.md
+Akira Vale
+Raiden Sterling
+Haru Foster
+Livia Hart
+Mika Lawson
+Noah Akiyama
+Yuna Cross
+Ren Carter
+Elias Kurogane
 ```
 
-## Быстрый запуск локально
-
-```bash
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-Проверка:
-
-```bash
-curl http://localhost:8000/health
-```
-
-## Создание debug-сессии
-
-```bash
-curl -X POST http://localhost:8000/api/v1/sessions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "genre": "debug",
-    "setting_request": "debug",
-    "protagonist_request": "debug",
-    "mode": "debug_stub"
-  }'
-```
-
-## Создание GPT Actions-сессии
-
-```bash
-curl -X POST http://localhost:8000/api/v1/sessions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "genre": "modern slow-burn romance",
-    "language": "ru",
-    "tone": "grounded, tense, emotional",
-    "setting_request": "маленький город у моря, бывшие, без магии",
-    "protagonist_request": "взрослая героиня, сдержанная, вернулась домой",
-    "avoid": ["магия", "война", "слишком сладкий тон"],
-    "mode": "gpt_actions"
-  }'
-```
-
-Ответ вернёт `bootstrap_prompt`. Custom GPT должен сгенерировать bootstrap JSON и отправить его в:
+Плохо:
 
 ```txt
-POST /api/v1/sessions/{session_id}/bootstrap-result
+Марина Мор
+Данил Кросс
+Иван Петров
+Анастасия Волкова
+Сергей Морозов
 ```
 
-## Обычный ход
+## Player input rules
 
-```text
-POST /api/v1/sessions/{session_id}/turn
+```txt
+Я не вернулась. (посмотреть на дверь) Просто забрала вещи.
 ```
 
-Тело:
+Это значит:
 
-```json
-{
-  "player_input": "(посмотреть на дверь и прислушаться)",
-  "mode": "gpt_actions"
-}
-```
+1. персонаж игрока говорит первую фразу;
+2. потом смотрит на дверь;
+3. потом говорит вторую фразу.
 
-Railway вернёт `scene_prompt`. GPT пишет `scene_response`, затем вызывает:
+Текст в скобках не произносится вслух, если там нет явной прямой речи в кавычках. NPC не читают мысли в скобках.
 
-```text
-POST /api/v1/sessions/{session_id}/apply-turn-result
-```
-
-Пользователю показывается только `scene.rendered_text`.
-
-## Основные endpoints
+## Main endpoints
 
 ```txt
 GET  /health
 GET  /api/v1/start-questionnaire
 POST /api/v1/sessions
 GET  /api/v1/sessions
+GET  /api/v1/sessions/latest
 GET  /api/v1/sessions/{session_id}
 GET  /api/v1/sessions/{session_id}/memory
-GET  /api/v1/sessions/{session_id}/scene-contract
 POST /api/v1/sessions/{session_id}/bootstrap-result
+GET  /api/v1/sessions/{session_id}/scene-contract
 POST /api/v1/sessions/{session_id}/turn
 POST /api/v1/sessions/{session_id}/apply-turn-result
 ```
 
-## Файлы для Custom GPT
+## Startup flow for Custom GPT
 
-```text
-openapi.yaml
-gpt/custom_gpt_instructions.md
-api_contracts/actions_contract.md
+```txt
+User gives setup / says начнем
+↓
+GPT calls POST /api/v1/sessions
+↓
+If status = needs_questionnaire, show questionnaire
+↓
+If status = bootstrap_pending, GPT generates bootstrap JSON from bootstrap_prompt
+↓
+GPT calls POST /bootstrap-result
+↓
+Session becomes active
+↓
+For each player turn:
+  POST /turn → get scene_prompt
+  GPT writes scene_response JSON
+  POST /apply-turn-result → save state
+  show final scene text to user
 ```
 
-## Тесты
+## Local run
 
 ```bash
-pytest
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-Проверяются:
+Health:
 
-- `/health`;
-- `needs_questionnaire` при пустом старте;
-- создание `debug_stub` сессии;
-- сборка `scene_contract`;
-- debug turn;
-- сохранение `weather/outfit/inventory` через `apply-turn-result`.
+```bash
+curl http://localhost:8000/health
+```
+
+Debug session:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"genre":"debug","setting_request":"debug","protagonist_request":"debug","mode":"debug_stub"}'
+```
+
+## Tests
+
+```bash
+pytest -q
+```

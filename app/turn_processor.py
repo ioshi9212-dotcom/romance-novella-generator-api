@@ -8,6 +8,7 @@ PROMPT_FILES = [
     "prompts/scene_format_rules.md",
     "prompts/player_input_rules.md",
     "prompts/player_character_rules.md",
+    "prompts/name_generation_rules.md",
     "prompts/npc_rules.md",
     "prompts/knowledge_rules.md",
     "prompts/relationship_rules.md",
@@ -18,6 +19,7 @@ PROMPT_FILES = [
     "rules/npc_knowledge_boundary.md",
     "rules/scene_style.md",
     "rules/academy_style_header.md",
+    "rules/naming_rules.md",
 ]
 
 

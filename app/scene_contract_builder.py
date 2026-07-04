@@ -173,6 +173,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
                 "status_panel_required_fields": ["hunger", "fatigue", "injuries", "emotional_state", "skills"],
                 "custom_status_slots": 2,
                 "relationships_panel": "show only visible_relationship_pair_ids or directly affected current-scene pairs",
+                "naming": "Latin-script non-Russian names only; western/Japanese/English-Japanese style",
                 "forbidden_header_fields": ["POV", "pov", "focus", "active_characters", "active_character_ids"],
             },
             "rules": [
@@ -183,6 +184,8 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
                 "Сохранять порядок ввода игрока: реплика -> скобки -> реплика.",
                 "Показывать отношения внизу только по персонажам текущей сцены.",
                 "В шапке не показывать POV / Фокус / В сцене / active_character_ids.",
+                "Имена и фамилии персонажей не русские, латиница, западно-японский/англо-японский стиль.",
+                "Knowledge/relationship patches требуют reason и source_in_scene.",
             ],
         },
     }

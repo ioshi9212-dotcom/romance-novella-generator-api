@@ -1,64 +1,82 @@
-# GPT Actions Contract
+# Actions Contract — v6
 
-Этот API не вызывает LLM изнутри. Custom GPT сам является писателем и вызывает Railway как action/tool.
+Custom GPT вызывает Railway API как Actions. Railway не пишет художественный текст самостоятельно, кроме debug_stub. Railway хранит state, собирает scene_contract, валидирует JSON и применяет патчи.
 
-## Roles
+## Auth
 
-```text
-Custom GPT = writer + JSON producer
-Railway API = memory + context builder + validator + state storage
-GitHub = code + schemas + prompts + rules
+Если в Railway задан `API_KEY`, GPT Action должен отправлять header:
+
+```txt
+X-API-Key: <secret>
 ```
 
-## New session flow
+`/health` открыт без ключа.
 
-```text
-User setup
-↓
-createSession(mode="gpt_actions")
-↓
-if needs_questionnaire: show questionnaire
-↓
-if bootstrap_pending: GPT uses bootstrap_prompt
-↓
-GPT creates bootstrap_json
-↓
-applyBootstrapResult
-↓
-session status active
+## Required flow
+
+### 1. Create session
+
+```txt
+POST /api/v1/sessions
 ```
 
-## Turn flow
+Если ответ:
 
-```text
-player_input
-↓
-processTurn(mode="gpt_actions")
-↓
-Railway returns scene_prompt with rules + SCENE_CONTRACT_JSON
-↓
-GPT writes scene_response JSON
-↓
-applyTurnResult
-↓
-Railway validates and saves updates
-↓
-GPT shows only scene.rendered_text to user
+```json
+{"status":"needs_questionnaire"}
 ```
 
-## No internal LLM mode
+показать пользователю `questionnaire` и не создавать историю.
 
-Do not use an internal `llm` mode in Railway for this project version. The GPT connected through Actions is the creative model.
+Если ответ:
 
-## Modes
+```json
+{"status":"bootstrap_pending"}
+```
 
-- `gpt_actions`: real intended mode for Custom GPT + Railway Actions.
-- `debug_stub`: local technical testing without a creative model.
+GPT должен сгенерировать bootstrap JSON из `bootstrap_prompt`.
 
-## Hard requirements
+### 2. Apply bootstrap
 
-- Never write a scene without a scene prompt or scene contract.
-- Never expose tool JSON/status to the user unless in technical/debug mode.
-- `applyTurnResult` must be called after every meaningful GPT-written scene.
-- Basic character cards are locked; update relationships/knowledge/current_state, not core identity.
-- Visible header must not include POV, Focus, active character list, technical ids.
+```txt
+POST /api/v1/sessions/{session_id}/bootstrap-result
+```
+
+После успеха session becomes `active`.
+
+### 3. Turn
+
+```txt
+POST /api/v1/sessions/{session_id}/turn
+```
+
+Возвращает `scene_prompt`. GPT пишет `scene_response` JSON.
+
+### 4. Apply turn result
+
+```txt
+POST /api/v1/sessions/{session_id}/apply-turn-result
+```
+
+Railway валидирует и сохраняет state. Пользователю показывается только `scene.rendered_text`.
+
+## Gates
+
+`scene-contract`, `turn`, `apply-turn-result` работают только если session status = `active`.
+
+## Validation rules
+
+Bootstrap and scene responses are validated by JSON Schema plus semantic validators:
+
+- names must be Latin script and non-Russian;
+- knowledge patches require `reason` and `source_in_scene`;
+- relationship patches require `pair_id`, `change_type`, `entry`, `reason`, `source_in_scene`;
+- locked character cards cannot change immutable fields.
+
+## Visible scene header
+
+No `POV`, no `Фокус`, no `В сцене`, no active_character_ids.
+
+## Naming
+
+All generated character `name` values must use Latin script and non-Russian naming style.

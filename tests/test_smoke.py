@@ -85,7 +85,7 @@ def test_apply_turn_result_saves_header_state_fields():
                 "location": "new debug room",
                 "weather": "rain",
                 "scene_state": "wet floor",
-                "player_name": "Тестовый персонаж",
+                "player_name": "Akira Vale",
                 "visible_state": "нейтрально",
                 "outfit": "new coat",
                 "inventory": "debug item, key"
@@ -149,3 +149,148 @@ def test_apply_turn_result_saves_header_state_fields():
     assert state["outfit"] == "new coat"
     assert state["inventory"] == ["debug item", "key"]
     assert state["nearby_items"] == ["umbrella"]
+
+
+def test_latest_session_endpoint_returns_active_session():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "debug",
+        "setting_request": "debug",
+        "protagonist_request": "debug",
+        "mode": "debug_stub"
+    }).json()
+    response = client.get("/api/v1/sessions/latest")
+    assert response.status_code == 200
+    assert response.json()["session_id"] == created["session_id"]
+
+
+def test_bootstrap_rejects_cyrillic_character_names():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "romance",
+        "setting_request": "academy near the sea",
+        "protagonist_request": "guarded adult heroine",
+        "mode": "gpt_actions"
+    }).json()
+    session_id = created["session_id"]
+    bad_bootstrap = {
+        "protagonist": {"id": "protagonist", "name": "Марина Мор"},
+        "characters": {"protagonist": {"id": "protagonist", "name": "Марина Мор", "role": "protagonist"}},
+        "relationships": {},
+        "knowledge": {"protagonist": {"knows": [], "does_not_know": [], "must_not_assume": []}},
+        "story_plan": {
+            "genre": "romance",
+            "language": "ru",
+            "tone": "tense",
+            "main_premise": "test",
+            "act_structure": [],
+            "status_slots": [
+                {"id": "story_slot_1", "label": "Risk", "description": "x", "initial_value": "x"},
+                {"id": "story_slot_2", "label": "Trust", "description": "y", "initial_value": "y"}
+            ],
+            "forbidden_drift": [],
+            "current_story_position": "act_1_start"
+        },
+        "current_state": {
+            "turn_number": 0,
+            "date": "Day 1",
+            "time": "10:00",
+            "location": "station",
+            "weather": "rain",
+            "scene_state": "wet platform",
+            "outfit": "coat",
+            "inventory": [],
+            "nearby_items": [],
+            "player_character_id": "protagonist",
+            "active_character_ids": ["protagonist"],
+            "nearby_character_ids": [],
+            "scene_goal": "start",
+            "last_player_input": "",
+            "environment": {},
+            "status": {
+                "hunger": "норма",
+                "fatigue": "низкая",
+                "injuries": [],
+                "emotional_state": "нейтрально",
+                "skills": [],
+                "custom": [
+                    {"id": "story_slot_1", "label": "Risk", "value": "x"},
+                    {"id": "story_slot_2", "label": "Trust", "value": "y"}
+                ]
+            }
+        },
+        "npc_state": {},
+        "future_locks": {},
+        "continuity": {},
+        "scene_history": [],
+        "turns": []
+    }
+    response = client.post(f"/api/v1/sessions/{session_id}/bootstrap-result", json={"bootstrap_json": bad_bootstrap})
+    assert response.status_code == 422
+    assert "Latin script" in str(response.json()["detail"])
+
+
+def test_scene_response_rejects_knowledge_patch_without_source():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "debug",
+        "setting_request": "debug",
+        "protagonist_request": "debug",
+        "mode": "debug_stub"
+    }).json()
+    session_id = created["session_id"]
+    scene_response = {
+        "response_version": "novella.scene_response.v1",
+        "player_input": "test",
+        "scene": {
+            "header": {
+                "story_title": "Debug",
+                "date": "Day 1",
+                "time": "01:00",
+                "location": "room",
+                "weather": "rain",
+                "scene_state": "wet floor",
+                "player_name": "Akira Vale",
+                "visible_state": "neutral",
+                "outfit": "coat",
+                "inventory": "key"
+            },
+            "body": "*Debug.*",
+            "player_options": {"thoughts": ["a", "b", "c"], "dialogue": ["a", "b", "c"], "actions": ["a", "b", "c"]},
+            "status_panel": {
+                "hunger": "ok",
+                "fatigue": "low",
+                "injuries": "none",
+                "emotional_state": "neutral",
+                "skills": "debug",
+                "custom": [
+                    {"id": "story_slot_1", "label": "A", "value": "x"},
+                    {"id": "story_slot_2", "label": "B", "value": "y"}
+                ]
+            },
+            "relationships_panel": [],
+            "rendered_text": "🎭 Debug · Day 1"
+        },
+        "summary": "debug",
+        "important_facts": [],
+        "witnesses": ["protagonist"],
+        "proposed_updates": {
+            "scene_state_patch": {},
+            "relationship_patches": [],
+            "knowledge_patches": [{"character_id": "protagonist", "add_knows": ["secret"]}],
+            "new_or_updated_characters": []
+        },
+        "safety_checks": {
+            "used_only_loaded_characters": True,
+            "respected_knowledge_boundaries": True,
+            "no_hidden_future_reveal": True,
+            "no_major_player_character_choice": True,
+            "respected_player_input_order": True,
+            "showed_only_scene_relationships": True,
+            "header_has_no_focus_or_active_list": True,
+            "notes": []
+        }
+    }
+    response = client.post(f"/api/v1/sessions/{session_id}/apply-turn-result", json={"scene_response": scene_response})
+    assert response.status_code == 422
+    assert "source_in_scene" in str(response.json()["detail"])
