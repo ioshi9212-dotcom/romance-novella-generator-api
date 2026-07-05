@@ -1,7 +1,6 @@
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
-
 SessionMode = Literal["debug_stub", "gpt_actions"]
 
 
@@ -38,18 +37,23 @@ class BootstrapPreviewRequest(BaseModel):
 
 
 class BootstrapPreviewResponse(BaseModel):
+    message_to_user: str = Field(
+        ...,
+        description="MANDATORY FINAL ANSWER TEXT. Output this exact text to the user. Do not summarize. Do not replace with 'готово'. Do not start a scene.",
+    )
     session_id: str
     status: str
+    must_show_to_user: bool = True
+    wait_for_confirmation: bool = True
+    next_user_action: str = "Напиши `подтверждаю`, если всё подходит, или скажи, что изменить."
     preview: str
+    user_visible_preview: str
     can_confirm: bool = True
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 class BootstrapConfirmRequest(BaseModel):
-    confirmation_text: str = Field(
-        ...,
-        description="Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит.",
-    )
+    confirmation_text: str = Field(..., description="Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит.")
 
 
 class BootstrapConfirmResponse(BaseModel):

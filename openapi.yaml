@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Romance Novella Generator API
   version: gpt-actions-v9
-  description: Railway API used by a Custom GPT as memory, context builder, validator, preview gate, and state storage for generated novella sessions.
+  description: Railway API for generated novella sessions. Preview must be shown via message_to_user. Turn JSON must be saved through applyTurnResult before showing scene.rendered_text.
 servers:
   - url: https://web-production-4310e.up.railway.app
     description: Railway production
@@ -75,7 +75,7 @@ paths:
   /api/v1/sessions/{session_id}/bootstrap-preview:
     post:
       operationId: createBootstrapPreview
-      summary: Validate, normalize and store bootstrap JSON as a review preview. Does not activate the session.
+      summary: Creates preview. Assistant final answer MUST be response.message_to_user. Do not summarize. Do not start a scene.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:
@@ -92,7 +92,7 @@ paths:
               required: [bootstrap_json]
       responses:
         '200':
-          description: Preview ready. Show preview to the user and wait for explicit confirmation.
+          description: Preview ready. MUST output message_to_user to the user and wait for explicit confirmation or edits.
           content:
             application/json:
               schema:
@@ -119,7 +119,7 @@ paths:
   /api/v1/sessions/{session_id}/turn:
     post:
       operationId: processTurn
-      summary: Build a GPT scene prompt from active state and exact player input. Fails if session is not active.
+      summary: Build compact scene_prompt. Assistant must generate scene_response internally, then call applyTurnResult, then show only scene.rendered_text.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:
@@ -130,7 +130,7 @@ paths:
               $ref: '#/components/schemas/TurnRequest'
       responses:
         '200':
-          description: Scene prompt or debug scene.
+          description: Compact scene prompt.
           content:
             application/json:
               schema:
@@ -138,7 +138,7 @@ paths:
   /api/v1/sessions/{session_id}/apply-turn-result:
     post:
       operationId: applyTurnResult
-      summary: Validate and apply GPT scene_response JSON to saved state.
+      summary: Validate, normalize and apply GPT scene_response JSON to saved state. After success, assistant must show only scene.rendered_text.
       parameters:
         - $ref: '#/components/parameters/SessionId'
       requestBody:
@@ -209,10 +209,18 @@ components:
           items: {type: string}
     BootstrapPreviewResponse:
       type: object
+      required: [message_to_user, session_id, status, must_show_to_user, wait_for_confirmation]
       properties:
+        message_to_user:
+          type: string
+          description: MANDATORY FINAL ANSWER TEXT. The assistant must output this exact text.
         session_id: {type: string}
         status: {type: string}
+        must_show_to_user: {type: boolean}
+        wait_for_confirmation: {type: boolean}
+        next_user_action: {type: string}
         preview: {type: string}
+        user_visible_preview: {type: string}
         can_confirm: {type: boolean}
         diagnostics:
           type: object
@@ -222,9 +230,7 @@ components:
       type: object
       required: [confirmation_text]
       properties:
-        confirmation_text:
-          type: string
-          description: Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит.
+        confirmation_text: {type: string}
     BootstrapConfirmResponse:
       type: object
       properties:
