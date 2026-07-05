@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 
 SessionMode = Literal["debug_stub", "gpt_actions"]
 
-
 class CreateSessionRequest(BaseModel):
     title: str | None = None
     genre: str = Field(default="")
@@ -18,7 +17,6 @@ class CreateSessionRequest(BaseModel):
     raw_start_text: str | None = None
     mode: SessionMode = "gpt_actions"
 
-
 class CreateSessionResponse(BaseModel):
     session_id: str | None = None
     status: str
@@ -27,20 +25,14 @@ class CreateSessionResponse(BaseModel):
     questionnaire: str | None = None
     files_created: list[str] = Field(default_factory=list)
 
-
 class BootstrapResultRequest(BaseModel):
     bootstrap_json: dict[str, Any]
-
 
 class BootstrapPreviewRequest(BaseModel):
     bootstrap_json: dict[str, Any]
 
-
 class BootstrapPreviewResponse(BaseModel):
-    message_to_user: str = Field(
-        ...,
-        description="MANDATORY FINAL ANSWER TEXT. Output this exact text to the user. Do not summarize. Do not replace with 'готово'. Do not start a scene.",
-    )
+    message_to_user: str = Field(..., description="MANDATORY FINAL ANSWER TEXT. Output this exact text to the user. Do not summarize. Do not replace with 'готово'. Do not start a scene.")
     session_id: str
     status: str
     must_show_to_user: bool = True
@@ -51,10 +43,8 @@ class BootstrapPreviewResponse(BaseModel):
     can_confirm: bool = True
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
-
 class BootstrapConfirmRequest(BaseModel):
     confirmation_text: str = Field(..., description="Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит.")
-
 
 class BootstrapConfirmResponse(BaseModel):
     session_id: str
@@ -62,11 +52,9 @@ class BootstrapConfirmResponse(BaseModel):
     committed: bool = True
     files_created: list[str] = Field(default_factory=list)
 
-
 class TurnRequest(BaseModel):
     player_input: str
     mode: SessionMode = "gpt_actions"
-
 
 class TurnResponse(BaseModel):
     session_id: str
@@ -75,14 +63,15 @@ class TurnResponse(BaseModel):
     scene_prompt: str | None = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
-
 class ApplyTurnResultRequest(BaseModel):
     scene_response: dict[str, Any]
-
 
 class ApplyTurnResultResponse(BaseModel):
     session_id: str
     status: str
+    message_to_user: str = Field(..., description="MANDATORY FINAL ANSWER TEXT after saving a turn. Output this exact text to the user.")
+    rendered_text: str = Field(..., description="Same as message_to_user. Full visible scene with header, body, ending choices, status and relationships.")
+    must_show_to_user: bool = True
     applied: dict[str, Any]
     rejected: list[dict[str, Any]]
     next_builder_hints: dict[str, Any]
