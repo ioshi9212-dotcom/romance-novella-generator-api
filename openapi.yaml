@@ -1,21 +1,179 @@
 openapi: 3.1.0
 info:
   title: Romance Novella Generator API
-  version: gpt-actions-v9
-  description: Railway API for generated novella sessions. Preview and saved scene responses expose message_to_user as the exact text the assistant must show.
+  version: gpt-actions-v9-openapi-actions
+  description: Static fallback schema. Prefer live /openapi-actions.json after deploy.
 servers:
   - url: https://web-production-4310e.up.railway.app
-    description: Railway production
 security:
   - ApiKeyAuth: []
 paths:
+  /health:
+    get:
+      operationId: health
+      summary: Check API health.
+      security: []
+      responses:
+        '200':
+          description: OK
+  /api/v1/start-questionnaire:
+    get:
+      operationId: getStartQuestionnaire
+      summary: Get the visible start questionnaire.
+      responses:
+        '200':
+          description: OK
+  /api/v1/sessions:
+    post:
+      operationId: createSession
+      summary: Create a new generated novella session or return questionnaire.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: [string, 'null'] }
+                genre: { type: string, default: '' }
+                language: { type: string, default: ru }
+                tone: { type: [string, 'null'] }
+                setting_request: { type: string, default: '' }
+                protagonist_request: { type: string, default: '' }
+                romance_request: { type: [string, 'null'] }
+                rating: { type: [string, 'null'] }
+                avoid:
+                  type: array
+                  items: { type: string }
+                extra:
+                  type: object
+                  properties: {}
+                  additionalProperties: true
+                raw_start_text: { type: [string, 'null'] }
+                mode:
+                  type: string
+                  enum: [gpt_actions, debug_stub]
+                  default: gpt_actions
+              additionalProperties: true
+      responses:
+        '200':
+          description: OK
+  /api/v1/sessions/{session_id}/bootstrap-preview:
+    post:
+      operationId: createBootstrapPreview
+      summary: Validate and save pending bootstrap JSON as preview.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bootstrap_json]
+              properties:
+                bootstrap_json:
+                  type: object
+                  properties: {}
+                  additionalProperties: true
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+        '422':
+          description: Invalid bootstrap JSON
+  /api/v1/sessions/{session_id}/bootstrap-confirm:
+    post:
+      operationId: confirmBootstrapPreview
+      summary: Commit pending bootstrap after explicit user confirmation.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmation_text]
+              properties:
+                confirmation_text:
+                  type: string
+                  minLength: 1
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+        '409':
+          description: Not explicitly confirmed
+  /api/v1/sessions/{session_id}/turn:
+    post:
+      operationId: processTurn
+      summary: Build compact scene prompt. Returns turn_id.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [player_input]
+              properties:
+                player_input:
+                  type: string
+                  minLength: 1
+                mode:
+                  type: string
+                  enum: [gpt_actions, debug_stub]
+                  default: gpt_actions
+              additionalProperties: false
+      responses:
+        '200':
+          description: OK
+        '409':
+          description: Session not active
+        '422':
+          description: Empty input
   /api/v1/sessions/{session_id}/apply-turn-result:
     post:
       operationId: applyTurnResult
-      summary: Save scene_response. Assistant final answer MUST be response.message_to_user.
+      summary: Validate and save scene_response. Use turn_id from processTurn.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [turn_id, scene_response]
+              properties:
+                turn_id:
+                  type: [string, 'null']
+                scene_response:
+                  type: object
+                  properties: {}
+                  additionalProperties: true
+              additionalProperties: false
       responses:
         '200':
-          description: State applied and full visible scene returned as message_to_user.
+          description: OK
+        '409':
+          description: Missing, stale, duplicate or mismatched turn_id
+        '422':
+          description: Invalid scene_response
 components:
   securitySchemes:
     ApiKeyAuth:

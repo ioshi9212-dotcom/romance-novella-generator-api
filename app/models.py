@@ -44,7 +44,7 @@ class BootstrapPreviewResponse(BaseModel):
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class BootstrapConfirmRequest(BaseModel):
-    confirmation_text: str = Field(..., description="Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит.")
+    confirmation_text: str = Field(..., min_length=1, description="Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит / начинаем.")
 
 class BootstrapConfirmResponse(BaseModel):
     session_id: str
@@ -53,7 +53,7 @@ class BootstrapConfirmResponse(BaseModel):
     files_created: list[str] = Field(default_factory=list)
 
 class TurnRequest(BaseModel):
-    player_input: str
+    player_input: str = Field(..., min_length=1, description="Exact latest player input. Whitespace-only values are rejected by the route.")
     mode: SessionMode = "gpt_actions"
 
 class TurnResponse(BaseModel):
@@ -61,9 +61,12 @@ class TurnResponse(BaseModel):
     status: str
     scene: str | None = None
     scene_prompt: str | None = None
+    turn_id: str | None = Field(default=None, description="Pending turn id. Pass this value to applyTurnResult.")
+    expected_turn_number: int | None = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class ApplyTurnResultRequest(BaseModel):
+    turn_id: str | None = Field(default=None, description="turn_id returned by processTurn. Required for normal gpt_actions flow.")
     scene_response: dict[str, Any]
 
 class ApplyTurnResultResponse(BaseModel):
