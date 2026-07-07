@@ -242,6 +242,7 @@ def test_openapi_actions_exposes_full_v9_flow():
     assert "/api/v1/sessions/{session_id}/bootstrap-preview" in paths
     assert "/api/v1/sessions/{session_id}/bootstrap-confirm" in paths
     assert "/api/v1/sessions/{session_id}/turn" in paths
+    assert "/api/v1/sessions/{session_id}/turn-prompt-chunk" in paths
     assert "/api/v1/sessions/{session_id}/apply-turn-result" in paths
 
 
@@ -540,4 +541,68 @@ def test_normalizer_removes_dialogue_heading_and_canonicalizes_dialogue():
     assert "Диалог:" not in rendered
     assert "**Кайя** — Нет. *(сухо)*" in rendered
     assert "**Голос снаружи** — Откройте дверь. *(негромко)*" in rendered
+
+
+def test_process_turn_prompt_chunk_endpoint_for_large_context():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "urban mysticism",
+        "setting_request": "oversized archive",
+        "protagonist_request": "guarded adult heroine",
+        "mode": "gpt_actions",
+    })
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+    bootstrap = _valid_bootstrap()
+    # Inflate one loaded character enough that processTurn must chunk the prompt.
+    bootstrap["characters"]["pc_01"]["personality"] = {"summary": "очень длинно " * 2500}
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": bootstrap}).status_code == 200
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-confirm", json={"confirmation_text": "подтверждаю"}).status_code == 200
+
+    turn = client.post(f"/api/v1/sessions/{session_id}/turn", json={"player_input": "(осмотреть дверь)", "mode": "gpt_actions"})
+    assert turn.status_code == 200
+    body = turn.json()
+    assert body["turn_id"]
+    assert body["scene_prompt"]
+    assert body["prompt_chunk_count"] >= 1
+    if body["prompt_chunk_count"] > 1:
+        chunk = client.get(
+            f"/api/v1/sessions/{session_id}/turn-prompt-chunk",
+            params={"turn_id": body["turn_id"], "chunk_index": 1},
+        )
+        assert chunk.status_code == 200
+        assert chunk.json()["chunk_index"] == 1
+        assert chunk.json()["scene_prompt_chunk"]
+
+
+def test_runtime_history_is_compacted_without_full_scene_response():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "urban mysticism",
+        "setting_request": "compact memory test",
+        "protagonist_request": "guarded adult heroine",
+        "mode": "gpt_actions",
+    })
+    session_id = created.json()["session_id"]
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()}).status_code == 200
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-confirm", json={"confirmation_text": "подтверждаю"}).status_code == 200
+
+    for idx in range(16):
+        player_input = f"(тестовый ход {idx})"
+        turn = client.post(f"/api/v1/sessions/{session_id}/turn", json={"player_input": player_input, "mode": "gpt_actions"})
+        assert turn.status_code == 200
+        response = _long_scene_response(player_input)
+        applied = client.post(
+            f"/api/v1/sessions/{session_id}/apply-turn-result",
+            json={"turn_id": turn.json()["turn_id"], "scene_response": response},
+        )
+        assert applied.status_code == 200, applied.text
+
+    from app.session_manager import SessionManager
+    bundle = SessionManager().get_memory(session_id)
+    assert len(bundle["scene_history"]) <= 6
+    assert len(bundle["turns"]) <= 8
+    assert bundle["continuity"].get("memory_chunks")
+    assert all("visible_scene_text" not in item for item in bundle["scene_history"])
+    assert all("scene_response" not in item for item in bundle["turns"])
 

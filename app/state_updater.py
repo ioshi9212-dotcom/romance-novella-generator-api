@@ -3,6 +3,11 @@ from app.id_utils import now_iso
 from app.storage import JsonStorage
 
 
+MAX_RECENT_SCENE_HISTORY = 6
+MAX_RECENT_TURNS = 8
+MAX_MEMORY_CHUNKS = 12
+
+
 def _append_unique(target: list[Any], items: list[Any]) -> list[Any]:
     result = list(target or [])
     for item in items or []:
@@ -15,6 +20,130 @@ def _append_many(target: list[Any], items: list[Any]) -> list[Any]:
     result = list(target or [])
     result.extend(items or [])
     return result
+
+
+def _clip_text(value: Any, limit: int = 500) -> str:
+    text = "" if value is None else str(value)
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _clip_list(items: Any, limit_items: int = 6, text_limit: int = 220) -> list[Any]:
+    if not isinstance(items, list):
+        return []
+    out: list[Any] = []
+    for item in items[:limit_items]:
+        if isinstance(item, str):
+            out.append(_clip_text(item, text_limit))
+        elif isinstance(item, dict):
+            out.append({str(k): _clip_text(v, text_limit) if isinstance(v, str) else v for k, v in item.items()})
+        else:
+            out.append(item)
+    return out
+
+
+def _scene_body_excerpt(scene_response: dict[str, Any], limit: int = 700) -> str:
+    scene = scene_response.get("scene") if isinstance(scene_response, dict) else {}
+    if not isinstance(scene, dict):
+        scene = {}
+    body = scene.get("body") or ""
+    if not body and isinstance(scene.get("rendered_text"), str):
+        body = scene.get("rendered_text", "")
+    return _clip_text(body, limit)
+
+
+def _compact_scene_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    # Legacy entries may contain full visible_scene_text. Never keep it in runtime context.
+    return {
+        "turn": entry.get("turn"),
+        "summary": _clip_text(entry.get("summary", ""), 500),
+        "important_facts": _clip_list(entry.get("important_facts", []), 6, 220),
+        "witnesses": _clip_list(entry.get("witnesses", []), 8, 80),
+        "body_excerpt": _clip_text(entry.get("body_excerpt") or entry.get("visible_scene_excerpt") or entry.get("visible_scene_text") or "", 650),
+        "created_at": entry.get("created_at"),
+    }
+
+
+def _compact_turn_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    scene_response = entry.get("scene_response") if isinstance(entry.get("scene_response"), dict) else {}
+    return {
+        "turn": entry.get("turn"),
+        "player_input": _clip_text(entry.get("player_input") or scene_response.get("player_input") or "", 350),
+        "summary": _clip_text(entry.get("summary") or scene_response.get("summary") or "", 450),
+        "important_facts": _clip_list(entry.get("important_facts") or scene_response.get("important_facts") or [], 5, 180),
+        "witnesses": _clip_list(entry.get("witnesses") or scene_response.get("witnesses") or [], 8, 80),
+        "created_at": entry.get("created_at"),
+    }
+
+
+def _make_memory_chunk(kind: str, scenes: list[dict[str, Any]], turns: list[dict[str, Any]], turn_number: int) -> dict[str, Any] | None:
+    scene_items = [_compact_scene_history_entry(item) for item in scenes if isinstance(item, dict)]
+    turn_items = [_compact_turn_entry(item) for item in turns if isinstance(item, dict)]
+    if not scene_items and not turn_items:
+        return None
+    turn_values = [item.get("turn") for item in [*scene_items, *turn_items] if item.get("turn") is not None]
+    start = min(turn_values) if turn_values else None
+    end = max(turn_values) if turn_values else turn_number
+    return {
+        "chunk_id": f"{kind}_{start or 'x'}_{end or turn_number}",
+        "type": kind,
+        "turn_start": start,
+        "turn_end": end,
+        "created_at": now_iso(),
+        "scene_summaries": [
+            {
+                "turn": item.get("turn"),
+                "summary": item.get("summary", ""),
+                "important_facts": item.get("important_facts", []),
+                "witnesses": item.get("witnesses", []),
+            }
+            for item in scene_items
+        ],
+        "turn_summaries": [
+            {
+                "turn": item.get("turn"),
+                "player_input": item.get("player_input", ""),
+                "summary": item.get("summary", ""),
+            }
+            for item in turn_items
+        ],
+    }
+
+
+def _append_memory_chunk(continuity: dict[str, Any], chunk: dict[str, Any] | None) -> bool:
+    if not chunk:
+        return False
+    continuity.setdefault("memory_chunks", [])
+    existing_ids = {item.get("chunk_id") for item in continuity["memory_chunks"] if isinstance(item, dict)}
+    if chunk.get("chunk_id") not in existing_ids:
+        continuity["memory_chunks"].append(chunk)
+    continuity["memory_chunks"] = continuity.get("memory_chunks", [])[-MAX_MEMORY_CHUNKS:]
+    return True
+
+
+def _trim_continuity(continuity: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(continuity, dict):
+        continuity = {}
+    for key in ("open_threads", "notes", "warnings"):
+        if isinstance(continuity.get(key), list):
+            continuity[key] = _clip_list(continuity[key], 16, 260)
+    continuity["memory_chunks"] = [
+        chunk for chunk in (continuity.get("memory_chunks", []) or []) if isinstance(chunk, dict)
+    ][-MAX_MEMORY_CHUNKS:]
+    continuity["memory_compacts"] = [
+        item for item in (continuity.get("memory_compacts", []) or []) if isinstance(item, dict)
+    ][-6:]
+    continuity["turn_archives"] = [
+        item for item in (continuity.get("turn_archives", []) or []) if isinstance(item, dict)
+    ][-6:]
+    continuity["maintenance_events"] = [
+        item for item in (continuity.get("maintenance_events", []) or []) if isinstance(item, dict)
+    ][-12:]
+    return continuity
 
 
 def _merge_continuity_patch(continuity: dict[str, Any], patch: dict[str, Any], turn_number: int) -> dict[str, Any]:
@@ -32,13 +161,13 @@ def _merge_continuity_patch(continuity: dict[str, Any], patch: dict[str, Any], t
     if isinstance(patch.get("memory_compact"), dict):
         continuity.setdefault("gpt_memory_compacts", [])
         continuity["gpt_memory_compacts"].append({**patch["memory_compact"], "turn": turn_number, "created_at": now_iso()})
-        continuity["gpt_memory_compacts"] = continuity["gpt_memory_compacts"][-20:]
+        continuity["gpt_memory_compacts"] = continuity["gpt_memory_compacts"][-8:]
 
     for key in ["current_arc", "current_act", "last_continuity_check"]:
         if key in patch:
             continuity[key] = patch[key]
 
-    return continuity
+    return _trim_continuity(continuity)
 
 
 def _auto_compact_runtime_history(
@@ -47,51 +176,45 @@ def _auto_compact_runtime_history(
     continuity: dict[str, Any],
     turn_number: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], bool]:
-    """Keep runtime small. Old verbatim scenes are summarized into continuity."""
-    if turn_number <= 0 or turn_number % 15 != 0:
-        return scene_history, turns, continuity, False
+    """Keep Action payload small.
 
+    Every apply sanitizes legacy full-scene entries. At 10 turns we mark a recovery
+    audit window; at 15 turns we compact stale history into memory_chunks. Old
+    verbatim scenes and full scene_response payloads must not remain in runtime
+    context, because processTurn can otherwise exceed Custom GPT Action limits.
+    """
     compacted = False
-    continuity.setdefault("memory_compacts", [])
-    continuity.setdefault("turn_archives", [])
+    continuity = _trim_continuity(continuity)
 
-    if len(scene_history) > 8:
-        old_scenes = scene_history[:-8]
-        continuity["memory_compacts"].append({
-            "up_to_turn": old_scenes[-1].get("turn") if old_scenes else turn_number,
+    scene_history = [_compact_scene_history_entry(item) for item in (scene_history or []) if isinstance(item, dict)]
+    turns = [_compact_turn_entry(item) for item in (turns or []) if isinstance(item, dict)]
+
+    old_scenes = scene_history[:-MAX_RECENT_SCENE_HISTORY]
+    old_turns = turns[:-MAX_RECENT_TURNS]
+    if old_scenes or old_turns:
+        kind = "state_compaction_cleanup" if turn_number > 0 and turn_number % 15 == 0 else "rolling_runtime_compaction"
+        compacted = _append_memory_chunk(continuity, _make_memory_chunk(kind, old_scenes, old_turns, turn_number)) or compacted
+        scene_history = scene_history[-MAX_RECENT_SCENE_HISTORY:]
+        turns = turns[-MAX_RECENT_TURNS:]
+
+    continuity.setdefault("maintenance_events", [])
+    if turn_number > 0 and turn_number % 10 == 0:
+        continuity["maintenance_events"].append({
+            "turn": turn_number,
+            "type": "state_recovery_audit",
             "created_at": now_iso(),
-            "scene_summaries": [
-                {
-                    "turn": item.get("turn"),
-                    "summary": item.get("summary", ""),
-                    "important_facts": item.get("important_facts", []),
-                    "witnesses": item.get("witnesses", []),
-                }
-                for item in old_scenes
-            ],
+            "note": "Review recent scene summaries/knowledge patches for missed durable facts.",
         })
-        scene_history = scene_history[-8:]
+    if turn_number > 0 and turn_number % 15 == 0:
+        continuity["maintenance_events"].append({
+            "turn": turn_number,
+            "type": "state_compaction_cleanup",
+            "created_at": now_iso(),
+            "note": "Compact stale scene/turn details into memory_chunks; keep hooks, sources, relationship changes.",
+        })
         compacted = True
 
-    if len(turns) > 12:
-        old_turns = turns[:-12]
-        continuity["turn_archives"].append({
-            "up_to_turn": old_turns[-1].get("turn") if old_turns else turn_number,
-            "created_at": now_iso(),
-            "turn_summaries": [
-                {
-                    "turn": item.get("turn"),
-                    "player_input": item.get("player_input", ""),
-                    "summary": (item.get("scene_response") or {}).get("summary", ""),
-                }
-                for item in old_turns
-            ],
-        })
-        turns = turns[-12:]
-        compacted = True
-
-    continuity["memory_compacts"] = continuity.get("memory_compacts", [])[-20:]
-    continuity["turn_archives"] = continuity.get("turn_archives", [])[-20:]
+    continuity = _trim_continuity(continuity)
     return scene_history, turns, continuity, compacted
 
 
@@ -282,33 +405,39 @@ class StateUpdater:
                 self.storage.write_character_knowledge(session_id, character_id, {"character_id": character_id, "known_facts": [], "observations": [], "assumptions": [], "wrong_beliefs": [], "does_not_know": [], "must_not_assume": [], "recent_memories": [], "open_questions": [], "knows": [], "history": []})
             applied["characters"].append({"character_id": character_id, "operation": "upsert_card_file"})
 
-        scene = scene_response.get("scene", {})
-        history_entry = {
+        history_entry = _compact_scene_history_entry({
             "turn": turn_number,
             "summary": scene_response.get("summary", ""),
-            "visible_scene_text": scene.get("rendered_text") or scene.get("body", ""),
+            "body_excerpt": _scene_body_excerpt(scene_response, 700),
             "important_facts": scene_response.get("important_facts", []),
             "witnesses": scene_response.get("witnesses", current_state.get("active_character_ids", [])),
             "created_at": now_iso(),
-        }
+        })
         scene_history.append(history_entry)
-        applied["scene_history"].append({"operation": "append", "turn": turn_number})
+        applied["scene_history"].append({"operation": "append_compact", "turn": turn_number})
 
-        turns.append({
+        turns.append(_compact_turn_entry({
             "turn": turn_number,
             "player_input": scene_response.get("player_input", ""),
-            "scene_response": scene_response,
+            "summary": scene_response.get("summary", ""),
+            "important_facts": scene_response.get("important_facts", []),
+            "witnesses": scene_response.get("witnesses", []),
             "created_at": now_iso(),
-        })
-        applied["turns"].append({"operation": "append", "turn": turn_number})
+        }))
+        applied["turns"].append({"operation": "append_compact", "turn": turn_number})
 
         scene_history, turns, continuity, compacted = _auto_compact_runtime_history(scene_history, turns, continuity, turn_number)
         maintenance = {
             "last_saved_turn_number": turn_number,
+            "state_recovery_audit_due": turn_number > 0 and turn_number % 10 == 0,
+            "state_compaction_cleanup_due": turn_number > 0 and turn_number % 15 == 0,
             "continuity_check_required_next": turn_number > 0 and turn_number % 10 == 0,
             "memory_review_required_next": turn_number > 0 and turn_number % 15 == 0,
             "backend_compacted_after_turn": turn_number if compacted else (current_state.get("maintenance") or {}).get("backend_compacted_after_turn"),
             "last_compact_turn": turn_number if compacted else (current_state.get("maintenance") or {}).get("last_compact_turn"),
+            "memory_chunk_count": len(continuity.get("memory_chunks", []) or []),
+            "recent_scene_history_kept": len(scene_history),
+            "recent_turns_kept": len(turns),
             "notes": [],
         }
         current_state["maintenance"] = maintenance

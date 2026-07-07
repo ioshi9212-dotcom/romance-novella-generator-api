@@ -2,6 +2,89 @@ from pathlib import Path
 from typing import Any
 import json
 
+MAX_BUNDLE_SCENE_HISTORY = 6
+MAX_BUNDLE_TURNS = 8
+
+
+def _clip_text(value: Any, limit: int = 500) -> str:
+    text = "" if value is None else str(value)
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _compact_list(items: Any, limit_items: int = 6, text_limit: int = 180) -> list[Any]:
+    if not isinstance(items, list):
+        return []
+    result: list[Any] = []
+    for item in items[:limit_items]:
+        if isinstance(item, str):
+            result.append(_clip_text(item, text_limit))
+        elif isinstance(item, dict):
+            result.append({str(k): _clip_text(v, text_limit) if isinstance(v, str) else v for k, v in item.items()})
+        else:
+            result.append(item)
+    return result
+
+
+def _compact_scene_history_entry(entry: Any) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    return {
+        "turn": entry.get("turn"),
+        "summary": _clip_text(entry.get("summary", ""), 450),
+        "important_facts": _compact_list(entry.get("important_facts", []), 5, 180),
+        "witnesses": _compact_list(entry.get("witnesses", []), 8, 80),
+        "body_excerpt": _clip_text(entry.get("body_excerpt") or entry.get("visible_scene_excerpt") or entry.get("visible_scene_text") or "", 500),
+        "created_at": entry.get("created_at"),
+    }
+
+
+def _compact_turn_entry(entry: Any) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        return {}
+    scene_response = entry.get("scene_response") if isinstance(entry.get("scene_response"), dict) else {}
+    return {
+        "turn": entry.get("turn"),
+        "player_input": _clip_text(entry.get("player_input") or scene_response.get("player_input") or "", 280),
+        "summary": _clip_text(entry.get("summary") or scene_response.get("summary") or "", 360),
+        "important_facts": _compact_list(entry.get("important_facts") or scene_response.get("important_facts") or [], 4, 160),
+        "witnesses": _compact_list(entry.get("witnesses") or scene_response.get("witnesses") or [], 8, 80),
+        "created_at": entry.get("created_at"),
+    }
+
+
+def _compact_memory_chunk(chunk: Any) -> dict[str, Any]:
+    if not isinstance(chunk, dict):
+        return {}
+    return {
+        "chunk_id": chunk.get("chunk_id"),
+        "type": chunk.get("type"),
+        "turn_start": chunk.get("turn_start"),
+        "turn_end": chunk.get("turn_end"),
+        "scene_summaries": _compact_list(chunk.get("scene_summaries", []), 6, 220),
+        "turn_summaries": _compact_list(chunk.get("turn_summaries", []), 6, 180),
+    }
+
+
+def _compact_continuity_for_actions(continuity: Any) -> dict[str, Any]:
+    if not isinstance(continuity, dict):
+        return {}
+    result: dict[str, Any] = {}
+    for key in ("current_arc", "current_act", "last_continuity_check"):
+        if key in continuity:
+            result[key] = continuity[key]
+    for key in ("open_threads", "notes", "warnings"):
+        result[key] = _compact_list(continuity.get(key, []), 10, 240)
+    result["memory_chunks"] = [
+        _compact_memory_chunk(chunk)
+        for chunk in (continuity.get("memory_chunks", []) or [])[-6:]
+        if isinstance(chunk, dict)
+    ]
+    result["maintenance_events"] = _compact_list(continuity.get("maintenance_events", []), 6, 200)
+    result["gpt_memory_compacts"] = _compact_list(continuity.get("gpt_memory_compacts", []), 4, 200)
+    return result
+
+
 
 class JsonStorage:
     def __init__(self, data_dir: Path):
@@ -108,6 +191,20 @@ class JsonStorage:
         for filename in scalar_files:
             default = [] if filename in {"scene_history.json", "turns.json"} else {}
             bundle[filename.removesuffix(".json")] = self.read_json(session_id, filename, default=default)
+
+        # Keep Action payload safe: never expose full old scene text or full scene_response
+        # through runtime bundle. Full rendered text is returned only by applyTurnResult.
+        bundle["scene_history"] = [
+            _compact_scene_history_entry(item)
+            for item in (bundle.get("scene_history") or [])[-MAX_BUNDLE_SCENE_HISTORY:]
+            if isinstance(item, dict)
+        ]
+        bundle["turns"] = [
+            _compact_turn_entry(item)
+            for item in (bundle.get("turns") or [])[-MAX_BUNDLE_TURNS:]
+            if isinstance(item, dict)
+        ]
+        bundle["continuity"] = _compact_continuity_for_actions(bundle.get("continuity", {}))
 
         # v8 runtime layout: one card / knowledge / relationship file per generated id.
         # Legacy fallback remains for older v5-v7 sessions.

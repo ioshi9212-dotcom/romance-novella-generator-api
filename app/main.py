@@ -3,13 +3,13 @@ from typing import Any
 import hashlib
 import uuid
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.openapi.utils import get_openapi
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.config import get_settings
 from app.id_utils import now_iso
-from app.models import ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, TurnRequest, TurnResponse
+from app.models import ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
@@ -84,6 +84,40 @@ def _hash_text(text: str) -> str:
 
 def _new_turn_id() -> str:
     return "turn_" + uuid.uuid4().hex[:12]
+
+
+TURN_PROMPT_CHUNK_SIZE = 12000
+
+
+def _split_prompt_chunks(text: str, chunk_size: int = TURN_PROMPT_CHUNK_SIZE) -> list[str]:
+    text = text or ""
+    if len(text) <= chunk_size:
+        return [text]
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + chunk_size)
+        # Prefer splitting on a newline so JSON/text is easier to rejoin mentally.
+        if end < len(text):
+            newline = text.rfind("\n", start + max(1000, chunk_size // 2), end)
+            if newline > start:
+                end = newline + 1
+        chunks.append(text[start:end])
+        start = end
+    return chunks or [""]
+
+
+def _store_prompt_chunks(manager: SessionManager, session_id: str, pending: dict[str, Any], scene_prompt: str) -> dict[str, Any]:
+    chunks = _split_prompt_chunks(scene_prompt)
+    updated = {
+        **pending,
+        "scene_prompt_sha256": _hash_text(scene_prompt),
+        "prompt_chunk_count": len(chunks),
+        "prompt_chunk_size": TURN_PROMPT_CHUNK_SIZE,
+        "prompt_chunks": chunks,
+    }
+    manager.storage.write_json(session_id, "pending_turn.json", updated)
+    return updated
 
 def _save_pending_turn(manager: SessionManager, session_id: str, player_input: str, expected_turn_number: int) -> dict[str, Any]:
     pending = {
@@ -301,19 +335,80 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
     expected_turn_number = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
     pending = _save_pending_turn(manager, session_id, player_input, expected_turn_number)
     result = process_turn_gpt_actions(bundle, player_input)
+    pending = _store_prompt_chunks(manager, session_id, pending, result["scene_prompt"])
+    chunks = pending.get("prompt_chunks", []) or [result["scene_prompt"]]
+    chunk_count = int(pending.get("prompt_chunk_count") or len(chunks))
+    has_more = chunk_count > 1
+    next_required_action = (
+        "Read all prompt chunks using getTurnPromptChunk, concatenate them in order, then generate scene_response and call applyTurnResult with this turn_id."
+        if has_more
+        else "Generate scene_response, then call applyTurnResult with this turn_id."
+    )
     diagnostics = result["diagnostics"] | {
         "turn_id": pending["turn_id"],
         "expected_turn_number": expected_turn_number,
-        "next_required_action": "Generate scene_response, then call applyTurnResult with this turn_id.",
+        "next_required_action": next_required_action,
+        "prompt_transport": {
+            "chunked": has_more,
+            "chunk_count": chunk_count,
+            "returned_chunk_index": 0,
+            "next_chunk_index": 1 if has_more else None,
+            "scene_prompt_sha256": pending.get("scene_prompt_sha256"),
+        },
     }
+    first_chunk = chunks[0] if chunks else ""
     return {
         "session_id": session_id,
         "status": result["status"],
         "scene": None,
-        "scene_prompt": result["scene_prompt"],
+        "scene_prompt": first_chunk,
+        "scene_prompt_chunk": first_chunk,
+        "prompt_chunk_index": 0,
+        "prompt_chunk_count": chunk_count,
+        "has_more_prompt_chunks": has_more,
+        "next_prompt_chunk_index": 1 if has_more else None,
         "turn_id": pending["turn_id"],
         "expected_turn_number": expected_turn_number,
         "diagnostics": diagnostics,
+    }
+
+
+@app.get("/api/v1/sessions/{session_id}/turn-prompt-chunk", response_model=TurnPromptChunkResponse, dependencies=[Depends(require_api_key)], operation_id="getTurnPromptChunk")
+def get_turn_prompt_chunk(
+    session_id: str,
+    turn_id: str = Query(..., description="turn_id returned by processTurn"),
+    chunk_index: int = Query(..., ge=0, description="Zero-based prompt chunk index."),
+) -> dict:
+    manager = SessionManager()
+    try:
+        pending = _load_pending_turn(manager, session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    if not pending or pending.get("turn_id") != turn_id:
+        raise HTTPException(status_code=409, detail="Missing or mismatched pending turn_id. Call processTurn again.")
+    if pending.get("status") == "applied":
+        raise HTTPException(status_code=409, detail="This turn was already applied. Call processTurn for the next player input.")
+
+    chunks = pending.get("prompt_chunks")
+    if not isinstance(chunks, list) or not chunks:
+        raise HTTPException(status_code=404, detail="No stored prompt chunks for this pending turn.")
+    if chunk_index >= len(chunks):
+        raise HTTPException(status_code=416, detail=f"chunk_index out of range. Available: 0..{len(chunks)-1}")
+
+    has_more = chunk_index < len(chunks) - 1
+    return {
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "chunk_index": chunk_index,
+        "chunk_count": len(chunks),
+        "scene_prompt_chunk": chunks[chunk_index],
+        "has_more": has_more,
+        "next_chunk_index": chunk_index + 1 if has_more else None,
+        "diagnostics": {
+            "scene_prompt_sha256": pending.get("scene_prompt_sha256"),
+            "instruction": "Concatenate scene_prompt_chunk values in index order before generating scene_response.",
+        },
     }
 
 @app.post("/api/v1/sessions/{session_id}/apply-turn-result", response_model=ApplyTurnResultResponse, dependencies=[Depends(require_api_key)], operation_id="applyTurnResult")

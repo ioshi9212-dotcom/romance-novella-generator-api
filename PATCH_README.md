@@ -1,54 +1,74 @@
-# romance-novella-generator-api — v7 scene-format cleanup
+# romance-novella-generator-api — v8 response-size/chunking fix
 
-## Постоянное правило для будущих правок
+## Причина фикса
 
-Не добавлять новые runtime/locks/rules/patch-слои без прямого запроса пользователя.
+`processTurn` мог падать с `ResponseTooLargeError`, потому что runtime-пакет раздувался:
+- `scene_history.json` хранил полный `visible_scene_text`;
+- `turns.json` хранил полный `scene_response`;
+- старые сцены и turn payload могли снова попадать в сборщик контекста;
+- большой `scene_prompt` возвращался одним ответом Action.
 
-Правильный формат фикса:
-- заменить только реально нужные существующие файлы;
-- не плодить новые runtime-файлы;
-- дать ZIP на замену;
-- дать `DELETE_LIST.txt`;
-- если есть старый мусор инструкций — перечислить его отдельно.
+## Что меняет v8
 
-## Что чинит v7
+### 1. Компактная runtime-память
+Теперь после каждого applyTurnResult:
+- в `scene_history.json` сохраняется короткая запись: turn, summary, facts, witnesses, body_excerpt;
+- в `turns.json` сохраняется короткая запись без полного scene_response;
+- старые записи уходят в `continuity.memory_chunks`.
 
-Проблема была в конфликте правил:
-- один prompt говорил делать диалоги внутри body;
-- другой шаблон всё ещё показывал отдельный блок `Диалог:`;
-- `Body: 1800–3500 знаков, 5–9 плотных абзацев` раздувал описание;
-- normalizer мог поддерживать старую структуру с `Диалог:`.
+### 2. 10/15 шагов
+- Каждый 10-й ход выставляет `state_recovery_audit_due`.
+- Каждый 15-й ход выставляет `state_compaction_cleanup_due`.
+- Старые сцены/ходы сжимаются в `memory_chunks`, а не тащатся целиком.
 
-v7 убирает конфликт.
+### 3. Чанки scene_prompt
+`processTurn` теперь безопасно возвращает первый chunk.
+Если prompt большой:
+- response содержит `prompt_chunk_count > 1`;
+- надо вызвать `getTurnPromptChunk` для остальных индексов;
+- потом склеить chunks по порядку и только после этого генерировать scene_response.
 
-## Новые правила сцены
-
-- Диалоги идут внутри body между действиями и реакциями.
-- Никакого отдельного блока `Диалог:`.
-- Нельзя собирать все реплики списком в конце.
-- Формат реплики: `**Имя** — Реплика. *(короткая ремарка)*`
-- Описание голоса отдельно, реплика отдельно.
-- Запрещены гибридные строки: `Снаружи неизвестный говорит — негромко...`, `Голос произносит — официально...`
-- Сцена пишется короткими beat-абзацами, не 5–9 плотными простынями.
-- Описание не должно быть длиннее действий персонажей.
-- NPC не декорации и не прицеп к игроку.
+### 4. Защита от старых сохранений
+Даже если в старой сессии уже есть огромные `visible_scene_text` или полные `scene_response`, `read_session_bundle` не отдаёт их в Action context.
 
 ## Файлы на замену
 
 ```txt
+app/main.py
+app/models.py
+app/novella_openapi_actions.py
+app/storage.py
+app/state_updater.py
+app/scene_contract_builder.py
 app/turn_processor.py
-app/scene_response_normalizer.py
-prompts/scene_format_rules.md
 gpt/custom_gpt_instructions.md
+openapi.yaml
 tests/test_smoke.py
 PATCH_README.md
 DELETE_LIST.txt
 ```
 
-Если какого-то файла нет в твоей ветке, просто пропусти его замену.
+## Важная правка инструкции Custom GPT
 
-## После замены
+Добавь в текущую инструкцию:
+
+```txt
+Если processTurn вернул prompt_chunk_count > 1 или has_more_prompt_chunks=true:
+1. не пиши сцену сразу;
+2. вызови getTurnPromptChunk для chunk_index=1, затем 2 и дальше, пока has_more=false;
+3. склей scene_prompt + все scene_prompt_chunk строго по порядку;
+4. только после этого создай scene_response и вызови applyTurnResult.
+Не проси пользователя сократить ход из-за ResponseTooLargeError.
+```
+
+## Проверка
 
 ```bash
 python -m pytest -q
+```
+
+Ожидаемо:
+
+```txt
+11 passed
 ```

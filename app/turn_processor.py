@@ -6,7 +6,7 @@ from app.scene_contract_builder import build_scene_contract
 COMPACT_SCENE_WRITER_PROMPT = """
 Ты внутри tool-flow. Это НЕ финальный ответ пользователю.
 
-Порядок: создай scene_response JSON по SCENE_CONTRACT_JSON, НЕ показывай JSON и НЕ пиши комментарии перед вызовом API. Сразу вызови applyTurnResult, после успеха покажи response.message_to_user.
+Порядок: если processTurn вернул prompt_chunk_count > 1, сначала прочитай все чанки через getTurnPromptChunk и склей scene_prompt по порядку. Затем создай scene_response JSON по SCENE_CONTRACT_JSON, НЕ показывай JSON и НЕ пиши комментарии перед вызовом API. Сразу вызови applyTurnResult, после успеха покажи response.message_to_user.
 
 Качество сцены:
 - rendered_text должен быть полноценной сценой, не кратким пересказом.
@@ -89,7 +89,7 @@ rendered_text начинается строго:
 Правила: не делай важный выбор за игрока; сохраняй порядок ввода; не раскрывай hidden future; сцена должна иметь meaningful beat; proposed_updates сохраняют только важное. Нижний блок — короткая dashboard-панель, не объяснение сюжета.
 """.strip()
 
-def _clip_text(value: Any, limit: int = 700) -> str:
+def _clip_text(value: Any, limit: int = 520) -> str:
     text = "" if value is None else str(value); text = " ".join(text.split())
     return text if len(text) <= limit else text[:limit-1].rstrip() + "…"
 
@@ -97,7 +97,7 @@ def _clip_list(items: Any, limit_items: int = 6, text_limit: int = 300) -> list[
     if not isinstance(items, list): return []
     return [_compact_dict(x, text_limit=text_limit) if isinstance(x, dict) else _clip_text(x, text_limit) for x in items[:limit_items]]
 
-def _compact_dict(data: dict[str, Any], text_limit: int = 500) -> dict[str, Any]:
+def _compact_dict(data: dict[str, Any], text_limit: int = 320) -> dict[str, Any]:
     result = {}
     for key, value in data.items():
         if isinstance(value, str): result[key] = _clip_text(value, text_limit)
@@ -107,14 +107,25 @@ def _compact_dict(data: dict[str, Any], text_limit: int = 500) -> dict[str, Any]
     return result
 
 def _compact_character_card(card: dict[str, Any]) -> dict[str, Any]:
-    return {"id":card.get("id"), "name":card.get("name"), "display_name":card.get("display_name") or card.get("visible_name") or card.get("name_ru"), "role":card.get("role"), "age":card.get("age"), "introduced":card.get("introduced"), "known_to_player":card.get("known_to_player"), "appearance":_compact_dict(card.get("appearance", {}) if isinstance(card.get("appearance"), dict) else {"summary":card.get("appearance")},350), "personality":_compact_dict(card.get("personality", {}) if isinstance(card.get("personality"), dict) else {"summary":card.get("personality")},350), "goal":_clip_text(card.get("goal"),260), "past_short":_clip_text(card.get("past_short"),350), "habits":_clip_list(card.get("habits"),4,160), "likes_in_people":_clip_list(card.get("likes_in_people"),4,160), "dislikes_in_people":_clip_list(card.get("dislikes_in_people"),4,160), "relationship_triggers":_compact_dict(card.get("relationship_triggers", {}) if isinstance(card.get("relationship_triggers"), dict) else {},220), "skills":_clip_list(card.get("skills"),5,120), "connections":_clip_list(card.get("connections"),5,200)}
+    return {
+        "id": card.get("id"),
+        "name": card.get("name"),
+        "display_name": card.get("display_name") or card.get("visible_name") or card.get("name_ru"),
+        "role": card.get("role"),
+        "introduced": card.get("introduced"),
+        "appearance": _compact_dict(card.get("appearance", {}) if isinstance(card.get("appearance"), dict) else {"summary": card.get("appearance")}, 180),
+        "personality": _compact_dict(card.get("personality", {}) if isinstance(card.get("personality"), dict) else {"summary": card.get("personality")}, 180),
+        "goal": _clip_text(card.get("goal"), 180),
+        "habits": _clip_list(card.get("habits"), 3, 100),
+        "connections": _clip_list(card.get("connections"), 3, 120),
+    }
 
 def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
-    compact = {"contract_version":contract.get("contract_version"), "session_id":contract.get("session_id"), "current_frame":contract.get("current_frame", {}), "status_slots":contract.get("status_slots", [])[:2], "story_compass":_compact_dict(contract.get("story_compass", {}) if isinstance(contract.get("story_compass"), dict) else {},700), "visible_relationship_pair_ids":contract.get("visible_relationship_pair_ids", []), "player_input_rules":contract.get("player_input_rules", {}), "maintenance":contract.get("maintenance", {}), "future_locks":{"do_not_reveal_yet":_clip_list((contract.get("future_locks") or {}).get("do_not_reveal_yet", []),5,180), "hidden_character_seeds":_clip_list((contract.get("future_locks") or {}).get("hidden_character_seeds", []),5,180)}, "continuity":_compact_dict(contract.get("continuity", {}) if isinstance(contract.get("continuity"), dict) else {},500)}
-    compact["loaded_characters"] = [{"character_id":i.get("character_id"), "display_name":i.get("display_name"), "load_reason":i.get("load_reason", []), "card":_compact_character_card(i.get("card") if isinstance(i.get("card"), dict) else {})} for i in (contract.get("loaded_characters", []) or []) if isinstance(i, dict)][:6]
-    compact["loaded_relationships"] = [{"pair_id":i.get("pair_id"), "display_label":i.get("display_label"), "visible_in_footer":i.get("visible_in_footer", False), "content":_compact_dict(i.get("content") if isinstance(i.get("content"), dict) else {},260)} for i in (contract.get("loaded_relationships", []) or []) if isinstance(i, dict)][:8]
-    compact["knowledge_boundaries"] = [_compact_dict(i, 220) for i in (contract.get("knowledge_boundaries", []) or []) if isinstance(i, dict)][:6]
-    compact["recent_scene_history"] = [{"turn":i.get("turn"), "summary":_clip_text(i.get("summary"),350), "important_facts":_clip_list(i.get("important_facts", []),5,180), "witnesses":i.get("witnesses", [])} for i in (contract.get("recent_scene_history", []) or [])[-3:] if isinstance(i, dict)]
+    compact = {"contract_version":contract.get("contract_version"), "session_id":contract.get("session_id"), "current_frame":contract.get("current_frame", {}), "status_slots":contract.get("status_slots", [])[:2], "story_compass":_compact_dict(contract.get("story_compass", {}) if isinstance(contract.get("story_compass"), dict) else {},700), "visible_relationship_pair_ids":contract.get("visible_relationship_pair_ids", []), "player_input_rules":contract.get("player_input_rules", {}), "maintenance":contract.get("maintenance", {}), "future_locks":{"do_not_reveal_yet":_clip_list((contract.get("future_locks") or {}).get("do_not_reveal_yet", []),5,180), "hidden_character_seeds":_clip_list((contract.get("future_locks") or {}).get("hidden_character_seeds", []),5,180)}, "continuity":_compact_dict(contract.get("continuity", {}) if isinstance(contract.get("continuity"), dict) else {},260), "memory_chunks":[_compact_dict(i,220) for i in (contract.get("memory_chunks", []) or [])[-3:] if isinstance(i, dict)]}
+    compact["loaded_characters"] = [{"character_id":i.get("character_id"), "display_name":i.get("display_name"), "load_reason":i.get("load_reason", []), "card":_compact_character_card(i.get("card") if isinstance(i.get("card"), dict) else {})} for i in (contract.get("loaded_characters", []) or []) if isinstance(i, dict)][:4]
+    compact["loaded_relationships"] = [{"pair_id":i.get("pair_id"), "display_label":i.get("display_label"), "visible_in_footer":i.get("visible_in_footer", False), "content":_compact_dict(i.get("content") if isinstance(i.get("content"), dict) else {},260)} for i in (contract.get("loaded_relationships", []) or []) if isinstance(i, dict)][:5]
+    compact["knowledge_boundaries"] = [_compact_dict(i, 220) for i in (contract.get("knowledge_boundaries", []) or []) if isinstance(i, dict)][:4]
+    compact["recent_scene_history"] = [{"turn":i.get("turn"), "summary":_clip_text(i.get("summary"),350), "important_facts":_clip_list(i.get("important_facts", []),5,180), "witnesses":i.get("witnesses", [])} for i in (contract.get("recent_scene_history", []) or [])[-2:] if isinstance(i, dict)]
     compact["output_requirements"] = {"tool_flow":"generate scene_response, call applyTurnResult, then show response.message_to_user"}
     return compact
 

@@ -102,6 +102,37 @@ components:
       additionalProperties: false
       required:
       - player_input
+    TurnPromptChunkResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        turn_id:
+          type: string
+        chunk_index:
+          type: integer
+        chunk_count:
+          type: integer
+        scene_prompt_chunk:
+          type: string
+        has_more:
+          type: boolean
+        next_chunk_index:
+          type:
+          - integer
+          - 'null'
+        diagnostics:
+          type: object
+          properties: {}
+          additionalProperties: true
+      additionalProperties: false
+      required:
+      - session_id
+      - turn_id
+      - chunk_index
+      - chunk_count
+      - scene_prompt_chunk
+      - has_more
     ApplyTurnResultRequest:
       type: object
       properties:
@@ -110,15 +141,122 @@ components:
           - string
           - 'null'
           description: The turn_id returned by processTurn. Preferred top-level field.
-            If an old Actions import cannot send it here, backend can also bind to
-            the single pending turn after player_input check.
-        scene_response:
+            Backend can also bind to the single pending turn after player_input check.
+        scene_response: &id001
+          type: object
+          properties:
+            response_version:
+              type: string
+              default: novella.scene_response.v1
+            player_input:
+              type: string
+            rendered_text:
+              type: string
+              description: Compatibility fallback. Full visible scene text if scene.rendered_text
+                is missing.
+            scene:
+              type: object
+              properties:
+                header:
+                  type: object
+                  properties: {}
+                  additionalProperties: true
+                body:
+                  type: string
+                  description: Full prose body. If short, backend extracts it from
+                    rendered_text.
+                player_options:
+                  type: object
+                  properties: {}
+                  additionalProperties: true
+                status_panel:
+                  type: object
+                  properties: {}
+                  additionalProperties: true
+                relationships_panel:
+                  type: array
+                  items:
+                    type: object
+                    properties: {}
+                    additionalProperties: true
+                rendered_text:
+                  type: string
+                  description: Full visible scene with header, body, options, status
+                    and relationships.
+              additionalProperties: true
+            summary:
+              type: string
+            important_facts:
+              type: array
+              items:
+                type: string
+            witnesses:
+              type: array
+              items:
+                type: object
+                properties: {}
+                additionalProperties: true
+            proposed_updates:
+              type: object
+              properties: {}
+              additionalProperties: true
+            safety_checks:
+              type: object
+              properties:
+                used_only_loaded_characters:
+                  type: boolean
+                respected_knowledge_boundaries:
+                  type: boolean
+                no_hidden_future_reveal:
+                  type: boolean
+                no_major_player_character_choice:
+                  type: boolean
+                respected_player_input_order:
+                  type: boolean
+                showed_only_scene_relationships:
+                  type: boolean
+                header_has_no_focus_or_active_list:
+                  type: boolean
+                notes:
+                  type: array
+                  items:
+                    type: string
+              additionalProperties: true
+            metadata:
+              type: object
+              properties:
+                turn_id:
+                  type:
+                  - string
+                  - 'null'
+              additionalProperties: true
+          additionalProperties: true
+        rendered_text:
+          type:
+          - string
+          - 'null'
+          description: Compatibility fallback if old Action puts visible scene text
+            at top level.
+        proposed_updates:
           type: object
           properties: {}
           additionalProperties: true
-      additionalProperties: false
+        safety_checks:
+          type: object
+          properties: {}
+          additionalProperties: true
+        metadata:
+          type: object
+          properties:
+            turn_id:
+              type:
+              - string
+              - 'null'
+          additionalProperties: true
+      additionalProperties: true
       required:
       - scene_response
+    SceneResponse: *id001
 paths:
   /health:
     get:
@@ -126,7 +264,7 @@ paths:
       summary: Check API health.
       security: []
       responses:
-        '200': &id001
+        '200': &id002
           description: OK
           content:
             application/json:
@@ -139,7 +277,7 @@ paths:
       operationId: getStartQuestionnaire
       summary: Get the visible start questionnaire when the user gave too little setup.
       responses:
-        '200': *id001
+        '200': *id002
   /api/v1/sessions:
     post:
       operationId: createSession
@@ -152,7 +290,7 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateSessionRequest'
       responses:
-        '200': *id001
+        '200': *id002
   /api/v1/sessions/{session_id}:
     get:
       operationId: getSession
@@ -164,7 +302,7 @@ paths:
         schema:
           type: string
       responses:
-        '200': *id001
+        '200': *id002
         '404':
           description: Session not found
           content:
@@ -191,7 +329,7 @@ paths:
             schema:
               $ref: '#/components/schemas/BootstrapPreviewRequest'
       responses:
-        '200': *id001
+        '200': *id002
         '422':
           description: Invalid bootstrap JSON
           content:
@@ -217,7 +355,7 @@ paths:
             schema:
               $ref: '#/components/schemas/BootstrapConfirmRequest'
       responses:
-        '200': *id001
+        '200': *id002
         '409':
           description: Preview not confirmed or wrong session status
           content:
@@ -244,7 +382,7 @@ paths:
             schema:
               $ref: '#/components/schemas/TurnRequest'
       responses:
-        '200': *id001
+        '200': *id002
         '409':
           description: Session not active
           content:
@@ -255,6 +393,54 @@ paths:
                 additionalProperties: true
         '422':
           description: Empty input
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+  /api/v1/sessions/{session_id}/turn-prompt-chunk:
+    get:
+      operationId: getTurnPromptChunk
+      summary: Get one stored scene_prompt chunk for the pending turn when processTurn
+        says prompt_chunk_count > 1.
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: turn_id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: turn_id returned by processTurn.
+      - name: chunk_index
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+        description: Zero-based chunk index. Start at 1 if processTurn already returned
+          chunk 0.
+      responses:
+        '200':
+          description: Prompt chunk
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnPromptChunkResponse'
+        '409':
+          description: Missing/stale pending turn
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+        '416':
+          description: Chunk index out of range
           content:
             application/json:
               schema:
@@ -278,7 +464,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ApplyTurnResultRequest'
       responses:
-        '200': *id001
+        '200': *id002
         '409':
           description: Missing, stale, duplicate or mismatched turn_id
           content:

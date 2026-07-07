@@ -126,6 +126,20 @@ TURN_SCHEMA = _schema_obj(
     required=["player_input"],
 )
 
+TURN_PROMPT_CHUNK_RESPONSE_SCHEMA = _schema_obj(
+    {
+        "session_id": {"type": "string"},
+        "turn_id": {"type": "string"},
+        "chunk_index": {"type": "integer"},
+        "chunk_count": {"type": "integer"},
+        "scene_prompt_chunk": {"type": "string"},
+        "has_more": {"type": "boolean"},
+        "next_chunk_index": {"type": ["integer", "null"]},
+        "diagnostics": _loose_obj(),
+    },
+    required=["session_id", "turn_id", "chunk_index", "chunk_count", "scene_prompt_chunk", "has_more"],
+)
+
 SCENE_RESPONSE_SCHEMA = _loose_obj(
     {
         "response_version": {"type": "string", "default": "novella.scene_response.v1"},
@@ -206,6 +220,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "BootstrapPreviewRequest": BOOTSTRAP_PREVIEW_SCHEMA,
                 "BootstrapConfirmRequest": BOOTSTRAP_CONFIRM_SCHEMA,
                 "TurnRequest": TURN_SCHEMA,
+                "TurnPromptChunkResponse": TURN_PROMPT_CHUNK_RESPONSE_SCHEMA,
                 "ApplyTurnResultRequest": APPLY_TURN_RESULT_SCHEMA,
                 "SceneResponse": SCENE_RESPONSE_SCHEMA,
             },
@@ -267,6 +282,34 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                     "parameters": [_session_id_param()],
                     "requestBody": _request_body({"$ref": "#/components/schemas/TurnRequest"}, required=True),
                     "responses": {"200": generic, "409": _json_response("Session not active", _loose_obj()), "422": _json_response("Empty input", _loose_obj())},
+                }
+            },
+            "/api/v1/sessions/{session_id}/turn-prompt-chunk": {
+                "get": {
+                    "operationId": "getTurnPromptChunk",
+                    "summary": "Get one stored scene_prompt chunk for the pending turn when processTurn says prompt_chunk_count > 1.",
+                    "parameters": [
+                        _session_id_param(),
+                        {
+                            "name": "turn_id",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "string"},
+                            "description": "turn_id returned by processTurn.",
+                        },
+                        {
+                            "name": "chunk_index",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "integer", "minimum": 0},
+                            "description": "Zero-based chunk index. Start at 1 if processTurn already returned chunk 0.",
+                        },
+                    ],
+                    "responses": {
+                        "200": _json_response("Prompt chunk", {"$ref": "#/components/schemas/TurnPromptChunkResponse"}),
+                        "409": _json_response("Missing/stale pending turn", _loose_obj()),
+                        "416": _json_response("Chunk index out of range", _loose_obj()),
+                    },
                 }
             },
             "/api/v1/sessions/{session_id}/apply-turn-result": {

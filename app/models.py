@@ -61,8 +61,24 @@ class TurnResponse(BaseModel):
     status: str
     scene: str | None = None
     scene_prompt: str | None = None
+    scene_prompt_chunk: str | None = Field(default=None, description="First prompt chunk. If prompt_chunk_count > 1, call getTurnPromptChunk for the rest.")
+    prompt_chunk_index: int = 0
+    prompt_chunk_count: int = 1
+    has_more_prompt_chunks: bool = False
+    next_prompt_chunk_index: int | None = None
     turn_id: str | None = Field(default=None, description="Pending turn id. Pass this value to applyTurnResult.")
     expected_turn_number: int | None = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class TurnPromptChunkResponse(BaseModel):
+    session_id: str
+    turn_id: str
+    chunk_index: int
+    chunk_count: int
+    scene_prompt_chunk: str
+    has_more: bool
+    next_chunk_index: int | None = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class ApplyTurnResultRequest(BaseModel):
