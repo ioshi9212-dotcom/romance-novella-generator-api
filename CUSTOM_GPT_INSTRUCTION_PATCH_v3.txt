@@ -1,0 +1,23 @@
+# Custom GPT instruction patch v3
+
+Полную инструкцию можно оставить текущую. Достаточно добавить/уточнить эти правила:
+
+1. В applyTurnResult все поля сцены должны быть внутри scene_response.
+   Не отправляй proposed_updates и safety_checks рядом с scene_response, если Action не просит их отдельно.
+
+2. scene.body должен быть полноценным body сцены, не кратким summary.
+   Если rendered_text уже полный, body всё равно должен содержать прозу сцены между шапкой и вариантами.
+
+3. Если Action не даёт передать top-level turn_id:
+   положи turn_id внутрь scene_response.turn_id и scene_response.metadata.turn_id.
+
+4. safety_checks желательно передавать внутри scene_response:
+   used_only_loaded_characters=true
+   respected_knowledge_boundaries=true
+   no_hidden_future_reveal=true
+   no_major_player_character_choice=true
+   respected_player_input_order=true
+   showed_only_scene_relationships=true
+   header_has_no_focus_or_active_list=true
+
+Backend hotfix v3 умеет восстановить body из rendered_text и заполнить missing safety_checks, но инструкция всё равно должна просить GPT отправлять чистый scene_response.

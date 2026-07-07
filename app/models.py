@@ -1,5 +1,5 @@
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 SessionMode = Literal["debug_stub", "gpt_actions"]
 
@@ -66,8 +66,18 @@ class TurnResponse(BaseModel):
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class ApplyTurnResultRequest(BaseModel):
+    # Compatibility: keep this model permissive because old/imported Custom GPT
+    # Actions may try to pass rendered_text/proposed_updates/safety_checks at the
+    # top level while the canonical contract keeps them inside scene_response.
+    model_config = ConfigDict(extra="allow")
+
     turn_id: str | None = Field(default=None, description="turn_id returned by processTurn. Required for normal gpt_actions flow.")
     scene_response: dict[str, Any]
+    rendered_text: str | None = None
+    proposed_updates: dict[str, Any] | None = None
+    safety_checks: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+    diagnostics: dict[str, Any] | None = None
 
 class ApplyTurnResultResponse(BaseModel):
     session_id: str

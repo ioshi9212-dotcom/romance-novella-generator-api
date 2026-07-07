@@ -126,15 +126,55 @@ TURN_SCHEMA = _schema_obj(
     required=["player_input"],
 )
 
+SCENE_RESPONSE_SCHEMA = _loose_obj(
+    {
+        "response_version": {"type": "string", "default": "novella.scene_response.v1"},
+        "player_input": {"type": "string"},
+        "rendered_text": {"type": "string", "description": "Compatibility fallback. Full visible scene text if scene.rendered_text is missing."},
+        "scene": _loose_obj(
+            {
+                "header": _loose_obj(),
+                "body": {"type": "string", "description": "Full prose body. If short, backend extracts it from rendered_text."},
+                "player_options": _loose_obj(),
+                "status_panel": _loose_obj(),
+                "relationships_panel": {"type": "array", "items": _loose_obj()},
+                "rendered_text": {"type": "string", "description": "Full visible scene with header, body, options, status and relationships."},
+            }
+        ),
+        "summary": {"type": "string"},
+        "important_facts": {"type": "array", "items": {"type": "string"}},
+        "witnesses": {"type": "array", "items": _loose_obj()},
+        "proposed_updates": _loose_obj(),
+        "safety_checks": _loose_obj(
+            {
+                "used_only_loaded_characters": {"type": "boolean"},
+                "respected_knowledge_boundaries": {"type": "boolean"},
+                "no_hidden_future_reveal": {"type": "boolean"},
+                "no_major_player_character_choice": {"type": "boolean"},
+                "respected_player_input_order": {"type": "boolean"},
+                "showed_only_scene_relationships": {"type": "boolean"},
+                "header_has_no_focus_or_active_list": {"type": "boolean"},
+                "notes": {"type": "array", "items": {"type": "string"}},
+            }
+        ),
+        "metadata": _loose_obj({"turn_id": {"type": ["string", "null"]}}),
+    }
+)
+
 APPLY_TURN_RESULT_SCHEMA = _schema_obj(
     {
         "turn_id": {
             "type": ["string", "null"],
-            "description": "The turn_id returned by processTurn. Preferred top-level field. If an old Actions import cannot send it here, backend can also bind to the single pending turn after player_input check.",
+            "description": "The turn_id returned by processTurn. Preferred top-level field. Backend can also bind to the single pending turn after player_input check.",
         },
-        "scene_response": _loose_obj(),
+        "scene_response": SCENE_RESPONSE_SCHEMA,
+        "rendered_text": {"type": ["string", "null"], "description": "Compatibility fallback if old Action puts visible scene text at top level."},
+        "proposed_updates": _loose_obj(),
+        "safety_checks": _loose_obj(),
+        "metadata": _loose_obj({"turn_id": {"type": ["string", "null"]}}),
     },
     required=["scene_response"],
+    additional_properties=True,
 )
 
 
@@ -167,6 +207,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "BootstrapConfirmRequest": BOOTSTRAP_CONFIRM_SCHEMA,
                 "TurnRequest": TURN_SCHEMA,
                 "ApplyTurnResultRequest": APPLY_TURN_RESULT_SCHEMA,
+                "SceneResponse": SCENE_RESPONSE_SCHEMA,
             },
         },
         "paths": {

@@ -129,6 +129,32 @@ def _extract_turn_id_from_scene_response(scene_response: dict[str, Any]) -> str 
     return None
 
 
+def _coerce_scene_response_payload(request: ApplyTurnResultRequest) -> dict[str, Any]:
+    """Move known top-level compatibility fields into scene_response.
+
+    Custom GPT may retry after an Action-schema error by sending fields such as
+    rendered_text, proposed_updates or safety_checks next to scene_response. The
+    canonical backend contract keeps them inside scene_response, but accepting
+    and relocating them here prevents false 422/UnrecognizedKwargs failures.
+    """
+    raw = dict(request.scene_response or {})
+
+    for key in ("rendered_text", "proposed_updates", "safety_checks", "metadata", "diagnostics"):
+        value = getattr(request, key, None)
+        if value is not None and key not in raw:
+            raw[key] = value
+
+    # Pydantic extra fields, if any, are also folded in conservatively.
+    extras = getattr(request, "model_extra", None) or {}
+    if isinstance(extras, dict):
+        for key in ("rendered_text", "proposed_updates", "safety_checks", "metadata", "diagnostics"):
+            value = extras.get(key)
+            if value is not None and key not in raw:
+                raw[key] = value
+
+    return raw
+
+
 def _require_pending_turn_match(manager: SessionManager, session_id: str, request_turn_id: str | None, normalized_scene_response: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
     pending = _load_pending_turn(manager, session_id)
     if not pending or not pending.get("turn_id"):
@@ -297,7 +323,7 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
     try:
         bundle = manager.get_memory(session_id)
         _require_active_session(bundle, "applying a turn result")
-        raw_scene_response = dict(request.scene_response or {})
+        raw_scene_response = _coerce_scene_response_payload(request)
         compatible_turn_id = request.turn_id or _extract_turn_id_from_scene_response(raw_scene_response)
         normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
         pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)

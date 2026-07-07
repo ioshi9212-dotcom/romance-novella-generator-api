@@ -330,3 +330,57 @@ def test_apply_turn_result_requires_pending_turn_id():
         json={"scene_response": _long_scene_response("(тест)")},
     )
     assert response.status_code == 409
+
+
+def test_apply_turn_result_recovers_body_and_safety_from_dirty_gpt_payload():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "urban mysticism",
+        "setting_request": "foggy port archive",
+        "protagonist_request": "guarded adult heroine",
+        "mode": "gpt_actions",
+    })
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()}).status_code == 200
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-confirm", json={"confirmation_text": "подтверждаю"}).status_code == 200
+
+    player_input = "(начать первую сцену)"
+    turn = client.post(f"/api/v1/sessions/{session_id}/turn", json={"player_input": player_input, "mode": "gpt_actions"})
+    assert turn.status_code == 200
+    turn_id = turn.json()["turn_id"]
+
+    ideal = _long_scene_response(player_input)
+    from app.scene_response_normalizer import normalize_scene_response
+    normalized_ideal = normalize_scene_response(ideal, {
+        "current_state": _valid_bootstrap()["current_state"],
+        "characters": _valid_bootstrap()["characters"],
+    })
+    full_text = normalized_ideal["scene"]["rendered_text"]
+
+    dirty_scene_response = {
+        "response_version": "novella.scene_response.v1",
+        "player_input": player_input,
+        "rendered_text": full_text,
+        "scene": {
+            **ideal["scene"],
+            "body": "Короткий пересказ вместо полноценного body.",
+            "rendered_text": "",
+        },
+        "summary": ideal["summary"],
+        "important_facts": ideal["important_facts"],
+        "witnesses": ideal["witnesses"],
+        # proposed_updates and safety_checks are intentionally omitted:
+        # this mirrors the real Custom GPT payload that previously failed with 422.
+    }
+
+    applied = client.post(
+        f"/api/v1/sessions/{session_id}/apply-turn-result",
+        json={"turn_id": turn_id, "scene_response": dirty_scene_response},
+    )
+
+    assert applied.status_code == 200, applied.text
+    body = applied.json()
+    assert "После закрытия" in body["message_to_user"]
+    assert body["status"] in {"applied", "partially_applied"}

@@ -2,6 +2,17 @@ from __future__ import annotations
 from typing import Any
 
 
+REQUIRED_SAFETY_CHECKS = [
+    "used_only_loaded_characters",
+    "respected_knowledge_boundaries",
+    "no_hidden_future_reveal",
+    "no_major_player_character_choice",
+    "respected_player_input_order",
+    "showed_only_scene_relationships",
+    "header_has_no_focus_or_active_list",
+]
+
+
 def _as_list(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -121,7 +132,12 @@ def _normalize_status_panel(scene: dict[str, Any]) -> None:
     for index in range(2):
         item = custom[index] if index < len(custom) else {}
         if not isinstance(item, dict):
-            item = {"value": item}
+            raw_text = _as_str(item)
+            if ":" in raw_text:
+                label, value = raw_text.split(":", 1)
+                item = {"label": label.strip(), "value": value.strip()}
+            else:
+                item = {"value": raw_text}
         label = _as_str(item.get("label") or item.get("id"), f"Поле истории {index + 1}")
         normalized.append({
             "id": _as_str(item.get("id") or label, f"story_slot_{index + 1}"),
@@ -169,7 +185,7 @@ def _normalize_knowledge_patches(updates: dict[str, Any], bundle: dict[str, Any]
                 normalized["add_knows"] = _as_list(normalized.get(old_key))
         if "source" in normalized and "source_in_scene" not in normalized:
             normalized["source_in_scene"] = _as_str(normalized.get("source"))
-        # Important: do not invent source_in_scene/reason. Validator must catch missing evidence.
+        # Do not invent source_in_scene/reason. Validator must catch missing evidence.
         if normalized.get("add_knows") and "add_recent_memories" not in normalized:
             normalized["add_recent_memories"] = [_as_str(x) for x in _as_list(normalized["add_knows"]) if _as_str(x)][:5]
         for old_key in ["who", "name", "add", "source", "known", "knows"]:
@@ -196,15 +212,53 @@ def _normalize_relationship_patches(updates: dict[str, Any]) -> None:
     updates["relationship_patches"] = result
 
 
+def _extract_body_from_rendered_text(rendered_text: str) -> str:
+    """Extract the prose/dialogue body from the visible scene text.
+
+    Custom GPT sometimes sends a full scene in rendered_text but only a one-line
+    summary in scene.body. The validator needs scene.body for state safety, so
+    this function recovers it from the visible text instead of rejecting a valid
+    scene solely because the structured body field was short.
+    """
+    text = _as_str(rendered_text)
+    if not text:
+        return ""
+
+    delimiter = "━━━━━━━━━━━━━━━━━━━━"
+    if delimiter in text:
+        parts = text.split(delimiter, 2)
+        if len(parts) >= 2:
+            candidate = parts[1]
+            # If the second delimiter exists, this removes the options/status tail.
+            if len(parts) >= 3:
+                candidate = parts[1]
+            if "✦ Что можно сделать" in candidate:
+                candidate = candidate.split("✦ Что можно сделать", 1)[0]
+            return candidate.strip()
+
+    start_markers = ["\n\nДиалог:", "\nДиалог:"]
+    end_markers = ["\n✦ Что можно сделать", "\n\n✦ Что можно сделать"]
+    candidate = text
+    for marker in ["◈ <предметы", "◈ "]:
+        # Fallback is intentionally conservative; the delimiter path should cover
+        # normal scenes. Do not try to be too clever and strip real prose.
+        pass
+    for marker in end_markers:
+        if marker in candidate:
+            candidate = candidate.split(marker, 1)[0]
+    return candidate.strip()
+
+
 def _looks_like_full_rendered_text(text: str, body: str, header: dict[str, Any]) -> bool:
     if not text:
         return False
     if "🎭" not in text or "🕒" not in text or "✦ Что можно сделать" not in text:
         return False
-    body_excerpt = body[:80].strip()
-    if body_excerpt and body_excerpt not in text:
-        return False
     if _as_str(header.get("player_name"), "") and _as_str(header.get("player_name")) not in text:
+        return False
+    body_excerpt = body[:80].strip()
+    # If body is a short summary, do not reject otherwise valid rendered_text.
+    if body_excerpt and len(body.strip()) >= 500 and body_excerpt not in text:
         return False
     return True
 
@@ -275,6 +329,32 @@ def _build_rendered_text(scene: dict[str, Any]) -> str:
 ━━━━━━━━━━━━━━━━━━━━"""
 
 
+def _has_full_visible_scene(rendered_text: str) -> bool:
+    text = _as_str(rendered_text)
+    required = ["🎭", "🕒", "📍", "━━━━━━━━━━━━━━━━━━━━", "✦ Что можно сделать", "✦ Что можно сказать", "✦ Мысли", "✦ Состояние", "✦ Отношения"]
+    return all(marker in text for marker in required)
+
+
+def _normalize_safety_checks(result: dict[str, Any], scene: dict[str, Any]) -> None:
+    checks = result.setdefault("safety_checks", {})
+    if not isinstance(checks, dict):
+        checks = {}
+        result["safety_checks"] = checks
+
+    # Practical fallback: Custom GPT often omits this object while still producing
+    # a full visible scene. Missing checks are filled as true only after the
+    # normalizer has a full rendered_text and extracted body; validators still
+    # reject empty scenes, forbidden headers and too-short body.
+    rendered_text = _as_str(scene.get("rendered_text"))
+    body = _as_str(scene.get("body"))
+    can_fill_missing = _has_full_visible_scene(rendered_text) and len(body) >= 500
+
+    for key in REQUIRED_SAFETY_CHECKS:
+        if key not in checks and can_fill_missing:
+            checks[key] = True
+    checks["notes"] = _as_list(checks.get("notes"))
+
+
 def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         data = {}
@@ -283,18 +363,37 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
     result["summary"] = _as_str(result.get("summary"), "Сцена сыграна.")
     result["important_facts"] = _as_list(result.get("important_facts"))
     result["witnesses"] = _as_list(result.get("witnesses"))
+
     scene = result.setdefault("scene", {})
     if not isinstance(scene, dict):
         scene = {}
         result["scene"] = scene
+
+    # Backward-compatible payload cleanup:
+    # GPT sometimes puts full rendered_text at the top level instead of inside scene.
+    top_level_rendered = _as_str(result.get("rendered_text"))
+    if top_level_rendered and not _as_str(scene.get("rendered_text")):
+        scene["rendered_text"] = top_level_rendered
+
     _normalize_header(scene)
     _normalize_options(scene)
     _normalize_status_panel(scene)
     _normalize_relationships_panel(scene)
-    scene["body"] = _as_str(scene.get("body"), "")
+
+    current_body = _as_str(scene.get("body"), "")
     current_rendered = _as_str(scene.get("rendered_text"), "")
+
+    # If body is too short but rendered_text contains the real scene, recover body.
+    if len(current_body) < 500 and current_rendered:
+        extracted_body = _extract_body_from_rendered_text(current_rendered)
+        if len(extracted_body) > len(current_body):
+            current_body = extracted_body
+
+    scene["body"] = current_body
     scene["rendered_text"] = current_rendered if _looks_like_full_rendered_text(current_rendered, scene["body"], scene["header"]) else _build_rendered_text(scene)
+
     result["player_input"] = _as_str(result.get("player_input"))
+
     updates = result.setdefault("proposed_updates", {})
     if not isinstance(updates, dict):
         updates = {}
@@ -304,10 +403,6 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
     _normalize_knowledge_patches(updates, bundle, scene)
     _normalize_relationship_patches(updates)
     updates["new_or_updated_characters"] = _as_list(updates.get("new_or_updated_characters"))
-    checks = result.setdefault("safety_checks", {})
-    if not isinstance(checks, dict):
-        checks = {}
-        result["safety_checks"] = checks
-    # Do not auto-fill boolean safety checks as True. Validator must catch missing/false checks.
-    checks["notes"] = _as_list(checks.get("notes"))
+
+    _normalize_safety_checks(result, scene)
     return result

@@ -2,11 +2,123 @@ openapi: 3.1.0
 info:
   title: Romance Novella Generator API
   version: gpt-actions-v9-openapi-actions
-  description: Static fallback schema. Prefer live /openapi-actions.json after deploy.
+  description: Custom GPT Actions schema for generated novella sessions. Use preview-confirm
+    launch flow, then processTurn and applyTurnResult.
 servers:
-  - url: https://web-production-4310e.up.railway.app
+- url: https://web-production-4310e.up.railway.app
 security:
-  - ApiKeyAuth: []
+- ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type:
+          - string
+          - 'null'
+        genre:
+          type: string
+          default: ''
+        language:
+          type: string
+          default: ru
+        tone:
+          type:
+          - string
+          - 'null'
+        setting_request:
+          type: string
+          default: ''
+        protagonist_request:
+          type: string
+          default: ''
+        romance_request:
+          type:
+          - string
+          - 'null'
+        rating:
+          type:
+          - string
+          - 'null'
+        avoid:
+          type: array
+          items:
+            type: string
+        extra:
+          type: object
+          properties: {}
+          additionalProperties: true
+        raw_start_text:
+          type:
+          - string
+          - 'null'
+        mode:
+          type: string
+          enum:
+          - gpt_actions
+          - debug_stub
+          default: gpt_actions
+      additionalProperties: true
+    BootstrapPreviewRequest:
+      type: object
+      properties:
+        bootstrap_json:
+          type: object
+          properties: {}
+          additionalProperties: true
+      additionalProperties: false
+      required:
+      - bootstrap_json
+    BootstrapConfirmRequest:
+      type: object
+      properties:
+        confirmation_text:
+          type: string
+          description: Exact latest user confirmation, e.g. подтверждаю / ок / сохраняй
+            / запускай / начинаем.
+      additionalProperties: false
+      required:
+      - confirmation_text
+    TurnRequest:
+      type: object
+      properties:
+        player_input:
+          type: string
+          minLength: 1
+          description: Exact latest user/player input. Must not be empty. Use '(начать
+            первую сцену)' only after bootstrap confirmation.
+        mode:
+          type: string
+          enum:
+          - gpt_actions
+          - debug_stub
+          default: gpt_actions
+      additionalProperties: false
+      required:
+      - player_input
+    ApplyTurnResultRequest:
+      type: object
+      properties:
+        turn_id:
+          type:
+          - string
+          - 'null'
+          description: The turn_id returned by processTurn. Preferred top-level field.
+            If an old Actions import cannot send it here, backend can also bind to
+            the single pending turn after player_input check.
+        scene_response:
+          type: object
+          properties: {}
+          additionalProperties: true
+      additionalProperties: false
+      required:
+      - scene_response
 paths:
   /health:
     get:
@@ -14,183 +126,172 @@ paths:
       summary: Check API health.
       security: []
       responses:
-        '200':
+        '200': &id001
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/start-questionnaire:
     get:
       operationId: getStartQuestionnaire
-      summary: Get the visible start questionnaire.
+      summary: Get the visible start questionnaire when the user gave too little setup.
       responses:
-        '200':
-          description: OK
+        '200': *id001
   /api/v1/sessions:
     post:
       operationId: createSession
-      summary: Create a new generated novella session or return questionnaire.
+      summary: Create a new generated novella session or return questionnaire if setup
+        is too small.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                title: { type: [string, 'null'] }
-                genre: { type: string, default: '' }
-                language: { type: string, default: ru }
-                tone: { type: [string, 'null'] }
-                setting_request: { type: string, default: '' }
-                protagonist_request: { type: string, default: '' }
-                romance_request: { type: [string, 'null'] }
-                rating: { type: [string, 'null'] }
-                avoid:
-                  type: array
-                  items: { type: string }
-                extra:
-                  type: object
-                  properties: {}
-                  additionalProperties: true
-                raw_start_text: { type: [string, 'null'] }
-                mode:
-                  type: string
-                  enum: [gpt_actions, debug_stub]
-                  default: gpt_actions
-              additionalProperties: true
+              $ref: '#/components/schemas/CreateSessionRequest'
       responses:
-        '200':
-          description: OK
+        '200': *id001
   /api/v1/sessions/{session_id}:
     get:
       operationId: getSession
       summary: Get one session status by session_id.
       parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema: { type: string }
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
-        '200':
-          description: OK
+        '200': *id001
         '404':
           description: Session not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/bootstrap-preview:
     post:
       operationId: createBootstrapPreview
-      summary: Validate and save pending bootstrap JSON as preview.
+      summary: Validate and save pending bootstrap JSON as a user-visible preview.
+        Do not start the scene yet.
       parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema: { type: string }
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [bootstrap_json]
-              properties:
-                bootstrap_json:
-                  type: object
-                  properties: {}
-                  additionalProperties: true
-              additionalProperties: false
+              $ref: '#/components/schemas/BootstrapPreviewRequest'
       responses:
-        '200':
-          description: OK
+        '200': *id001
         '422':
           description: Invalid bootstrap JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/bootstrap-confirm:
     post:
       operationId: confirmBootstrapPreview
       summary: Commit pending bootstrap after explicit user confirmation.
       parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema: { type: string }
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [confirmation_text]
-              properties:
-                confirmation_text:
-                  type: string
-                  minLength: 1
-              additionalProperties: false
+              $ref: '#/components/schemas/BootstrapConfirmRequest'
       responses:
-        '200':
-          description: OK
+        '200': *id001
         '409':
-          description: Not explicitly confirmed
+          description: Preview not confirmed or wrong session status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/turn:
     post:
       operationId: processTurn
-      summary: Build compact scene prompt. Returns turn_id.
+      summary: Build compact scene prompt for one player turn. Returns turn_id; applyTurnResult
+        must use it.
       parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema: { type: string }
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [player_input]
-              properties:
-                player_input:
-                  type: string
-                  minLength: 1
-                mode:
-                  type: string
-                  enum: [gpt_actions, debug_stub]
-                  default: gpt_actions
-              additionalProperties: false
+              $ref: '#/components/schemas/TurnRequest'
       responses:
-        '200':
-          description: OK
+        '200': *id001
         '409':
           description: Session not active
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
         '422':
           description: Empty input
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}/apply-turn-result:
     post:
       operationId: applyTurnResult
-      summary: Validate and save scene_response. Use turn_id from processTurn when the Action schema supports it.
+      summary: Validate and save scene_response. Final assistant answer must be response.message_to_user.
       parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema: { type: string }
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [scene_response]
-              properties:
-                turn_id:
-                  type: [string, 'null']
-                scene_response:
-                  type: object
-                  properties: {}
-                  additionalProperties: true
-              additionalProperties: false
+              $ref: '#/components/schemas/ApplyTurnResultRequest'
       responses:
-        '200':
-          description: OK
+        '200': *id001
         '409':
           description: Missing, stale, duplicate or mismatched turn_id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
         '422':
           description: Invalid scene_response
-components:
-  securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
