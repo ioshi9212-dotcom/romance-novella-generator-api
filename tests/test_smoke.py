@@ -485,3 +485,75 @@ def test_visible_footer_is_compact_and_dialogue_is_canonical():
     assert "усталость мешает отличать" not in text
     assert "Тепловой след: 75/100" in text
     assert "Кален Восс: 75/100" in text
+
+
+def test_scene_prompt_uses_short_beat_scene_style():
+    from app.turn_processor import COMPACT_SCENE_WRITER_PROMPT
+    prompt = COMPACT_SCENE_WRITER_PROMPT
+    assert "900–1800" in prompt
+    assert "8–20 коротких beats" in prompt
+    assert "Не раздувай описание поверх описания" in prompt
+    assert "Диалоги идут ВНУТРИ body" in prompt
+    assert "НЕ делай отдельный блок “Диалог:”" in prompt
+    assert "2–4 живых проявления NPC" in prompt
+
+
+def test_normalizer_removes_separate_dialogue_block_and_formats_inline_dialogue():
+    from app.scene_response_normalizer import normalize_scene_response
+
+    data = {
+        "response_version": "novella.scene_response.v1",
+        "player_input": "(тест)",
+        "scene": {
+            "header": {
+                "story_title": "Тест",
+                "date": "День 1",
+                "time": "10:00",
+                "location": "коридор",
+                "weather": "тихо",
+                "scene_state": "проверка",
+                "player_name": "Мира",
+                "visible_state": "насторожена",
+                "outfit": "свитер",
+                "inventory": "телефон",
+            },
+            "body": "Мира остановилась.\n\nДиалог:\nМира — Нет (сухо)\nКален — Выйди.",
+            "player_options": {
+                "actions": ["Остаться.", "Открыть дверь.", "Проверить телефон."],
+                "dialogue": ["Нет.", "Кто там?", "Подожди."],
+                "thoughts": ["Он давит.", "Не спешить.", "Дверь близко."],
+            },
+            "status_panel": {
+                "hunger": "20/100 — голод",
+                "fatigue": "70/100 — высокая",
+                "injuries": "0/100 — нет",
+                "emotional_state": "55/100 — злость",
+                "skills": "60/100 — наблюдательность",
+                "custom": [
+                    {"label": "Давление", "value": "75/100 — высокое"},
+                    {"label": "Отклик", "value": "40/100 — слабый"},
+                ],
+            },
+            "relationships_panel": [{"label": "Кален", "value": "75/100 — напряжение"}],
+            "rendered_text": "",
+        },
+        "summary": "test",
+        "important_facts": [],
+        "witnesses": [],
+        "proposed_updates": {"scene_state_patch": {}, "knowledge_patches": [], "relationship_patches": [], "new_or_updated_characters": []},
+        "safety_checks": {
+            "used_only_loaded_characters": True,
+            "respected_knowledge_boundaries": True,
+            "no_hidden_future_reveal": True,
+            "no_major_player_character_choice": True,
+            "respected_player_input_order": True,
+            "showed_only_scene_relationships": True,
+            "header_has_no_focus_or_active_list": True,
+        },
+    }
+    bundle = {"current_state": {"player_character_id": "pc_01"}, "characters": {}}
+    normalized = normalize_scene_response(data, bundle)
+    rendered = normalized["scene"]["rendered_text"]
+    assert "Диалог:" not in rendered
+    assert "**Мира** — Нет. *(сухо)*" in rendered
+    assert "**Кален** — Выйди." in rendered

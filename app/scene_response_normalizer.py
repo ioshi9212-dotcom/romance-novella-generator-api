@@ -295,33 +295,55 @@ def _extract_body_from_rendered_text(rendered_text: str) -> str:
 
 def _format_dialogue_line(line: str) -> str:
     raw = line.strip()
-    if not raw or raw.startswith("*") and "—" not in raw:
+    if not raw:
         return line
-    match = re.match(r"^\*\*?([^*—]+?)\*\*?\s*—\s*(.+)$", raw) or re.match(r"^([^—]+?)\s*—\s*(.+)$", raw)
+    if raw.lower().replace("ё", "е").strip(":") == "диалог":
+        return ""
+    if raw.startswith("*") and "—" not in raw:
+        return line
+
+    # Already correct or almost correct.
+    match = re.match(r"^\*\*([^*—]+?)\*\*\s*—\s*(.+)$", raw)
+    if not match:
+        # Common model error: Имя — Реплика
+        match = re.match(r"^([^—:]{1,40}?)\s*—\s*(.+)$", raw)
     if not match:
         return line
+
     speaker = match.group(1).strip(" *")
     content = match.group(2).strip()
+
+    # Do not treat footer options as dialogue.
+    if speaker in {"Голод", "Усталость", "Травмы", "Эмоциональное состояние", "Навыки / ресурс"}:
+        return line
+
     aside = ""
     aside_match = re.search(r"\s*\(([^()]*)\)\s*$", content)
     if aside_match:
-        aside = aside_match.group(1).strip()
+        aside = aside_match.group(1).strip(" *")
         content = content[: aside_match.start()].rstrip()
+
     if aside:
+        if content and content[-1] not in ".!?…»":
+            content += "."
         return f"**{speaker}** — {content} *({aside})*"
     return f"**{speaker}** — {content}"
 
 
 def _format_dialogue_in_body(body: str) -> str:
-    if "Диалог:" not in body:
-        return body
-    prefix, tail = body.split("Диалог:", 1)
-    lines = tail.splitlines()
-    formatted = []
+    # Dialogues must stay inline in body. Remove standalone "Диалог:" labels
+    # and canonicalize speaker lines wherever they appear.
+    lines = body.splitlines()
+    formatted: list[str] = []
     for line in lines:
         stripped = line.strip()
-        formatted.append(_format_dialogue_line(stripped) if stripped else line)
-    return prefix.rstrip() + "\n\nДиалог:\n" + "\n".join(formatted).strip()
+        if stripped.lower().replace("ё", "е").strip(":") == "диалог":
+            continue
+        new_line = _format_dialogue_line(stripped) if stripped else line
+        formatted.append(new_line)
+    text = "\n".join(formatted)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _looks_like_full_rendered_text(text: str, body: str, header: dict[str, Any]) -> bool:
@@ -348,11 +370,8 @@ def _build_rendered_text(scene: dict[str, Any]) -> str:
     actions = options.get("actions", [])[:3]
     custom = status.get("custom", [])[:2]
 
-    if "Диалог:" in body:
-        body_and_dialogue = body
-    else:
-        dialogue_block = scene.get("dialogue_text") or "Диалог:\n*Вслух пока ничего не сказано. Пауза тоже работает как ответ.*"
-        body_and_dialogue = f"{body}\n\n{dialogue_block}".strip()
+    # Dialogues belong inline in body. Do not append a separate "Диалог:" block.
+    body_and_dialogue = body.strip()
 
     rel_lines = []
     for rel in relationships:
