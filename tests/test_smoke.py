@@ -487,60 +487,43 @@ def test_visible_footer_is_compact_and_dialogue_is_canonical():
     assert "Кален Восс: 75/100" in text
 
 
-def test_scene_prompt_uses_short_beat_scene_style():
+def test_prompt_forbids_dialogue_block_and_pseudo_dialogue():
     from app.turn_processor import COMPACT_SCENE_WRITER_PROMPT
     prompt = COMPACT_SCENE_WRITER_PROMPT
-    assert "900–1800" in prompt
-    assert "8–20 коротких beats" in prompt
-    assert "Не раздувай описание поверх описания" in prompt
-    assert "Диалоги идут ВНУТРИ body" in prompt
-    assert "НЕ делай отдельный блок “Диалог:”" in prompt
-    assert "2–4 живых проявления NPC" in prompt
+    assert "Никакого отдельного блока “Диалог:”" in prompt
+    assert "Запрещены гибридные строки без реплики" in prompt
+    assert "голос произносит — негромко" in prompt
+    assert "Пиши сцену короткими beat-абзацами" in prompt
 
 
-def test_normalizer_removes_separate_dialogue_block_and_formats_inline_dialogue():
+def test_normalizer_removes_dialogue_heading_and_canonicalizes_dialogue():
     from app.scene_response_normalizer import normalize_scene_response
-
-    data = {
+    bundle = {
+        "current_state": {"player_character_id": "pc_01"},
+        "characters": {"pc_01": {"name": "Kaiya Merren", "display_name": "Кайя"}},
+    }
+    payload = {
         "response_version": "novella.scene_response.v1",
         "player_input": "(тест)",
         "scene": {
             "header": {
                 "story_title": "Тест",
                 "date": "День 1",
-                "time": "10:00",
-                "location": "коридор",
-                "weather": "тихо",
-                "scene_state": "проверка",
-                "player_name": "Мира",
+                "time": "20:00",
+                "location": "порт",
+                "weather": "дождь",
+                "scene_state": "у двери",
+                "player_name": "Кайя",
                 "visible_state": "насторожена",
-                "outfit": "свитер",
-                "inventory": "телефон",
+                "outfit": "куртка",
+                "inventory": "ключ",
             },
-            "body": "Мира остановилась.\n\nДиалог:\nМира — Нет (сухо)\nКален — Выйди.",
-            "player_options": {
-                "actions": ["Остаться.", "Открыть дверь.", "Проверить телефон."],
-                "dialogue": ["Нет.", "Кто там?", "Подожди."],
-                "thoughts": ["Он давит.", "Не спешить.", "Дверь близко."],
-            },
-            "status_panel": {
-                "hunger": "20/100 — голод",
-                "fatigue": "70/100 — высокая",
-                "injuries": "0/100 — нет",
-                "emotional_state": "55/100 — злость",
-                "skills": "60/100 — наблюдательность",
-                "custom": [
-                    {"label": "Давление", "value": "75/100 — высокое"},
-                    {"label": "Отклик", "value": "40/100 — слабый"},
-                ],
-            },
-            "relationships_panel": [{"label": "Кален", "value": "75/100 — напряжение"}],
-            "rendered_text": "",
+            "body": "Кайя — Нет (сухо)\n\nДиалог:\nГолос снаружи — Откройте дверь (негромко)",
+            "player_options": {"thoughts": ["а", "б", "в"], "dialogue": ["а", "б", "в"], "actions": ["а", "б", "в"]},
+            "status_panel": {"hunger": "20/100 — голод", "fatigue": "50/100 — средне", "injuries": "0/100 — нет", "emotional_state": "60/100 — настороженность", "skills": "50/100 — внимание", "custom": ["Туман: 30/100 — низкий", "След: 10/100 — слабый"]},
+            "relationships_panel": [],
         },
-        "summary": "test",
-        "important_facts": [],
-        "witnesses": [],
-        "proposed_updates": {"scene_state_patch": {}, "knowledge_patches": [], "relationship_patches": [], "new_or_updated_characters": []},
+        "proposed_updates": {},
         "safety_checks": {
             "used_only_loaded_characters": True,
             "respected_knowledge_boundaries": True,
@@ -549,11 +532,12 @@ def test_normalizer_removes_separate_dialogue_block_and_formats_inline_dialogue(
             "respected_player_input_order": True,
             "showed_only_scene_relationships": True,
             "header_has_no_focus_or_active_list": True,
+            "notes": [],
         },
     }
-    bundle = {"current_state": {"player_character_id": "pc_01"}, "characters": {}}
-    normalized = normalize_scene_response(data, bundle)
-    rendered = normalized["scene"]["rendered_text"]
+    result = normalize_scene_response(payload, bundle)
+    rendered = result["scene"]["rendered_text"]
     assert "Диалог:" not in rendered
-    assert "**Мира** — Нет. *(сухо)*" in rendered
-    assert "**Кален** — Выйди." in rendered
+    assert "**Кайя** — Нет. *(сухо)*" in rendered
+    assert "**Голос снаружи** — Откройте дверь. *(негромко)*" in rendered
+

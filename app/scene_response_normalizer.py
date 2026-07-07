@@ -295,55 +295,58 @@ def _extract_body_from_rendered_text(rendered_text: str) -> str:
 
 def _format_dialogue_line(line: str) -> str:
     raw = line.strip()
-    if not raw:
+    if not raw or raw.startswith("*") and "—" not in raw:
         return line
-    if raw.lower().replace("ё", "е").strip(":") == "диалог":
-        return ""
-    if raw.startswith("*") and "—" not in raw:
-        return line
-
-    # Already correct or almost correct.
-    match = re.match(r"^\*\*([^*—]+?)\*\*\s*—\s*(.+)$", raw)
-    if not match:
-        # Common model error: Имя — Реплика
-        match = re.match(r"^([^—:]{1,40}?)\s*—\s*(.+)$", raw)
+    match = re.match(r"^\*\*?([^*—]+?)\*\*?\s*—\s*(.+)$", raw) or re.match(r"^([^—]+?)\s*—\s*(.+)$", raw)
     if not match:
         return line
-
     speaker = match.group(1).strip(" *")
     content = match.group(2).strip()
-
-    # Do not treat footer options as dialogue.
-    if speaker in {"Голод", "Усталость", "Травмы", "Эмоциональное состояние", "Навыки / ресурс"}:
-        return line
-
     aside = ""
     aside_match = re.search(r"\s*\(([^()]*)\)\s*$", content)
     if aside_match:
-        aside = aside_match.group(1).strip(" *")
+        aside = aside_match.group(1).strip()
         content = content[: aside_match.start()].rstrip()
-
     if aside:
-        if content and content[-1] not in ".!?…»":
-            content += "."
         return f"**{speaker}** — {content} *({aside})*"
     return f"**{speaker}** — {content}"
 
 
 def _format_dialogue_in_body(body: str) -> str:
-    # Dialogues must stay inline in body. Remove standalone "Диалог:" labels
-    # and canonicalize speaker lines wherever they appear.
-    lines = body.splitlines()
-    formatted: list[str] = []
-    for line in lines:
+    """Normalize dialogue inside body and remove old separate 'Диалог:' heading."""
+    if not body:
+        return body
+    body = re.sub(r"\n\s*Диалог:\s*\n", "\n", body)
+    lines = []
+    for line in body.splitlines():
         stripped = line.strip()
-        if stripped.lower().replace("ё", "е").strip(":") == "диалог":
+        if not stripped:
+            lines.append("")
             continue
-        new_line = _format_dialogue_line(stripped) if stripped else line
-        formatted.append(new_line)
-    text = "\n".join(formatted)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+        if stripped.startswith("**"):
+            fixed = re.sub(r"(\*\*[^*]+\*\*\s+—\s+.*?)(\s*)\(([^()]*)\)\s*$", r"\1 *(\3)*", stripped)
+            fixed = re.sub(r"\*\(([^()]*)\)\*", r"*(\1)*", fixed)
+            lines.append(fixed)
+            continue
+        m = re.match(r"^([А-ЯЁA-Z][А-Яа-яЁёA-Za-z0-9 .'\-]{0,40})\s+—\s+(.+?)(?:\s*\(([^()]*)\))?$", stripped)
+        if m and not stripped.lower().startswith(("снаружи ", "за дверью ", "изнутри ", "в проходе ", "потом ")):
+            speaker, speech, aside = m.groups()
+            speech = speech.strip()
+            if speech and not speech.endswith((".", "!", "?", "…")):
+                speech += "."
+            if aside:
+                lines.append(f"**{speaker.strip()}** — {speech} *({aside.strip()})*")
+            else:
+                lines.append(f"**{speaker.strip()}** — {speech}")
+            continue
+        fixed = re.sub(
+            r"^(Снаружи|За дверью|Изнутри|В проходе)\s+(.{0,80}?)\s+(говорит|произносит|отвечает|спрашивает)\s+—\s+(.+)$",
+            lambda mm: f"{mm.group(1)} {mm.group(2)} {mm.group(3)}. {mm.group(4)}",
+            stripped,
+            flags=re.I,
+        )
+        lines.append(fixed)
+    return "\n".join(lines).strip()
 
 
 def _looks_like_full_rendered_text(text: str, body: str, header: dict[str, Any]) -> bool:
@@ -370,9 +373,6 @@ def _build_rendered_text(scene: dict[str, Any]) -> str:
     actions = options.get("actions", [])[:3]
     custom = status.get("custom", [])[:2]
 
-    # Dialogues belong inline in body. Do not append a separate "Диалог:" block.
-    body_and_dialogue = body.strip()
-
     rel_lines = []
     for rel in relationships:
         if isinstance(rel, dict):
@@ -393,7 +393,7 @@ def _build_rendered_text(scene: dict[str, Any]) -> str:
 
 ━━━━━━━━━━━━━━━━━━━━
 
-{body_and_dialogue}
+{body}
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -477,7 +477,7 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
         if len(extracted_body) > len(current_body):
             current_body = extracted_body
 
-    scene["body"] = current_body
+    scene["body"] = _format_dialogue_in_body(current_body)
     # Always rebuild the visible frame from normalized scene fields. This keeps
     # the prose body but makes footer/dialogue formatting deterministic and short.
     scene["rendered_text"] = _build_rendered_text(scene)
