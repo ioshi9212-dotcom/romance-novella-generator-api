@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any
+import re
 
 
 REQUIRED_SAFETY_CHECKS = [
@@ -11,6 +12,9 @@ REQUIRED_SAFETY_CHECKS = [
     "showed_only_scene_relationships",
     "header_has_no_focus_or_active_list",
 ]
+
+
+MAX_FOOTER_NOTE_CHARS = 44
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -38,6 +42,61 @@ def _as_str(value: Any, fallback: str = "") -> str:
         parts = [f"{k}: {v}" for k, v in value.items() if str(v).strip()]
         return "; ".join(parts) or fallback
     return str(value).strip() or fallback
+
+
+def _short_note(value: Any, fallback: str = "норма", limit: int = MAX_FOOTER_NOTE_CHARS) -> str:
+    text = _as_str(value, fallback)
+    text = re.sub(r"\s+", " ", text).strip(" .;—-")
+    # Keep the first clause only. Footer is a dashboard, not a prose explanation.
+    for sep in [";", ".", " потому что ", " так как ", " но ", " и "]:
+        if sep in text and len(text.split(sep, 1)[0].strip()) >= 6:
+            text = text.split(sep, 1)[0].strip()
+            break
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip(" ,;.-") + "…"
+    return text or fallback
+
+
+def _extract_score(text: str) -> int | None:
+    match = re.search(r"(\d{1,3})\s*/\s*100", text)
+    if match:
+        value = int(match.group(1))
+        return max(0, min(100, value))
+    return None
+
+
+def _estimate_score(text: str, *, kind: str) -> int:
+    t = text.lower().replace("ё", "е")
+    found = _extract_score(t)
+    if found is not None:
+        return found
+
+    if kind == "injuries":
+        if any(x in t for x in ["нет", "без", "свежих травм нет"]):
+            return 0
+        if any(x in t for x in ["шрам", "стар"]):
+            return 10
+        if any(x in t for x in ["кров", "боль", "трав", "ран"]):
+            return 45
+        return 0
+
+    high = ["выс", "силь", "остр", "опас", "дав", "паник", "испуг", "актив", "раст", "замет"]
+    mid = ["сред", "умерен", "напряж", "насторож", "раздраж", "голод", "устал"]
+    low = ["низ", "легк", "лёгк", "слаб", "норма", "споко", "нет"]
+    if any(x in t for x in high):
+        return 75
+    if any(x in t for x in mid):
+        return 50
+    if any(x in t for x in low):
+        return 25
+    return 50
+
+
+def _meter(value: Any, *, kind: str, fallback: str = "норма") -> str:
+    raw = _as_str(value, fallback)
+    score = _estimate_score(raw, kind=kind)
+    note = _short_note(re.sub(r"\d{1,3}\s*/\s*100", "", raw), fallback=fallback)
+    return f"{score}/100 — {note}"
 
 
 def _character_display_map(bundle: dict[str, Any]) -> dict[str, str]:
@@ -68,8 +127,6 @@ def _resolve_character_id(value: Any, bundle: dict[str, Any], scene: dict[str, A
     if text in mapping:
         return mapping[text]
 
-    # Do not silently assign unknown or missing knowledge patches to the player.
-    # Unknown explicit ids are left as-is so validators/updater can reject or handle them.
     return text
 
 
@@ -107,8 +164,8 @@ def _normalize_options(scene: dict[str, Any]) -> None:
         scene["player_options"] = options
     defaults = {
         "thoughts": ["Отметить, что изменилось.", "Сдержать первую реакцию.", "Понять, чего она сейчас хочет."],
-        "dialogue": ["Сказать коротко и холодно.", "Задать прямой вопрос.", "Промолчать, но показать реакцию."],
-        "actions": ["Проверить деталь, которая изменилась.", "Сделать шаг к следующему конфликту.", "Выбрать, как встретить давление."],
+        "dialogue": ["Сказать коротко.", "Задать прямой вопрос.", "Промолчать."],
+        "actions": ["Проверить важную деталь.", "Сделать следующий шаг.", "Выбрать границу."],
     }
     for key, fallback in defaults.items():
         items = [_as_str(x) for x in _as_list(options.get(key)) if _as_str(x)]
@@ -122,11 +179,13 @@ def _normalize_status_panel(scene: dict[str, Any]) -> None:
     if not isinstance(panel, dict):
         panel = {}
         scene["status_panel"] = panel
-    panel["hunger"] = _as_str(panel.get("hunger"), "норма")
-    panel["fatigue"] = _as_str(panel.get("fatigue"), "не указано")
-    panel["injuries"] = _as_str(panel.get("injuries"), "нет")
-    panel["emotional_state"] = _as_str(panel.get("emotional_state"), "не указано")
-    panel["skills"] = _as_str(panel.get("skills"), "без активного ресурса")
+
+    panel["hunger"] = _meter(panel.get("hunger"), kind="hunger", fallback="норма")
+    panel["fatigue"] = _meter(panel.get("fatigue"), kind="fatigue", fallback="низкая")
+    panel["injuries"] = _meter(panel.get("injuries"), kind="injuries", fallback="нет")
+    panel["emotional_state"] = _meter(panel.get("emotional_state"), kind="emotional", fallback="ровно")
+    panel["skills"] = _meter(panel.get("skills"), kind="skills", fallback="активны")
+
     custom = _as_list(panel.get("custom"))
     normalized = []
     for index in range(2):
@@ -138,11 +197,12 @@ def _normalize_status_panel(scene: dict[str, Any]) -> None:
                 item = {"label": label.strip(), "value": value.strip()}
             else:
                 item = {"value": raw_text}
-        label = _as_str(item.get("label") or item.get("id"), f"Поле истории {index + 1}")
+        label = _short_note(item.get("label") or item.get("id"), f"Поле истории {index + 1}", 26)
+        raw_value = item.get("value")
         normalized.append({
             "id": _as_str(item.get("id") or label, f"story_slot_{index + 1}"),
             "label": label,
-            "value": _as_str(item.get("value"), "не задано"),
+            "value": _meter(raw_value, kind="custom", fallback="старт"),
         })
     panel["custom"] = normalized
 
@@ -152,9 +212,14 @@ def _normalize_relationships_panel(scene: dict[str, Any]) -> None:
     result = []
     for item in panel:
         if not isinstance(item, dict):
-            result.append({"label": "Отношения", "value": _as_str(item)})
+            text = _as_str(item)
+            if ":" in text:
+                label, value = text.split(":", 1)
+            else:
+                label, value = "Отношения", text
+            result.append({"label": _short_note(label, "Отношения", 28), "value": _meter(value, kind="relationship", fallback="нейтрально")})
             continue
-        label = _as_str(item.get("label") or item.get("name") or item.get("pair_id"), "Отношения")
+        label = _short_note(item.get("label") or item.get("name") or item.get("pair_id"), "Отношения", 28)
         value = _as_str(item.get("value"))
         if not value:
             bits = []
@@ -162,10 +227,7 @@ def _normalize_relationships_panel(scene: dict[str, Any]) -> None:
                 if item.get(key) is not None:
                     bits.append(f"{key}: {item.get(key)}")
             value = "; ".join(bits) or "без изменений"
-        normalized = dict(item)
-        normalized["label"] = label
-        normalized["value"] = value
-        result.append(normalized)
+        result.append({**item, "label": label, "value": _meter(value, kind="relationship", fallback="нейтрально")})
     scene["relationships_panel"] = result
 
 
@@ -185,7 +247,6 @@ def _normalize_knowledge_patches(updates: dict[str, Any], bundle: dict[str, Any]
                 normalized["add_knows"] = _as_list(normalized.get(old_key))
         if "source" in normalized and "source_in_scene" not in normalized:
             normalized["source_in_scene"] = _as_str(normalized.get("source"))
-        # Do not invent source_in_scene/reason. Validator must catch missing evidence.
         if normalized.get("add_knows") and "add_recent_memories" not in normalized:
             normalized["add_recent_memories"] = [_as_str(x) for x in _as_list(normalized["add_knows"]) if _as_str(x)][:5]
         for old_key in ["who", "name", "add", "source", "known", "knows"]:
@@ -213,40 +274,54 @@ def _normalize_relationship_patches(updates: dict[str, Any]) -> None:
 
 
 def _extract_body_from_rendered_text(rendered_text: str) -> str:
-    """Extract the prose/dialogue body from the visible scene text.
-
-    Custom GPT sometimes sends a full scene in rendered_text but only a one-line
-    summary in scene.body. The validator needs scene.body for state safety, so
-    this function recovers it from the visible text instead of rejecting a valid
-    scene solely because the structured body field was short.
-    """
     text = _as_str(rendered_text)
     if not text:
         return ""
-
     delimiter = "━━━━━━━━━━━━━━━━━━━━"
     if delimiter in text:
-        parts = text.split(delimiter, 2)
+        parts = text.split(delimiter)
+        if len(parts) >= 3:
+            return parts[1].strip()
         if len(parts) >= 2:
             candidate = parts[1]
-            # If the second delimiter exists, this removes the options/status tail.
-            if len(parts) >= 3:
-                candidate = parts[1]
             if "✦ Что можно сделать" in candidate:
                 candidate = candidate.split("✦ Что можно сделать", 1)[0]
             return candidate.strip()
-
-    start_markers = ["\n\nДиалог:", "\nДиалог:"]
-    end_markers = ["\n✦ Что можно сделать", "\n\n✦ Что можно сделать"]
     candidate = text
-    for marker in ["◈ <предметы", "◈ "]:
-        # Fallback is intentionally conservative; the delimiter path should cover
-        # normal scenes. Do not try to be too clever and strip real prose.
-        pass
-    for marker in end_markers:
-        if marker in candidate:
-            candidate = candidate.split(marker, 1)[0]
+    if "✦ Что можно сделать" in candidate:
+        candidate = candidate.split("✦ Что можно сделать", 1)[0]
     return candidate.strip()
+
+
+def _format_dialogue_line(line: str) -> str:
+    raw = line.strip()
+    if not raw or raw.startswith("*") and "—" not in raw:
+        return line
+    match = re.match(r"^\*\*?([^*—]+?)\*\*?\s*—\s*(.+)$", raw) or re.match(r"^([^—]+?)\s*—\s*(.+)$", raw)
+    if not match:
+        return line
+    speaker = match.group(1).strip(" *")
+    content = match.group(2).strip()
+    aside = ""
+    aside_match = re.search(r"\s*\(([^()]*)\)\s*$", content)
+    if aside_match:
+        aside = aside_match.group(1).strip()
+        content = content[: aside_match.start()].rstrip()
+    if aside:
+        return f"**{speaker}** — {content} *({aside})*"
+    return f"**{speaker}** — {content}"
+
+
+def _format_dialogue_in_body(body: str) -> str:
+    if "Диалог:" not in body:
+        return body
+    prefix, tail = body.split("Диалог:", 1)
+    lines = tail.splitlines()
+    formatted = []
+    for line in lines:
+        stripped = line.strip()
+        formatted.append(_format_dialogue_line(stripped) if stripped else line)
+    return prefix.rstrip() + "\n\nДиалог:\n" + "\n".join(formatted).strip()
 
 
 def _looks_like_full_rendered_text(text: str, body: str, header: dict[str, Any]) -> bool:
@@ -257,7 +332,6 @@ def _looks_like_full_rendered_text(text: str, body: str, header: dict[str, Any])
     if _as_str(header.get("player_name"), "") and _as_str(header.get("player_name")) not in text:
         return False
     body_excerpt = body[:80].strip()
-    # If body is a short summary, do not reject otherwise valid rendered_text.
     if body_excerpt and len(body.strip()) >= 500 and body_excerpt not in text:
         return False
     return True
@@ -265,7 +339,7 @@ def _looks_like_full_rendered_text(text: str, body: str, header: dict[str, Any])
 
 def _build_rendered_text(scene: dict[str, Any]) -> str:
     header = scene["header"]
-    body = _as_str(scene.get("body"), "")
+    body = _format_dialogue_in_body(_as_str(scene.get("body"), ""))
     options = scene["player_options"]
     status = scene["status_panel"]
     relationships = scene.get("relationships_panel") or []
@@ -273,15 +347,22 @@ def _build_rendered_text(scene: dict[str, Any]) -> str:
     dialogue = options.get("dialogue", [])[:3]
     actions = options.get("actions", [])[:3]
     custom = status.get("custom", [])[:2]
-    dialogue_block = scene.get("dialogue_text") or "Диалог:\n*Вслух пока ничего не сказано. Пауза тоже работает как ответ.*"
+
+    if "Диалог:" in body:
+        body_and_dialogue = body
+    else:
+        dialogue_block = scene.get("dialogue_text") or "Диалог:\n*Вслух пока ничего не сказано. Пауза тоже работает как ответ.*"
+        body_and_dialogue = f"{body}\n\n{dialogue_block}".strip()
+
     rel_lines = []
     for rel in relationships:
         if isinstance(rel, dict):
-            rel_lines.append(f"{_as_str(rel.get('label'), 'Отношения')}: {_as_str(rel.get('value'), 'без изменений')}")
+            rel_lines.append(f"{_as_str(rel.get('label'), 'Отношения')}: {_as_str(rel.get('value'), '50/100 — нейтрально')}")
         else:
-            rel_lines.append(str(rel))
+            rel_lines.append(_as_str(rel))
     if not rel_lines:
         rel_lines = ["Нет активных изменений."]
+
     return f"""🎭 {header['story_title']} · {header['date']}
 🕒 {header['time']} · 📍 {header['location']}
 🌦️ Погода: {header['weather']}
@@ -293,9 +374,7 @@ def _build_rendered_text(scene: dict[str, Any]) -> str:
 
 ━━━━━━━━━━━━━━━━━━━━
 
-{body}
-
-{dialogue_block}
+{body_and_dialogue}
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -340,15 +419,9 @@ def _normalize_safety_checks(result: dict[str, Any], scene: dict[str, Any]) -> N
     if not isinstance(checks, dict):
         checks = {}
         result["safety_checks"] = checks
-
-    # Practical fallback: Custom GPT often omits this object while still producing
-    # a full visible scene. Missing checks are filled as true only after the
-    # normalizer has a full rendered_text and extracted body; validators still
-    # reject empty scenes, forbidden headers and too-short body.
     rendered_text = _as_str(scene.get("rendered_text"))
     body = _as_str(scene.get("body"))
     can_fill_missing = _has_full_visible_scene(rendered_text) and len(body) >= 500
-
     for key in REQUIRED_SAFETY_CHECKS:
         if key not in checks and can_fill_missing:
             checks[key] = True
@@ -369,8 +442,6 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
         scene = {}
         result["scene"] = scene
 
-    # Backward-compatible payload cleanup:
-    # GPT sometimes puts full rendered_text at the top level instead of inside scene.
     top_level_rendered = _as_str(result.get("rendered_text"))
     if top_level_rendered and not _as_str(scene.get("rendered_text")):
         scene["rendered_text"] = top_level_rendered
@@ -382,15 +453,15 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
 
     current_body = _as_str(scene.get("body"), "")
     current_rendered = _as_str(scene.get("rendered_text"), "")
-
-    # If body is too short but rendered_text contains the real scene, recover body.
     if len(current_body) < 500 and current_rendered:
         extracted_body = _extract_body_from_rendered_text(current_rendered)
         if len(extracted_body) > len(current_body):
             current_body = extracted_body
 
     scene["body"] = current_body
-    scene["rendered_text"] = current_rendered if _looks_like_full_rendered_text(current_rendered, scene["body"], scene["header"]) else _build_rendered_text(scene)
+    # Always rebuild the visible frame from normalized scene fields. This keeps
+    # the prose body but makes footer/dialogue formatting deterministic and short.
+    scene["rendered_text"] = _build_rendered_text(scene)
 
     result["player_input"] = _as_str(result.get("player_input"))
 

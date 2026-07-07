@@ -1,112 +1,81 @@
-# romance-novella-generator-api — hotfix v3
-
-Пакет предназначен для распаковки **поверх текущего репозитория** с заменой файлов.
+# romance-novella-generator-api — hotfix v4
 
 ## Постоянное правило для будущих правок
 
-Не плодить новые runtime patch / locks / rules / hotfix-модули без крайней необходимости.
+Не добавлять новые runtime-patch/locks/rules слои без прямого запроса пользователя.
 
-Перед любой новой правкой:
-1. Сначала чинить существующие файлы (`main.py`, `models.py`, `scene_response_normalizer.py`, `validators.py`, `novella_openapi_actions.py`, тесты).
-2. Не добавлять новый слой `*_runtime_patch.py`, `*_rules.py`, `*_locks.py`, если проблему можно решить в текущем v9 flow.
-3. Не делать “зоопарк” параллельных контрактов.
-4. Один источник Actions-схемы: `/openapi-actions.json`.
-5. Ручной `openapi.yaml` — только fallback/static copy, не главный источник.
-6. Любой фикс обязан иметь тест на реальный payload из лога, а не только на идеальный JSON.
+Правильный стиль фиксов:
+- чинить существующие `app/*.py`, schemas, prompts/tests;
+- делать ZIP на замену поверх репозитория;
+- давать `DELETE_LIST.txt`, даже если удалять нечего;
+- если меняется поведение Custom GPT — давать отдельный файл инструкции;
+- не плодить файлы вида `*_runtime_patch.py`, `*_hotfix.py`, `*_guard.py`, `*_rules_patch.py`, если это можно исправить в основном коде.
 
-## Что чинит v3
+## Что чинит v4
 
-В реальном логе `applyTurnResult` падал с 422:
+v3 починил сохранение грязного scene_response, но видимая сцена всё ещё могла быть неправильной:
 
-- `scene.body must be a real scene body, at least 500 characters`
-- `safety_checks.* must be true`
+- ассистент писал комментарии перед обращением к API;
+- `Диалог:` иногда был в формате `Имя — реплика`, а нужен `**Имя** — Реплика. *(ремарка)*`;
+- нижний блок `Состояние` становился длинным объяснением;
+- `Отношения` раскрывали слишком много текста вместо короткого уровня;
+- `scene.body` мог быть коротким, хотя полный body был в `rendered_text`.
 
-При этом полная художественная сцена была внутри `rendered_text`, но `scene.body` был коротким пересказом, а `safety_checks` отсутствовали.
-
-v3 исправляет это без добавления новых runtime-слоёв:
-
-1. `scene_response_normalizer.py`
-   - если `scene.body` короткий, но `rendered_text` полный, body извлекается из `rendered_text`;
-   - top-level `rendered_text` переносится в `scene.rendered_text`;
-   - missing `safety_checks` автозаполняются только после восстановления полной сцены;
-   - `status_panel.custom` строками вида `Лейбл: значение` переводится в нормальные object-слоты.
-
-2. `models.py`
-   - `ApplyTurnResultRequest` стал совместимее с грязными Action payload;
-   - top-level `rendered_text`, `proposed_updates`, `safety_checks`, `metadata`, `diagnostics` больше не режутся моделью.
-
-3. `main.py`
-   - top-level compatibility fields перекладываются внутрь `scene_response` до нормализации;
-   - сохранён fallback для `turn_id`.
-
-4. `novella_openapi_actions.py`
-   - `ApplyTurnResultRequest` теперь явно описывает `SceneResponse`;
-   - top-level compatibility fields разрешены;
-   - `additionalProperties=true` для `ApplyTurnResultRequest`, чтобы Action не падал на попытке GPT исправить payload.
-
-5. `tests/test_smoke.py`
-   - добавлен тест на грязный реальный формат:
-     - полный `rendered_text`;
-     - короткий `scene.body`;
-     - отсутствуют `safety_checks`;
-     - отсутствует `proposed_updates`.
+v4 исправляет это без новых runtime-слоёв.
 
 ## Файлы на замену
 
 ```txt
+app/scene_response_normalizer.py
+app/turn_processor.py
 app/main.py
 app/models.py
-app/scene_response_normalizer.py
 app/novella_openapi_actions.py
-tests/test_smoke.py
 openapi.yaml
+tests/test_smoke.py
 PATCH_README.md
+DELETE_LIST.txt
+CUSTOM_GPT_INSTRUCTION_PATCH_v4.txt
 ```
 
-## Файлы на удаление
+`main.py`, `models.py`, `novella_openapi_actions.py`, `openapi.yaml` включены для совместимости с v3 и чтобы ZIP можно было класть поверх текущей репы без поиска прошлых фиксов.
 
-```txt
-Ничего удалять не нужно.
-```
+## Поведение после v4
 
-## Проверка после распаковки
+### Видимая сцена
+
+Backend теперь канонизирует `rendered_text` перед сохранением:
+
+- сохраняет полноценный body сцены;
+- если `scene.body` короткий, извлекает body из `rendered_text`;
+- форматирует диалоги как `**Имя** — Реплика. *(ремарка)*`;
+- пересобирает нижний блок в короткий dashboard;
+- статусные поля выводит как `<0-100>/100 — коротко`;
+- отношения выводит коротко и без спойлерных объяснений.
+
+### API-flow
+
+`turn_processor.py` теперь прямо запрещает писать комментарии перед вызовом API и требует:
+
+- `scene.body` = полноценная сцена, не пересказ;
+- `rendered_text` содержит body между шапкой и вариантами;
+- нижний блок короткий, а не объяснительный;
+- `applyTurnResult` вызывается сразу после генерации scene_response.
+
+## Проверка
+
+Локально:
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
 Ожидаемо:
 
 ```txt
-6 passed
+7 passed
 ```
 
-## Что подключать в Custom GPT Actions
+## Удаление файлов
 
-Основной URL:
-
-```txt
-https://<твоя-railway-ссылка>/openapi-actions.json
-```
-
-После деплоя проверь:
-
-```txt
-GET /health
-GET /openapi-actions.json
-```
-
-В `/openapi-actions.json` у `applyTurnResult` должны быть:
-
-```txt
-turn_id
-scene_response
-rendered_text
-proposed_updates
-safety_checks
-metadata
-```
-
-## Важно для старых сессий
-
-Если сессия уже застряла после `processTurn`, лучше начать новую тестовую сессию после деплоя. Старый pending turn может быть в промежуточном состоянии.
+См. `DELETE_LIST.txt`.
