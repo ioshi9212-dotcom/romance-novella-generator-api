@@ -61,3 +61,17 @@ applyTurnResult
 ```
 
 `applyTurnResult` теперь ждёт `turn_id`, который вернул `processTurn`.
+
+
+## Дополнительный hotfix v2
+
+Если Custom GPT Actions уже импортировал старую схему и всё ещё не даёт передать `turn_id` как отдельное поле, backend теперь не падает сразу.
+
+Новая логика:
+- сначала берёт `turn_id` из top-level request body;
+- если его нет, ищет `turn_id` внутри `scene_response.turn_id`, `_turn_id`, `pending_turn_id`, `diagnostics.turn_id`, `metadata.turn_id`;
+- если Action вообще не может передать `turn_id`, backend привязывает сохранение к единственному pending turn после проверки `scene_response.player_input`.
+
+Это сохраняет защиту от старого контекста: если `player_input` в scene_response не совпадает с последним processTurn, сохранение будет отклонено.
+
+Также добавлена нормализация внешности: если GPT случайно засунул всю внешность в `hair`/`eyes`, API пытается разложить её по `height`, `build`, `hair`, `eyes`, `face`, `style`.

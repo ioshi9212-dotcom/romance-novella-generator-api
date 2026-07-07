@@ -130,11 +130,11 @@ APPLY_TURN_RESULT_SCHEMA = _schema_obj(
     {
         "turn_id": {
             "type": ["string", "null"],
-            "description": "The turn_id returned by processTurn. Required for normal gpt_actions flow.",
+            "description": "The turn_id returned by processTurn. Preferred top-level field. If an old Actions import cannot send it here, backend can also bind to the single pending turn after player_input check.",
         },
         "scene_response": _loose_obj(),
     },
-    required=["turn_id", "scene_response"],
+    required=["scene_response"],
 )
 
 
@@ -191,6 +191,14 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                     "summary": "Create a new generated novella session or return questionnaire if setup is too small.",
                     "requestBody": _request_body({"$ref": "#/components/schemas/CreateSessionRequest"}, required=True),
                     "responses": {"200": generic},
+                }
+            },
+            "/api/v1/sessions/{session_id}": {
+                "get": {
+                    "operationId": "getSession",
+                    "summary": "Get one session status by session_id.",
+                    "parameters": [_session_id_param()],
+                    "responses": {"200": generic, "404": _json_response("Session not found", _loose_obj())},
                 }
             },
             "/api/v1/sessions/{session_id}/bootstrap-preview": {

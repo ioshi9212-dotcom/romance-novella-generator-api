@@ -299,6 +299,19 @@ def test_v9_preview_confirm_turn_apply_flow():
     )
     assert duplicate.status_code == 409
 
+    # Backward compatibility: an old imported Action may expose only scene_response
+    # and reject a top-level turn_id. Backend should bind to the single pending turn
+    # after checking scene_response.player_input.
+    second_input = "(сдержать раздражение и посмотреть на лампу)"
+    second_turn = client.post(f"/api/v1/sessions/{session_id}/turn", json={"player_input": second_input, "mode": "gpt_actions"})
+    assert second_turn.status_code == 200
+    second_response = _long_scene_response(second_input)
+    fallback_apply = client.post(
+        f"/api/v1/sessions/{session_id}/apply-turn-result",
+        json={"scene_response": second_response},
+    )
+    assert fallback_apply.status_code == 200
+
 
 def test_apply_turn_result_requires_pending_turn_id():
     client = TestClient(app)

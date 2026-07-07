@@ -95,9 +95,62 @@ def _normalize_name(card: dict[str, Any], character_id: str) -> tuple[str, str |
     return raw, visible
 
 
+def _extract_appearance_fields(text: str) -> dict[str, str]:
+    """Best-effort splitter for GPT outputs that put the whole appearance into one field."""
+    source = _as_str(text)
+    result: dict[str, str] = {}
+
+    height_match = re.search(r"(?:рост\s*[:—-]?\s*)?(\d{2,3}\s*см)", source, re.IGNORECASE)
+    if height_match:
+        result["height"] = height_match.group(1).strip()
+
+    lower = source.lower()
+    build_bits: list[str] = []
+    if "стройн" in lower:
+        build_bits.append("стройное")
+    if "обычн" in lower:
+        build_bits.insert(0, "обычное")
+    if "подтянут" in lower:
+        build_bits.append("подтянутое")
+    if build_bits:
+        result["build"] = ", ".join(dict.fromkeys(build_bits))
+
+    hair_match = re.search(r"(?:волос[ыа]?\s*[:—-]?\s*)?((?:натуральн\w+\s+)?блонд[^.。;]*|каре[^.。;]*|[^.。;]*(?:волос|блонд|каре)[^.。;]*)", source, re.IGNORECASE)
+    if hair_match:
+        hair = hair_match.group(1).strip(" .;")
+        hair = re.sub(r"^рост\s*\d{2,3}\s*см[,]?\s*", "", hair, flags=re.IGNORECASE).strip(" .;")
+        if hair:
+            result["hair"] = hair
+
+    eyes_match = re.search(r"((?:карие|т[ёе]мно[- ]?карие|почти\s+ч[её]рные)[^.。;]*(?:глаз|янтар)[^.。;]*|глаз[а]?\s*[:—-]?\s*[^.。;]*(?:кар|ч[её]рн|янтар)[^.。;]*)", source, re.IGNORECASE)
+    if eyes_match:
+        eyes = eyes_match.group(1).strip(" .;")
+        eyes = re.sub(r"^глаз[а]?\s*[:—-]?\s*", "", eyes, flags=re.IGNORECASE).strip(" .;")
+        result["eyes"] = eyes
+
+    face_match = re.search(r"(лицо\s*[:—-]?\s*[^.。;]+)", source, re.IGNORECASE)
+    if face_match:
+        result["face"] = re.sub(r"^лицо\s*[:—-]?\s*", "", face_match.group(1), flags=re.IGNORECASE).strip(" .;")
+
+    style_match = re.search(r"(?:стиль|одежда|носит|в последнее время)\s*[:—-]?\s*([^.;。]+)", source, re.IGNORECASE)
+    if style_match:
+        result["style"] = style_match.group(1).strip(" .;")
+    elif any(word in lower for word in ["джинс", "свитер", "кроссов"]):
+        pieces = []
+        if "джинс" in lower:
+            pieces.append("джинсы")
+        if "свитер" in lower:
+            pieces.append("свитера")
+        if "кроссов" in lower:
+            pieces.append("кроссовки")
+        result["style"] = ", ".join(pieces)
+
+    return result
+
+
 def _normalize_appearance(value: Any) -> dict[str, str]:
     if isinstance(value, dict):
-        return {
+        raw = {
             "height": _as_str(value.get("height"), "не указано"),
             "build": _as_str(value.get("build"), "не указано"),
             "hair": _as_str(value.get("hair"), "не указано"),
@@ -105,8 +158,32 @@ def _normalize_appearance(value: Any) -> dict[str, str]:
             "face": _as_str(value.get("face"), "не указано"),
             "style": _as_str(value.get("style"), "не указано"),
         }
+        joined = " ".join(
+            item for item in raw.values()
+            if item and item != "не указано"
+        )
+        parsed = _extract_appearance_fields(joined)
+        for key in ["height", "build", "face", "style"]:
+            if raw.get(key) == "не указано" and parsed.get(key):
+                raw[key] = parsed[key]
+        for key in ["hair", "eyes"]:
+            current = raw.get(key, "не указано")
+            # If GPT duplicated the whole appearance in hair/eyes, replace it with a clean field.
+            looks_like_dump = len(current) > 90 and any(marker in current.lower() for marker in ["рост", "телослож", "лицо", "глаз"])
+            if (current == "не указано" or looks_like_dump) and parsed.get(key):
+                raw[key] = parsed[key]
+        return raw
+
     text = _as_str(value, "не указано")
-    return {"height": "не указано", "build": "не указано", "hair": text, "eyes": text, "face": "не указано", "style": "не указано"}
+    parsed = _extract_appearance_fields(text)
+    return {
+        "height": parsed.get("height", "не указано"),
+        "build": parsed.get("build", "не указано"),
+        "hair": parsed.get("hair", text if text != "не указано" else "не указано"),
+        "eyes": parsed.get("eyes", "не указано"),
+        "face": parsed.get("face", "не указано"),
+        "style": parsed.get("style", "не указано"),
+    }
 
 
 def _normalize_personality(card: dict[str, Any]) -> dict[str, Any]:

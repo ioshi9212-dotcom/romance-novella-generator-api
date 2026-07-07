@@ -58,6 +58,20 @@ paths:
       responses:
         '200':
           description: OK
+  /api/v1/sessions/{session_id}:
+    get:
+      operationId: getSession
+      summary: Get one session status by session_id.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: Session not found
   /api/v1/sessions/{session_id}/bootstrap-preview:
     post:
       operationId: createBootstrapPreview
@@ -146,7 +160,7 @@ paths:
   /api/v1/sessions/{session_id}/apply-turn-result:
     post:
       operationId: applyTurnResult
-      summary: Validate and save scene_response. Use turn_id from processTurn.
+      summary: Validate and save scene_response. Use turn_id from processTurn when the Action schema supports it.
       parameters:
         - name: session_id
           in: path
@@ -158,7 +172,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [turn_id, scene_response]
+              required: [scene_response]
               properties:
                 turn_id:
                   type: [string, 'null']

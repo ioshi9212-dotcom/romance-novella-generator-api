@@ -101,14 +101,47 @@ def _load_pending_turn(manager: SessionManager, session_id: str) -> dict[str, An
     pending = manager.storage.read_json(session_id, "pending_turn.json", default={})
     return pending if isinstance(pending, dict) else {}
 
+def _extract_turn_id_from_scene_response(scene_response: dict[str, Any]) -> str | None:
+    """Compatibility layer for old Custom GPT Actions imports.
+
+    Some already-imported Actions schemas expose only `scene_response` and reject a
+    top-level `turn_id` parameter. In that case GPT may place the id inside the
+    scene_response object, or omit it entirely even though the backend has a
+    single pending turn. This helper lets the backend stay strict about pending
+    turn matching without breaking old Action schemas.
+    """
+    if not isinstance(scene_response, dict):
+        return None
+    for key in ("turn_id", "_turn_id", "pending_turn_id"):
+        value = scene_response.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    diagnostics = scene_response.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        value = diagnostics.get("turn_id") or diagnostics.get("pending_turn_id")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    metadata = scene_response.get("metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get("turn_id") or metadata.get("pending_turn_id")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _require_pending_turn_match(manager: SessionManager, session_id: str, request_turn_id: str | None, normalized_scene_response: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
     pending = _load_pending_turn(manager, session_id)
     if not pending or not pending.get("turn_id"):
         raise HTTPException(status_code=409, detail="No pending turn. Call processTurn before applyTurnResult.")
     if pending.get("status") == "applied":
         raise HTTPException(status_code=409, detail="This turn was already applied. Call processTurn for the next player input.")
+
+    # Backward-compatible fallback: if the imported Action cannot pass top-level
+    # turn_id, bind to the single pending turn. The player_input check below still
+    # prevents applying a scene generated from stale context.
     if not request_turn_id:
-        raise HTTPException(status_code=409, detail="turn_id is required. Use the turn_id returned by processTurn.")
+        request_turn_id = str(pending.get("turn_id") or "").strip()
+
     if request_turn_id != pending.get("turn_id"):
         raise HTTPException(status_code=409, detail="Stale or mismatched turn_id. Do not apply a scene_response from an old scene_prompt.")
 
@@ -264,8 +297,10 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
     try:
         bundle = manager.get_memory(session_id)
         _require_active_session(bundle, "applying a turn result")
-        normalized_scene_response = normalize_scene_response(request.scene_response, bundle)
-        pending = _require_pending_turn_match(manager, session_id, request.turn_id, normalized_scene_response, bundle)
+        raw_scene_response = dict(request.scene_response or {})
+        compatible_turn_id = request.turn_id or _extract_turn_id_from_scene_response(raw_scene_response)
+        normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
+        pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)
         errors = validate_scene_response(normalized_scene_response)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
