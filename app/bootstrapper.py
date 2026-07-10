@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from typing import Any
+
+from app.config import get_settings
 from app.id_utils import now_iso, pair_id
 
 
@@ -232,7 +236,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "session_id": session_id,
         "title": user_request.get("title") or "Debug novella session",
         "status": "active",
-        "engine_version": "novella-generator-gpt-actions-v8",
+        "engine_version": get_settings().engine_version,
         "created_at": created_at,
         "updated_at": created_at,
     }

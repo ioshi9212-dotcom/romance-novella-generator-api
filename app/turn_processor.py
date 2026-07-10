@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from typing import Any
 import json
+
 from app.scene_contract_builder import build_scene_contract
+
 
 COMPACT_SCENE_WRITER_PROMPT = """
 Ты внутри tool-flow. Это НЕ финальный ответ пользователю.
@@ -14,25 +17,24 @@ COMPACT_SCENE_WRITER_PROMPT = """
 - Пиши сцену короткими beat-абзацами: действие, реплика, реакция, пауза, движение, новая деталь, чужая реплика, последствие.
 - Абзац обычно 1–3 коротких предложения. Не пиши 5–9 больших плотных абзацев.
 - Не раздувай описание поверх описания: одна яркая деталь на beat, затем действие/реплика/реакция/последствие.
-- Описание не должно занимать больше половины body, если в сцене есть живые персонажи.
-- Если NPC присутствует, он не декорация: минимум 2–4 живых проявления NPC за сцену (реплика, действие, сообщение, звонок, отказ, ошибка, давление, уход, жест, ревность, злость, забота, обида, неверный вывод).
+- Если NPC присутствует, он не декорация: минимум 2–4 живых проявления NPC за сцену.
 - Чуть иронии/сарказма можно, но редко: 1–2 коротких момента на сцену, не в каждой реплике.
 - Сцена имеет начало, развитие, реакцию среды/NPC/сообщения и финальный крючок.
-- Заканчивай точкой выбора после нового давления/детали/реплики/звука/действия, но не превращай это в головоломку или процедуру.
+- Заканчивай точкой выбора после нового давления/детали/реплики/звука/действия.
 - Варианты в конце meaningful: выбор реакции, границы, доверия, недоверия, риска, вопроса, социальной позиции или отношения к NPC.
 - В rendered_text ОБЯЗАТЕЛЬНО вставь body между шапкой и блоком выбора.
 - В visible text используй кириллицу для имён, если есть display_name.
 
 Агентность персонажей/NPC:
 - Мир не крутится вокруг персонажа игрока и не ждёт его. У NPC есть свои дела, проблемы, сроки, страхи, желания, прошлое и цели.
-- Цель героини — её личная цель. Цели NPC и мира отдельные: они могут совпадать, конфликтовать или вообще не зависеть от желаний героини.
+- Цель героини — её личная цель. Цели NPC и мира отдельные.
 - NPC не прицеп к героине: они могут уходить, звонить, писать, перебивать, злиться, ревновать, обижаться, ошибаться, давить, помогать неудобно или отказывать.
-- NPC действуют по своему характеру, цели, чувствам, знаниям, отношениям и видимым фактам, а не чтобы быть удобными/неудобными для игрока.
+- NPC действуют по своему характеру, цели, чувствам, знаниям, отношениям и видимым фактам.
 - NPC не консультанты, не навигаторы, не квестодатели, не справочники и не живые подсказки.
-- Если NPC знает больше героини, он не обязан объяснять или ждать её решения. Он может соврать, промолчать, вмешаться, увести другого, сорвать разговор, закрыть угрозу сам или сделать ситуацию хуже.
+- Если NPC знает больше героини, он не обязан объяснять или ждать её решения.
 - Player agency запрещает решать личные выборы героини, но НЕ запрещает NPC действовать самостоятельно.
-- NPC не читают мысли игрока и не делают всегда правильные выводы. Они могут неверно понять жест, паузу, сарказм, молчание или действие.
-- NPC не психологи и не философы по умолчанию. Не превращай реплики в терапию, лекцию или объяснение лора.
+- NPC не читают мысли игрока и не делают всегда правильные выводы.
+- NPC не психологи и не философы по умолчанию.
 - Разные NPC должны отличаться речью, темпом, границами, ошибками, привычками и способом давить/помогать.
 - Не делай всех одинаково мягкими, одинаково грубыми или одинаково понимающими.
 
@@ -41,7 +43,7 @@ COMPACT_SCENE_WRITER_PROMPT = """
 - Мистика должна усиливать притяжение, ревность, страх, ложь, защиту, недоверие, выбор между персонажами или нарушение границ.
 - Не строи сцену вокруг “правильно нажать / подтвердить / назвать / посчитать / оформить / проверить предмет”.
 - Нельзя делать героиню главным решателем мистической процедуры, если она не знает правил мира.
-- Если история только начинается (`act_1_start`, `opening`, `intro`), первые 2–3 сцены должны знакомить с героиней, работой/бытом, ближайшими NPC и обычной динамикой. Мистика нарастает мягко: ощущение, тень, отражение, сбой звука, странная пауза NPC. Не начинай сразу с главной угрозы, договора, долга, исчезновения или лорной процедуры.
+- Если история только начинается (`act_1_start`, `opening`, `intro`), первые 2–3 сцены должны знакомить с героиней, работой/бытом, ближайшими NPC и обычной динамикой. Мистика нарастает мягко.
 
 Диалоги:
 - Реплики всегда внутри body, отдельными строками между действиями и реакциями.
@@ -58,14 +60,14 @@ COMPACT_SCENE_WRITER_PROMPT = """
 - dialogue options не начинай с лишнего тире: backend сам добавит “—”. Это должны быть готовые реплики в голосе героини, а не описание намерения.
 - thoughts должны звучать как внутренний монолог героини, а не инструкция игроку и не технический анализ.
 - Перед действиями в rendered_text добавь строку: “Варианты ниже не считаются действием, пока игрок не выбрал.”
-- Заголовки: “✦ Что можно сделать”, “✦ Что <имя героини> могла бы сказать”, “✦ Мысли <имя героини>”.
+- Заголовки должны строго совпадать с backend-renderer: “✦ Что можно сделать”, “✦ Что можно сказать”, “✦ Мысли”. Не добавляй имя героини в эти три заголовка.
 - Статусы бери из SCENE_CONTRACT_JSON.current_frame.status и меняй только через proposed_updates.scene_state_patch.status, если в сцене реально случилось изменение.
 - Если голод/усталость/травма/эмоция высокие (70+), это должно проявиться в body: движение, темп речи, пауза, боль, дрожь, раздражение, страх, срыв контроля. Не игнорируй 100/100.
 - Травмы включают боль/штамп/ожог/рану/руку. Если рука болит, персонаж автоматически бережёт её или реагирует телом, даже без напоминания игрока.
-- Эмоции должны соответствовать происходящему. Неприятная мистика не делает героиню спокойной стендап-машиной: страх, злость, отвращение, контроль, усталость выражаются телом и голосом.
+- Эмоции должны соответствовать происходящему.
 - Не показывай в visible text технические id, snake_case, английские JSON-ключи и debug-поля. `vision_intensity` показывай как “Видения”, `emotional_numbness` как “Эмоциональная отстранённость”.
 - Для status.custom в rendered_text используй человеческий label + value. Никогда не выводи `id` как видимое название.
-- relationships_panel — состояние отношений из state или baseline, не пересказ события. Если важный NPC присутствует в сцене, но пары ещё нет, покажи нейтральное первое состояние без скрытых фактов: “Имя: 50/100 — первое впечатление”.
+- relationships_panel — состояние отношений из state или baseline, не пересказ события.
 
 scene_response JSON: response_version, player_input, scene(header/body/player_options/status_panel/relationships_panel/rendered_text), summary, important_facts, witnesses, proposed_updates, safety_checks.
 Типы: inventory строка; player_options object thoughts/dialogue/actions; relationships_panel label/value; knowledge_patches character_id/reason/source_in_scene/add_knows/add_observations/add_assumptions; relationship_patches pair_id/change_type/entry/reason/source_in_scene.
@@ -92,13 +94,13 @@ rendered_text начинается строго:
 ◈ <конкретное действие в текущей сцене>
 ◈ <конкретное действие в текущей сцене>
 
-✦ Что <имя героини> могла бы сказать
+✦ Что можно сказать
 
 — <готовая реплика в голосе героини>
 — <готовая реплика в голосе героини>
 — <готовая реплика в голосе героини>
 
-✦ Мысли <имя героини>
+✦ Мысли
 
 — <внутренняя мысль в голосе героини>
 — <внутренняя мысль в голосе героини>
@@ -124,7 +126,7 @@ rendered_text начинается строго:
 def _clip_text(value: Any, limit: int = 520) -> str:
     text = "" if value is None else str(value)
     text = " ".join(text.split())
-    return text if len(text) <= limit else text[:limit-1].rstrip() + "…"
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def _clip_list(items: Any, limit_items: int = 6, text_limit: int = 300) -> list[Any]:
@@ -134,14 +136,14 @@ def _clip_list(items: Any, limit_items: int = 6, text_limit: int = 300) -> list[
 
 
 def _compact_dict(data: dict[str, Any], text_limit: int = 320) -> dict[str, Any]:
-    result = {}
+    result: dict[str, Any] = {}
     for key, value in data.items():
         if isinstance(value, str):
             result[key] = _clip_text(value, text_limit)
         elif isinstance(value, list):
-            result[key] = _clip_list(value, 6, max(160, text_limit//2))
+            result[key] = _clip_list(value, 6, max(160, text_limit // 2))
         elif isinstance(value, dict):
-            result[key] = _compact_dict(value, max(160, text_limit//2))
+            result[key] = _compact_dict(value, max(160, text_limit // 2))
         else:
             result[key] = value
     return result
@@ -237,7 +239,7 @@ def _render_stub_scene(current_frame: dict[str, Any], player_input: str, status:
     location = current_frame.get("location") or "место сцены"
     weather = current_frame.get("weather") or "атмосфера не задана"
     scene_state = current_frame.get("scene_state") or "debug режим"
-    visible_state = status.get("emotional_state", "нейтрально")
+    visible_state = status.get("emotional_state", "нейтрально") if isinstance(status, dict) else "нейтрально"
     outfit = current_frame.get("outfit") or "одежда не задана"
     inventory = _as_list_text(current_frame.get("inventory"), "ничего не указано")
     return f"""🎭 {story_title} · {date}
@@ -262,26 +264,26 @@ def _render_stub_scene(current_frame: dict[str, Any], player_input: str, status:
 ◈ Убрать руку от вещей и дать ближайшему NPC сделать следующий шаг.
 ◈ Сместиться к видимому выходу, не начиная разговор первой.
 
-✦ Что {name} могла бы сказать
+✦ Что можно сказать
 
 — Продолжим, только без загадок и служебных инструкций.
 — Кто сейчас реально рядом, а кто просто делает вид?
 — Я не подписывалась быть центром вашего странного собрания.
 
-✦ Мысли {name}
+✦ Мысли
 
 — Если это проверка, она плохо замаскирована под жизнь.
 — Кто-то здесь явно знает больше, чем говорит. Ненавижу удобных молчунов.
 — Нужно смотреть на людей, а не на красивые подсказки системы.
 
 ✦ Состояние
-Голод: {status.get('hunger', 'норма')}
-Усталость: {status.get('fatigue', 'низкая')}
-Травмы: {_as_list_text(status.get('injuries'), 'нет')}
-Эмоциональное состояние: {status.get('emotional_state', 'нейтрально')}
-Навыки / ресурс: {_as_list_text(status.get('skills'), 'без активного ресурса')}
-Поле истории 1: не задано
-Поле истории 2: не задано
+Голод: {status.get('hunger', 'норма') if isinstance(status, dict) else 'норма'}
+Усталость: {status.get('fatigue', 'низкая') if isinstance(status, dict) else 'низкая'}
+Травмы: {_as_list_text(status.get('injuries'), 'нет') if isinstance(status, dict) else 'нет'}
+Эмоциональное состояние: {status.get('emotional_state', 'нейтрально') if isinstance(status, dict) else 'нейтрально'}
+Навыки / ресурс: {_as_list_text(status.get('skills'), 'без активного ресурса') if isinstance(status, dict) else 'без активного ресурса'}
+Сюжетное давление: не задано
+Мистический отклик: не задано
 
 ✦ Отношения
 Нет активных изменений.
@@ -324,7 +326,7 @@ def process_turn_debug_stub(bundle: dict[str, Any], player_input: str) -> dict[s
                 "weather": current_frame.get("weather") or "атмосфера не задана",
                 "scene_state": current_frame.get("scene_state") or "debug режим",
                 "player_name": current_frame.get("player_display_name") or "Героиня",
-                "visible_state": status.get("emotional_state", "нейтрально"),
+                "visible_state": status.get("emotional_state", "нейтрально") if isinstance(status, dict) else "нейтрально",
                 "outfit": current_frame.get("outfit") or "одежда не задана",
                 "inventory": _as_list_text(current_frame.get("inventory"), "ничего не указано"),
             },
@@ -347,12 +349,12 @@ def process_turn_debug_stub(bundle: dict[str, Any], player_input: str) -> dict[s
                 ],
             },
             "status_panel": {
-                "hunger": status.get("hunger", "норма"),
-                "fatigue": status.get("fatigue", "низкая"),
-                "injuries": _as_list_text(status.get("injuries"), "нет"),
-                "emotional_state": status.get("emotional_state", "нейтрально"),
-                "skills": _as_list_text(status.get("skills"), "без активного ресурса"),
-                "custom": status.get("custom", [])[:2],
+                "hunger": status.get("hunger", "норма") if isinstance(status, dict) else "норма",
+                "fatigue": status.get("fatigue", "низкая") if isinstance(status, dict) else "низкая",
+                "injuries": _as_list_text(status.get("injuries"), "нет") if isinstance(status, dict) else "нет",
+                "emotional_state": status.get("emotional_state", "нейтрально") if isinstance(status, dict) else "нейтрально",
+                "skills": _as_list_text(status.get("skills"), "без активного ресурса") if isinstance(status, dict) else "без активного ресурса",
+                "custom": (status.get("custom", []) if isinstance(status, dict) else [])[:2],
             },
             "relationships_panel": [],
             "rendered_text": rendered,
