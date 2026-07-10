@@ -39,7 +39,13 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - `character_id` — машинный id этой сессии. Он создаётся в bootstrap и дальше используется для карточки, знаний и отношений. Не привязывай id к готовым именам.
 - Не раскрывай будущих важных персонажей полностью, если персонаж игрока их ещё не знает.
 - Для неизвестных будущих фигур делай только seed в future_locks.hidden_character_seeds, без имени и без полной карточки.
-- Создай подробный story_plan: setting_summary, main_premise, protagonist_start, player_goal, central_conflict, central_question, opening_scene_intent, act_structure, character_arcs, relationship_focus, open_threads, forbidden_drift и ровно два story-specific status slots.
+- Создай подробный story_plan: setting_summary, main_premise, protagonist_start, player_goal, central_conflict, central_question, opening_scene_intent, opening_pacing, scene_focus_rules, act_structure, character_arcs, relationship_focus, open_threads, forbidden_drift и ровно два story-specific status slots.
+- player_goal — это личная цель героини, а не цель всего мира.
+- NPC имеют собственные цели, маршруты, знания, страхи, сроки и желания. Они не обязаны хотеть того же, что хочет героиня.
+- Не создавай NPC как консультантов, навигаторов, справочники, психологов, квестодателей или людей, которые ждут решения героини.
+- В npc_state для значимых NPC задай коротко: current_goal, current_route, current_pressure, next_self_action_if_ignored.
+- Если пользователь просит романтическую мистику / дораму / фэнтези / лёгкий хоррор / историю про видения, первые 2–3 сцены должны быть вводными: героиня, работа/быт, ближайшие NPC, обычная динамика, слабая мистика. Не начинай сразу с главной угрозы, договора, долга, квеста, пропажи, расследования, карты, записки или мистической процедуры.
+- Мистика должна запускать отношения, ревность, недоверие, защиту, притяжение или конфликт, а не заменять их квестом.
 - В current_state обязательно заполни: date, time, location, weather, scene_state, outfit, inventory, nearby_items.
 - В current_state.status обязательно заполни: hunger, fatigue, injuries, emotional_state, skills, custom[2].
 - Будущие сцены должны поддерживать игровую шапку без POV, 3 мысли, 3 реплики, 3 действия, состояние и отношения в сцене.
@@ -80,12 +86,12 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "hair": "не задано",
             "eyes": "не задано",
             "face": "не задано",
-            "style": "не задано"
+            "style": "не задано",
         },
         "personality": {
             "core": ["debug placeholder"],
             "flaws": [],
-            "speech": "нейтрально, без канона"
+            "speech": "нейтрально, без канона",
         },
         "goal": "debug: проверить ход сцены",
         "past_short": f"Техническая анкета для проверки. Стартовый запрос: {protagonist_request}",
@@ -96,7 +102,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "skills": ["debug observation"],
         "connections": [
             {"character_id": support_id, "relation": "debug witness", "summary": "Техническая связь для проверки отношений."}
-        ]
+        ],
     }
 
     support_npc = {
@@ -113,12 +119,12 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "hair": "не задано",
             "eyes": "не задано",
             "face": "не задано",
-            "style": "не задано"
+            "style": "не задано",
         },
         "personality": {
             "core": ["debug placeholder"],
             "flaws": [],
-            "speech": "коротко"
+            "speech": "коротко",
         },
         "goal": "debug: быть свидетелем проверки",
         "past_short": "Тестовый NPC без сюжетного канона.",
@@ -129,7 +135,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "skills": [],
         "connections": [
             {"character_id": protagonist_id, "relation": "debug witness", "summary": "Техническая связь."}
-        ]
+        ],
     }
 
     characters = {protagonist_id: protagonist, support_id: support_npc}
@@ -144,7 +150,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "open_threads": [],
             "scores": {"trust": 50, "tension": 0, "attachment": 0, "respect": 0, "fear": 0},
             "a_view_of_b": {"summary": "debug-only view", "current_assumption": "none"},
-            "b_view_of_a": {"summary": "debug-only view", "current_assumption": "none"}
+            "b_view_of_a": {"summary": "debug-only view", "current_assumption": "none"},
         }
     }
     knowledge = {
@@ -159,7 +165,7 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "recent_memories": [],
             "open_questions": [],
             "knows": ["это техническая debug-сессия"],
-            "history": []
+            "history": [],
         },
         support_id: {
             "character_id": support_id,
@@ -172,23 +178,26 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "recent_memories": [],
             "open_questions": [],
             "knows": ["это техническая debug-сессия"],
-            "history": []
-        }
+            "history": [],
+        },
     }
     story_plan = {
         "genre": genre,
         "language": language,
         "tone": tone,
         "main_premise": f"Техническая проверка сборки. Запрошенный сеттинг: {setting_request}",
+        "player_goal": "debug: проверить личную цель персонажа игрока отдельно от целей NPC",
+        "opening_pacing": "debug: не начинать с канонной угрозы",
+        "scene_focus_rules": ["NPC имеют собственные действия"],
         "act_structure": [
             {"act": 1, "goal": "проверить создание сессии и scene_contract", "must_happen": ["создать state", "собрать contract", "сохранить turn"]}
         ],
         "status_slots": [
             {"id": "story_slot_1", "label": "Debug slot 1", "description": "Техническое поле", "initial_value": "не задано"},
-            {"id": "story_slot_2", "label": "Debug slot 2", "description": "Техническое поле", "initial_value": "не задано"}
+            {"id": "story_slot_2", "label": "Debug slot 2", "description": "Техническое поле", "initial_value": "не задано"},
         ],
         "forbidden_drift": ["не превращать debug_stub в готовый канон"],
-        "current_story_position": "debug_start"
+        "current_story_position": "debug_start",
     }
     current_state = {
         "turn_number": 0,
@@ -214,9 +223,9 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
             "skills": ["debug observation"],
             "custom": [
                 {"id": "story_slot_1", "label": "Debug slot 1", "value": "не задано"},
-                {"id": "story_slot_2", "label": "Debug slot 2", "value": "не задано"}
-            ]
-        }
+                {"id": "story_slot_2", "label": "Debug slot 2", "value": "не задано"},
+            ],
+        },
     }
     created_at = now_iso()
     session = {
@@ -236,7 +245,14 @@ def debug_stub_bootstrap(session_id: str, user_request: dict[str, Any]) -> dict[
         "knowledge": knowledge,
         "story_plan": story_plan,
         "current_state": current_state,
-        "npc_state": {},
+        "npc_state": {
+            support_id: {
+                "current_goal": "debug: сохранять независимую цель",
+                "current_route": "debug: присутствовать как свидетель",
+                "current_pressure": "debug: нет давления",
+                "next_self_action_if_ignored": "debug: продолжить свою проверку",
+            }
+        },
         "future_locks": {"hidden_character_seeds": [], "do_not_reveal_yet": []},
         "continuity": {"locked_facts": []},
         "scene_history": [],

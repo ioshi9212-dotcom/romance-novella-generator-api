@@ -2,7 +2,6 @@ from typing import Any
 from app.id_utils import pair_id
 
 
-
 def _clip_text(value: Any, limit: int = 500) -> str:
     text = "" if value is None else str(value)
     text = " ".join(text.split())
@@ -21,6 +20,16 @@ def _clip_list(items: Any, limit_items: int = 6, text_limit: int = 180) -> list[
         else:
             result.append(item)
     return result
+
+
+def _compact_dict(value: Any, limit: int = 500) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _compact_dict(v, max(160, limit // 2)) for k, v in value.items()}
+    if isinstance(value, list):
+        return _clip_list(value, 6, max(120, limit // 3))
+    if isinstance(value, str):
+        return _clip_text(value, limit)
+    return value
 
 
 def _compact_history_entry(entry: Any) -> dict[str, Any]:
@@ -109,6 +118,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
     relationships = bundle.get("relationships", {})
     knowledge = bundle.get("knowledge", {})
     story_plan = bundle.get("story_plan", {})
+    npc_state = bundle.get("npc_state", {})
     future_locks = bundle.get("future_locks", {})
     continuity = bundle.get("continuity", {})
     scene_history = bundle.get("scene_history", [])
@@ -182,10 +192,21 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         "story_compass": {
             "genre": story_plan.get("genre"),
             "tone": story_plan.get("tone"),
+            "setting_summary": _clip_text(story_plan.get("setting_summary"), 500),
+            "main_premise": _clip_text(story_plan.get("main_premise"), 500),
+            "protagonist_start": _clip_text(story_plan.get("protagonist_start"), 360),
+            "player_goal": _clip_text(story_plan.get("player_goal"), 360),
+            "central_conflict": _clip_text(story_plan.get("central_conflict"), 420),
+            "central_question": _clip_text(story_plan.get("central_question"), 420),
+            "opening_scene_intent": _clip_text(story_plan.get("opening_scene_intent"), 420),
             "current_story_position": _clip_text(story_plan.get("current_story_position"), 500),
-            "active_act": _clip_list(story_plan.get("act_structure", [])[:1], 1, 300),
-            "forbidden_drift": _clip_list(story_plan.get("forbidden_drift", []), 6, 140),
+            "active_act": _clip_list(story_plan.get("act_structure", [])[:1], 1, 360),
+            "relationship_focus": _clip_list(story_plan.get("relationship_focus", []), 4, 220),
+            "character_arcs": _compact_dict(story_plan.get("character_arcs", {}), 360),
+            "open_threads": _clip_list(story_plan.get("open_threads", []), 6, 180),
+            "forbidden_drift": _clip_list(story_plan.get("forbidden_drift", []), 8, 180),
         },
+        "npc_runtime": _compact_dict(npc_state, 600) if isinstance(npc_state, dict) else {},
         "status_slots": status_slots[:2] if isinstance(status_slots, list) else [],
         "recent_scene_history": recent_scene_history,
         "memory_chunks": memory_chunks,
@@ -206,6 +227,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "inside_parentheses": "action/thought/pause/remark, not spoken unless explicit quoted speech",
             "preserve_order": "dialogue/action/dialogue order from player input must be preserved",
             "important_answer_must_remain_player_choice": True,
+            "player_agency_scope": "protect player character choices only; NPC goals and actions remain independent",
         },
         "output_requirements": {
             "response_schema": "schemas/scene_response.schema.json",
