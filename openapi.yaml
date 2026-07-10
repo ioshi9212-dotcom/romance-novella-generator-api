@@ -133,6 +133,66 @@ components:
       - chunk_count
       - scene_prompt_chunk
       - has_more
+    DebugSessionDumpResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        status:
+          type: string
+        server:
+          type: object
+          properties: {}
+          additionalProperties: true
+        session:
+          type: object
+          properties: {}
+          additionalProperties: true
+        current_state:
+          type: object
+          properties: {}
+          additionalProperties: true
+        story_plan:
+          type: object
+          properties: {}
+          additionalProperties: true
+        characters:
+          type: object
+          properties: {}
+          additionalProperties: true
+        knowledge:
+          type: object
+          properties: {}
+          additionalProperties: true
+        relationships:
+          type: object
+          properties: {}
+          additionalProperties: true
+        history:
+          type: object
+          properties: {}
+          additionalProperties: true
+        pending_turn:
+          type: object
+          properties: {}
+          additionalProperties: true
+        diagnostics:
+          type: object
+          properties: {}
+          additionalProperties: true
+      additionalProperties: false
+      required:
+      - session_id
+      - status
+      - server
+      - session
+      - current_state
+      - story_plan
+      - characters
+      - knowledge
+      - relationships
+      - history
+      - pending_turn
     ApplyTurnResultRequest:
       type: object
       properties:
@@ -305,6 +365,40 @@ paths:
         '200': *id002
         '404':
           description: Session not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+  /api/v1/sessions/{session_id}/debug-dump:
+    get:
+      operationId: debugSessionDump
+      summary: Compact technical debug dump for state, characters, knowledge, relationships,
+        history, memory_chunks and pending turn. Do not use for normal scene continuation.
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Debug session dump
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebugSessionDumpResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+        '409':
+          description: Session not active
           content:
             application/json:
               schema:

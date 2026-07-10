@@ -140,6 +140,24 @@ TURN_PROMPT_CHUNK_RESPONSE_SCHEMA = _schema_obj(
     required=["session_id", "turn_id", "chunk_index", "chunk_count", "scene_prompt_chunk", "has_more"],
 )
 
+DEBUG_SESSION_DUMP_RESPONSE_SCHEMA = _schema_obj(
+    {
+        "session_id": {"type": "string"},
+        "status": {"type": "string"},
+        "server": _loose_obj(),
+        "session": _loose_obj(),
+        "current_state": _loose_obj(),
+        "story_plan": _loose_obj(),
+        "characters": _loose_obj(),
+        "knowledge": _loose_obj(),
+        "relationships": _loose_obj(),
+        "history": _loose_obj(),
+        "pending_turn": _loose_obj(),
+        "diagnostics": _loose_obj(),
+    },
+    required=["session_id", "status", "server", "session", "current_state", "story_plan", "characters", "knowledge", "relationships", "history", "pending_turn"],
+)
+
 SCENE_RESPONSE_SCHEMA = _loose_obj(
     {
         "response_version": {"type": "string", "default": "novella.scene_response.v1"},
@@ -221,6 +239,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "BootstrapConfirmRequest": BOOTSTRAP_CONFIRM_SCHEMA,
                 "TurnRequest": TURN_SCHEMA,
                 "TurnPromptChunkResponse": TURN_PROMPT_CHUNK_RESPONSE_SCHEMA,
+                "DebugSessionDumpResponse": DEBUG_SESSION_DUMP_RESPONSE_SCHEMA,
                 "ApplyTurnResultRequest": APPLY_TURN_RESULT_SCHEMA,
                 "SceneResponse": SCENE_RESPONSE_SCHEMA,
             },
@@ -255,6 +274,18 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                     "summary": "Get one session status by session_id.",
                     "parameters": [_session_id_param()],
                     "responses": {"200": generic, "404": _json_response("Session not found", _loose_obj())},
+                }
+            },
+            "/api/v1/sessions/{session_id}/debug-dump": {
+                "get": {
+                    "operationId": "debugSessionDump",
+                    "summary": "Compact technical debug dump for state, characters, knowledge, relationships, history, memory_chunks and pending turn. Do not use for normal scene continuation.",
+                    "parameters": [_session_id_param()],
+                    "responses": {
+                        "200": _json_response("Debug session dump", {"$ref": "#/components/schemas/DebugSessionDumpResponse"}),
+                        "404": _json_response("Session not found", _loose_obj()),
+                        "409": _json_response("Session not active", _loose_obj()),
+                    },
                 }
             },
             "/api/v1/sessions/{session_id}/bootstrap-preview": {
