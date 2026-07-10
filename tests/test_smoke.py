@@ -606,3 +606,103 @@ def test_runtime_history_is_compacted_without_full_scene_response():
     assert all("visible_scene_text" not in item for item in bundle["scene_history"])
     assert all("scene_response" not in item for item in bundle["turns"])
 
+
+def test_footer_options_are_separated_and_state_backed():
+    from app.scene_response_normalizer import normalize_scene_response
+
+    bundle = _valid_bootstrap()
+    bundle["current_state"]["status"]["fatigue"] = "100/100 — на пределе"
+    bundle["current_state"]["status"]["injuries"] = ["болит рука после штампа"]
+    bundle["current_state"]["status"]["emotional_state"] = "80/100 — злость и страх"
+    bundle["current_state"]["active_character_ids"] = ["pc_01", "coworker_01"]
+
+    data = _long_scene_response("(тест)")
+    data["scene"]["player_options"] = {
+        "actions": [
+            "Оставить пакет у стены.",
+            "Попросить Неру отойти и подождать.",
+            "Закрыть дверь за собой.",
+        ],
+        "dialogue": [
+            "— Нера, уходите от двери.",
+            "— Рыжему передайте: телефоны существуют.",
+            "— Бар открылся.",
+        ],
+        "thoughts": ["Почему пакет тёплый?", "Нужно решить, кто входит.", "Это слишком удобно."],
+    }
+    data["scene"]["status_panel"] = {
+        "hunger": "50/100 — завтрак держит",
+        "fatigue": "59/100 — усталость стабильна",
+        "injuries": "50/100 — штамп тихий",
+        "emotional_state": "57/100 — злой контроль",
+        "skills": "68/100 — осторожность",
+        "custom": [
+            {"label": "Поле истории 1", "value": "64/100 — кто войдёт первым"},
+            {"label": "Поле истории 2", "value": "100/100 — снаружи принято"},
+        ],
+    }
+
+    normalized = normalize_scene_response(data, bundle)
+    text = normalized["scene"]["rendered_text"]
+
+    action_block = text.split("✦ Что можно сделать", 1)[1].split("✦ Что можно сказать", 1)[0]
+    dialogue_block = text.split("✦ Что можно сказать", 1)[1].split("✦ Мысли", 1)[0]
+
+    assert "Попросить Неру" not in action_block
+    assert "Попросить Неру" in dialogue_block
+    assert "— —" not in text
+    assert "Усталость: 100/100" in text
+    assert "Травмы: 55/100" in text
+    assert "Эмоциональное состояние: 80/100" in text
+    assert "Домашнее давление:" in text
+    assert "Поле истории" not in text
+
+
+def test_relationship_scores_are_bounded_and_debug_dump_exposed():
+    client = TestClient(app)
+    created = client.post("/api/v1/sessions", json={
+        "genre": "urban mysticism",
+        "setting_request": "debug and relationship test",
+        "protagonist_request": "guarded adult heroine",
+        "mode": "gpt_actions",
+    })
+    session_id = created.json()["session_id"]
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()}).status_code == 200
+    assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-confirm", json={"confirmation_text": "подтверждаю"}).status_code == 200
+
+    player_input = "(проверить отношения)"
+    turn = client.post(f"/api/v1/sessions/{session_id}/turn", json={"player_input": player_input, "mode": "gpt_actions"})
+    assert turn.status_code == 200
+
+    response = _long_scene_response(player_input)
+    response["proposed_updates"]["relationship_patches"] = [{
+        "pair_id": "coworker_01__pc_01",
+        "change_type": "trust_jump_attempt",
+        "entry": "Ren helped once; should not jump to full trust.",
+        "reason": "test bounded relationship scores",
+        "source_in_scene": "test",
+        "scores": {"trust": 100},
+    }]
+    applied = client.post(
+        f"/api/v1/sessions/{session_id}/apply-turn-result",
+        json={"turn_id": turn.json()["turn_id"], "scene_response": response},
+    )
+    assert applied.status_code == 200
+
+    dump = client.get(f"/api/v1/sessions/{session_id}/debug-dump")
+    assert dump.status_code == 200
+    body = dump.json()
+    assert body["server"]["debug_endpoint"] == "debugSessionDump"
+    assert "coworker_01__pc_01" in body["relationships"]
+    # Initial trust is 32, max normal shift is +8.
+    assert body["relationships"]["coworker_01__pc_01"]["scores"]["trust"] == 40
+
+
+def test_openapi_actions_exposes_debug_session_dump():
+    client = TestClient(app)
+    response = client.get("/openapi-actions.json")
+    assert response.status_code == 200
+    paths = response.json()["paths"]
+    assert "/api/v1/sessions/{session_id}/debug-dump" in paths
+    assert paths["/api/v1/sessions/{session_id}/debug-dump"]["get"]["operationId"] == "debugSessionDump"
+

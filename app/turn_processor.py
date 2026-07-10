@@ -40,6 +40,15 @@ COMPACT_SCENE_WRITER_PROMPT = """
 - Если нужно подготовить реплику, сначала отдельный beat описания: “Снаружи голос становится ровнее.” Потом строка реплики.
 - Не переставляй порядок ввода игрока: если игрок сначала говорит, потом действует, не меняй на действие → реплика.
 
+Статусы и нижняя панель:
+- Нижняя панель НЕ декоративная. Не придумывай случайные числа/подписи. Бери status из SCENE_CONTRACT_JSON.current_frame.status и меняй только через proposed_updates.scene_state_patch.status, если в сцене реально случилось изменение.
+- Если голод/усталость/травма/эмоция высокие (70+), это должно проявиться в body: движение, темп речи, пауза, боль, дрожь, раздражение, страх, срыв контроля. Не игнорируй 100/100.
+- Травмы включают боль/штамп/ожог/рану/руку. Если рука болит, персонаж автоматически бережёт её или реагирует телом, даже без напоминания игрока.
+- Эмоции должны соответствовать происходящему. Неприятная мистика не делает героиню спокойной стендап-машиной: страх, злость, отвращение, контроль, усталость выражаются телом и голосом.
+- player_options.actions = только физические действия без речи. “Попросить/сказать/спросить/передать/предупредить” — это dialogue, не actions.
+- dialogue options не начинай с лишнего тире: backend сам добавит “—”. Реплики должны отличаться по намерению: граница, вопрос, отказ/риск, а не три одинаковые шутки.
+- relationships_panel — состояние отношений из state, не пересказ события. Пиши “низкое доверие”, “рабочее напряжение”, “осторожный интерес”, а не “избавилась от пакета”. Значения не должны резко прыгать без relationship_patches.
+
 scene_response JSON: response_version, player_input, scene(header/body/player_options/status_panel/relationships_panel/rendered_text), summary, important_facts, witnesses, proposed_updates, safety_checks.
 Типы: inventory строка; player_options object thoughts/dialogue/actions; relationships_panel label/value; knowledge_patches character_id/reason/source_in_scene/add_knows/add_observations/add_assumptions; relationship_patches pair_id/change_type/entry/reason/source_in_scene.
 

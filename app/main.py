@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 import hashlib
+import json
 import uuid
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -9,7 +10,7 @@ from fastapi.openapi.utils import get_openapi
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.config import get_settings
 from app.id_utils import now_iso
-from app.models import ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
+from app.models import ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
@@ -118,6 +119,170 @@ def _store_prompt_chunks(manager: SessionManager, session_id: str, pending: dict
     }
     manager.storage.write_json(session_id, "pending_turn.json", updated)
     return updated
+
+
+def _debug_clip_text(value: Any, limit: int = 900) -> str:
+    text = "" if value is None else str(value)
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _debug_clip_list(items: Any, limit_items: int = 12, text_limit: int = 400) -> list[Any]:
+    if not isinstance(items, list):
+        return []
+    out: list[Any] = []
+    for item in items[:limit_items]:
+        if isinstance(item, str):
+            out.append(_debug_clip_text(item, text_limit))
+        elif isinstance(item, dict):
+            out.append(_debug_clip_dict(item, max(160, text_limit // 2), 28))
+        else:
+            out.append(item)
+    return out
+
+
+def _debug_clip_dict(data: Any, text_limit: int = 700, max_items: int = 60) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for idx, (key, value) in enumerate(data.items()):
+        if idx >= max_items:
+            out["_truncated_keys"] = len(data) - max_items
+            break
+        if isinstance(value, str):
+            out[str(key)] = _debug_clip_text(value, text_limit)
+        elif isinstance(value, list):
+            out[str(key)] = _debug_clip_list(value, 12, max(160, text_limit // 2))
+        elif isinstance(value, dict):
+            out[str(key)] = _debug_clip_dict(value, max(160, text_limit // 2), 30)
+        else:
+            out[str(key)] = value
+    return out
+
+
+def _raw_payload_size(data: Any) -> int:
+    try:
+        return len(json.dumps(data, ensure_ascii=False))
+    except Exception:
+        return 0
+
+
+def _legacy_payload_check(raw_scene_history: Any, raw_turns: Any) -> dict[str, Any]:
+    scene_has_full_text = False
+    turns_have_full_response = False
+    max_scene_text_len = 0
+    max_turn_response_len = 0
+    if isinstance(raw_scene_history, list):
+        for item in raw_scene_history:
+            if isinstance(item, dict):
+                text = item.get("visible_scene_text")
+                if isinstance(text, str) and text:
+                    scene_has_full_text = True
+                    max_scene_text_len = max(max_scene_text_len, len(text))
+    if isinstance(raw_turns, list):
+        for item in raw_turns:
+            if isinstance(item, dict) and isinstance(item.get("scene_response"), dict):
+                turns_have_full_response = True
+                max_turn_response_len = max(max_turn_response_len, _raw_payload_size(item.get("scene_response")))
+    return {
+        "scene_history_has_legacy_visible_scene_text": scene_has_full_text,
+        "turns_have_legacy_full_scene_response": turns_have_full_response,
+        "max_legacy_visible_scene_text_len": max_scene_text_len,
+        "max_legacy_scene_response_json_len": max_turn_response_len,
+    }
+
+
+def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
+    settings = get_settings()
+    bundle = manager.storage.read_session_bundle(session_id)
+    raw_scene_history = manager.storage.read_json(session_id, "scene_history.json", default=[])
+    raw_turns = manager.storage.read_json(session_id, "turns.json", default=[])
+    session = bundle.get("session", {}) if isinstance(bundle.get("session"), dict) else {}
+    current_state = bundle.get("current_state", {}) if isinstance(bundle.get("current_state"), dict) else {}
+    story_plan = bundle.get("story_plan", {}) if isinstance(bundle.get("story_plan"), dict) else {}
+    continuity = bundle.get("continuity", {}) if isinstance(bundle.get("continuity"), dict) else {}
+    memory_chunks = continuity.get("memory_chunks", []) if isinstance(continuity.get("memory_chunks"), list) else []
+    pending = _load_pending_turn(manager, session_id)
+
+    pending_safe = {}
+    if isinstance(pending, dict) and pending:
+        chunk_count = int(pending.get("prompt_chunk_count") or 1)
+        pending_safe = {
+            "turn_id": pending.get("turn_id"),
+            "status": pending.get("status"),
+            "expected_turn_number": pending.get("expected_turn_number"),
+            "player_input": _debug_clip_text(pending.get("player_input"), 500),
+            "prompt_chunk_count": chunk_count,
+            "has_more_prompt_chunks": chunk_count > 1,
+            "prompt_chunk_size": pending.get("prompt_chunk_size"),
+            "scene_prompt_sha256": pending.get("scene_prompt_sha256"),
+        }
+
+    maintenance = current_state.get("maintenance") if isinstance(current_state.get("maintenance"), dict) else {}
+    return {
+        "session_id": session_id,
+        "status": session.get("status", "unknown"),
+        "server": {
+            "status": "ok",
+            "engine_version": settings.engine_version,
+            "data_dir": str(settings.data_dir),
+            "mode": "gpt_actions",
+            "api_key_required": bool(settings.api_key),
+            "chunk_endpoint": "getTurnPromptChunk",
+            "debug_endpoint": "debugSessionDump",
+        },
+        "session": _debug_clip_dict(session, 700),
+        "current_state": _debug_clip_dict(current_state, 700),
+        "story_plan": {
+            "genre": story_plan.get("genre"),
+            "tone": story_plan.get("tone"),
+            "current_story_position": _debug_clip_text(story_plan.get("current_story_position"), 700),
+            "act_structure": _debug_clip_list(story_plan.get("act_structure", []), 3, 420),
+            "status_slots": _debug_clip_list(story_plan.get("status_slots", []), 4, 300),
+            "open_threads": _debug_clip_list(story_plan.get("open_threads", []), 20, 280),
+            "forbidden_drift": _debug_clip_list(story_plan.get("forbidden_drift", []), 12, 240),
+            "future_locks_fields": list((bundle.get("future_locks", {}) or {}).keys()) if isinstance(bundle.get("future_locks"), dict) else [],
+            "future_locks_counts": {
+                "do_not_reveal_yet": len((bundle.get("future_locks", {}) or {}).get("do_not_reveal_yet", []) or []),
+                "hidden_character_seeds": len((bundle.get("future_locks", {}) or {}).get("hidden_character_seeds", []) or []),
+            },
+        },
+        "characters": {cid: _debug_clip_dict(card, 700) for cid, card in (bundle.get("characters") or {}).items()},
+        "knowledge": {cid: _debug_clip_dict(entry, 700) for cid, entry in (bundle.get("knowledge") or {}).items()},
+        "relationships": {pid: _debug_clip_dict(entry, 700) for pid, entry in (bundle.get("relationships") or {}).items()},
+        "history": {
+            "recent_scene_history": bundle.get("scene_history", [])[-6:] if isinstance(bundle.get("scene_history"), list) else [],
+            "recent_turns": bundle.get("turns", [])[-8:] if isinstance(bundle.get("turns"), list) else [],
+            "memory_chunk_count": len(memory_chunks),
+            "memory_chunk_ranges": [
+                {"chunk_id": chunk.get("chunk_id"), "type": chunk.get("type"), "turn_start": chunk.get("turn_start"), "turn_end": chunk.get("turn_end")}
+                for chunk in memory_chunks
+                if isinstance(chunk, dict)
+            ],
+            "maintenance_events": _debug_clip_list(continuity.get("maintenance_events", []), 12, 260),
+            "runtime_counts": {
+                "raw_scene_history_len": len(raw_scene_history) if isinstance(raw_scene_history, list) else None,
+                "raw_turns_len": len(raw_turns) if isinstance(raw_turns, list) else None,
+                "action_scene_history_len": len(bundle.get("scene_history", []) or []),
+                "action_turns_len": len(bundle.get("turns", []) or []),
+                "raw_scene_history_json_len": _raw_payload_size(raw_scene_history),
+                "raw_turns_json_len": _raw_payload_size(raw_turns),
+            },
+            "legacy_payload_check": _legacy_payload_check(raw_scene_history, raw_turns),
+        },
+        "pending_turn": pending_safe,
+        "diagnostics": {
+            "turn_number": current_state.get("turn_number"),
+            "state_recovery_audit_due": maintenance.get("state_recovery_audit_due") or maintenance.get("continuity_check_required_next"),
+            "state_compaction_cleanup_due": maintenance.get("state_compaction_cleanup_due") or maintenance.get("memory_review_required_next"),
+            "backend_compacted_after_turn": maintenance.get("backend_compacted_after_turn"),
+            "last_compact_turn": maintenance.get("last_compact_turn"),
+            "memory_chunk_count": len(memory_chunks),
+            "recent_scene_history_kept": len(bundle.get("scene_history", []) or []),
+            "recent_turns_kept": len(bundle.get("turns", []) or []),
+            "note": "Technical debug dump only; do not continue scene from this response.",
+        },
+    }
 
 def _save_pending_turn(manager: SessionManager, session_id: str, player_input: str, expected_turn_number: int) -> dict[str, Any]:
     pending = {
@@ -294,6 +459,17 @@ def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest)
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.get("/api/v1/sessions/{session_id}/debug-dump", response_model=DebugSessionDumpResponse, dependencies=[Depends(require_api_key)], operation_id="debugSessionDump")
+def debug_session_dump(session_id: str) -> dict:
+    manager = SessionManager()
+    try:
+        bundle = manager.get_memory(session_id)
+        _require_active_session(bundle, "debugging a session")
+        return _debug_dump(manager, session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 @app.get("/api/v1/sessions/{session_id}/scene-contract", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_scene_contract(session_id: str) -> dict:

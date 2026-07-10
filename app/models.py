@@ -81,6 +81,21 @@ class TurnPromptChunkResponse(BaseModel):
     next_chunk_index: int | None = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
+
+class DebugSessionDumpResponse(BaseModel):
+    session_id: str
+    status: str
+    server: dict[str, Any]
+    session: dict[str, Any]
+    current_state: dict[str, Any]
+    story_plan: dict[str, Any]
+    characters: dict[str, Any]
+    knowledge: dict[str, Any]
+    relationships: dict[str, Any]
+    history: dict[str, Any]
+    pending_turn: dict[str, Any]
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
 class ApplyTurnResultRequest(BaseModel):
     # Compatibility: keep this model permissive because old/imported Custom GPT
     # Actions may try to pass rendered_text/proposed_updates/safety_checks at the

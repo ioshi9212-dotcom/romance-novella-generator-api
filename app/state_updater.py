@@ -146,6 +146,47 @@ def _trim_continuity(continuity: dict[str, Any]) -> dict[str, Any]:
     return continuity
 
 
+
+def _merge_status_patch(current_status: dict[str, Any], patch_status: Any) -> dict[str, Any]:
+    """Merge status instead of replacing it; status is persistent gameplay state."""
+    if not isinstance(current_status, dict):
+        current_status = {}
+    if not isinstance(patch_status, dict):
+        return current_status
+    merged = dict(current_status)
+    for key, value in patch_status.items():
+        if key == "custom" and isinstance(value, list):
+            existing_custom = merged.get("custom") if isinstance(merged.get("custom"), list) else []
+            new_custom = list(existing_custom)
+            for index, item in enumerate(value[:2]):
+                if not isinstance(item, dict):
+                    continue
+                while len(new_custom) <= index:
+                    new_custom.append({})
+                base = new_custom[index] if isinstance(new_custom[index], dict) else {}
+                new_custom[index] = {**base, **item}
+            merged["custom"] = new_custom
+        else:
+            merged[key] = value
+    return merged
+
+
+def _bounded_score_update(old_value: Any, new_value: Any, *, major_shift: bool = False) -> int | None:
+    try:
+        new_int = max(0, min(100, int(float(new_value))))
+    except Exception:
+        return None
+    try:
+        old_int = max(0, min(100, int(float(old_value))))
+    except Exception:
+        return new_int
+    max_delta = 15 if major_shift else 8
+    if new_int > old_int + max_delta:
+        return old_int + max_delta
+    if new_int < old_int - max_delta:
+        return old_int - max_delta
+    return new_int
+
 def _merge_continuity_patch(continuity: dict[str, Any], patch: dict[str, Any], turn_number: int) -> dict[str, Any]:
     if not isinstance(patch, dict):
         return continuity
@@ -246,10 +287,14 @@ class StateUpdater:
         updates = scene_response.get("proposed_updates", {})
         scene_state_patch = updates.get("scene_state_patch", {})
 
-        for key in ["date", "time", "location", "weather", "scene_state", "outfit", "inventory", "nearby_items", "scene_goal", "active_character_ids", "nearby_character_ids", "environment", "status"]:
+        for key in ["date", "time", "location", "weather", "scene_state", "outfit", "inventory", "nearby_items", "scene_goal", "active_character_ids", "nearby_character_ids", "environment"]:
             if key in scene_state_patch:
                 current_state[key] = scene_state_patch[key]
                 applied["current_state"].append({"field": key, "operation": "replace"})
+
+        if "status" in scene_state_patch:
+            current_state["status"] = _merge_status_patch(current_state.get("status", {}), scene_state_patch.get("status"))
+            applied["current_state"].append({"field": "status", "operation": "merge"})
 
         current_state["turn_number"] = int(current_state.get("turn_number", 0) or 0) + 1
         current_state["last_player_input"] = scene_response.get("player_input", current_state.get("last_player_input", ""))
@@ -287,12 +332,18 @@ class StateUpdater:
             base["recent_changes"].append(change_entry)
             base["recent_changes"] = base["recent_changes"][-10:]
 
-            for score_key in ["trust", "tension", "attachment", "respect", "fear", "curiosity"]:
+            major_shift = bool(patch.get("major_shift"))
+            for score_key in ["overall", "trust", "tension", "attachment", "respect", "fear", "curiosity", "romantic_interest", "presence_pull"]:
                 if score_key in patch:
-                    base[score_key] = patch[score_key]
-                    base["scores"][score_key] = patch[score_key]
+                    bounded = _bounded_score_update(base["scores"].get(score_key, base.get(score_key)), patch[score_key], major_shift=major_shift)
+                    if bounded is not None:
+                        base[score_key] = bounded
+                        base["scores"][score_key] = bounded
             if isinstance(patch.get("scores"), dict):
-                base["scores"].update(patch["scores"])
+                for score_key, score_value in patch["scores"].items():
+                    bounded = _bounded_score_update(base["scores"].get(score_key, base.get(score_key)), score_value, major_shift=major_shift)
+                    if bounded is not None:
+                        base["scores"][score_key] = bounded
             for view_key in ["a_view_of_b", "b_view_of_a"]:
                 if isinstance(patch.get(view_key), dict):
                     base.setdefault(view_key, {})

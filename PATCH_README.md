@@ -1,35 +1,26 @@
-# romance-novella-generator-api — v8 response-size/chunking fix
+# v9 footer-state-debug patch
 
-## Причина фикса
+## Что чинит
 
-`processTurn` мог падать с `ResponseTooLargeError`, потому что runtime-пакет раздувался:
-- `scene_history.json` хранил полный `visible_scene_text`;
-- `turns.json` хранил полный `scene_response`;
-- старые сцены и turn payload могли снова попадать в сборщик контекста;
-- большой `scene_prompt` возвращался одним ответом Action.
+1. `debugSessionDump`
+- Новый Action: `GET /api/v1/sessions/{session_id}/debug-dump`
+- operationId: `debugSessionDump`
+- Позволяет смотреть current_state, story_plan, characters, knowledge, relationships, history, memory_chunks и pending_turn без нового игрового хода.
 
-## Что меняет v8
+2. Нижняя панель / footer
+- `actions` больше не должны содержать речевые действия: попросить/сказать/спросить/передать/предупредить переносятся в dialogue.
+- Убирается двойное тире `— —` в вариантах реплик.
+- `status_panel` теперь state-backed: берёт значения из current_state.status и story_plan.status_slots, а не доверяет случайным footer-числам GPT.
+- `Поле истории 1/2` заменяется на реальные labels из story_plan.status_slots или нормальные fallback labels.
+- Травмы учитывают боль/штамп/руку/жжение.
+- relationships_panel теперь строится от relationship state, а не от случайного пересказа события вроде “избавилась от пакета”.
 
-### 1. Компактная runtime-память
-Теперь после каждого applyTurnResult:
-- в `scene_history.json` сохраняется короткая запись: turn, summary, facts, witnesses, body_excerpt;
-- в `turns.json` сохраняется короткая запись без полного scene_response;
-- старые записи уходят в `continuity.memory_chunks`.
+3. Relationship scores
+- Значения отношений не прыгают резко: обычный ход максимум +/-8, major_shift максимум +/-15.
+- Добавлена поддержка scores.overall / romantic_interest / presence_pull.
 
-### 2. 10/15 шагов
-- Каждый 10-й ход выставляет `state_recovery_audit_due`.
-- Каждый 15-й ход выставляет `state_compaction_cleanup_due`.
-- Старые сцены/ходы сжимаются в `memory_chunks`, а не тащатся целиком.
-
-### 3. Чанки scene_prompt
-`processTurn` теперь безопасно возвращает первый chunk.
-Если prompt большой:
-- response содержит `prompt_chunk_count > 1`;
-- надо вызвать `getTurnPromptChunk` для остальных индексов;
-- потом склеить chunks по порядку и только после этого генерировать scene_response.
-
-### 4. Защита от старых сохранений
-Даже если в старой сессии уже есть огромные `visible_scene_text` или полные `scene_response`, `read_session_bundle` не отдаёт их в Action context.
+4. State status merge
+- `scene_state_patch.status` теперь merge, а не replace всего status.
 
 ## Файлы на замену
 
@@ -37,28 +28,14 @@
 app/main.py
 app/models.py
 app/novella_openapi_actions.py
-app/storage.py
+app/scene_response_normalizer.py
 app/state_updater.py
-app/scene_contract_builder.py
 app/turn_processor.py
 gpt/custom_gpt_instructions.md
 openapi.yaml
 tests/test_smoke.py
 PATCH_README.md
 DELETE_LIST.txt
-```
-
-## Важная правка инструкции Custom GPT
-
-Добавь в текущую инструкцию:
-
-```txt
-Если processTurn вернул prompt_chunk_count > 1 или has_more_prompt_chunks=true:
-1. не пиши сцену сразу;
-2. вызови getTurnPromptChunk для chunk_index=1, затем 2 и дальше, пока has_more=false;
-3. склей scene_prompt + все scene_prompt_chunk строго по порядку;
-4. только после этого создай scene_response и вызови applyTurnResult.
-Не проси пользователя сократить ход из-за ResponseTooLargeError.
 ```
 
 ## Проверка
@@ -70,5 +47,13 @@ python -m pytest -q
 Ожидаемо:
 
 ```txt
-11 passed
+14 passed
 ```
+
+## После деплоя
+
+1. В Custom GPT Actions переимпортировать актуальную OpenAPI schema.
+2. Проверить, что доступны:
+   - `getTurnPromptChunk`
+   - `debugSessionDump`
+3. Для диагностики писать технический запрос с `debugSessionDump`, не через processTurn.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 import re
+from app.id_utils import pair_id
 
 
 REQUIRED_SAFETY_CHECKS = [
@@ -44,6 +45,225 @@ def _as_str(value: Any, fallback: str = "") -> str:
     return str(value).strip() or fallback
 
 
+def _clean_footer_option(value: Any) -> str:
+    text = _as_str(value)
+    text = re.sub(r"^\s*(?:[—\-•◈]+)\s*", "", text).strip()
+    # Backend already adds the visual dash/bullet. Keep option text itself clean.
+    return text
+
+
+_DIALOGUE_OPTION_TRIGGERS = (
+    "сказать", "спросить", "попросить", "предупредить", "ответить", "крикнуть",
+    "позвать", "передать", "объяснить", "согласиться", "отказаться", "приказать",
+    "потребовать", "пошутить", "буркнуть", "произнести", "напомнить",
+)
+
+_THOUGHT_OPTION_TRIGGERS = (
+    "подумать", "решить", "вспомнить", "отметить", "понять", "прикинуть",
+    "заметить про себя", "удержать в голове",
+)
+
+
+def _option_kind(text: str, preferred: str) -> str:
+    t = text.lower().replace("ё", "е").strip()
+    if not t:
+        return preferred
+    if t.startswith(("если ", "почему ", "что если ", "надо ", "теперь ", "кажется ")):
+        return "thoughts"
+    if any(t.startswith(word) for word in _DIALOGUE_OPTION_TRIGGERS):
+        return "dialogue"
+    if any(word in t[:80] for word in [" сказать ", " спросить ", " попросить ", " передать "]):
+        return "dialogue"
+    if any(t.startswith(word) for word in _THOUGHT_OPTION_TRIGGERS):
+        return "thoughts"
+    return preferred
+
+
+def _status_source_value(bundle: dict[str, Any], scene: dict[str, Any], key: str) -> Any:
+    """Footer status should be state-backed, not invented by GPT footer prose."""
+    current_state = bundle.get("current_state") or {}
+    state_status = current_state.get("status") if isinstance(current_state.get("status"), dict) else {}
+    scene_patch = {}
+    # scene_response proposed_updates is not passed here, but status may be echoed in
+    # scene.status_panel. The state value is preferred to prevent random footer drift.
+    panel = scene.get("status_panel") if isinstance(scene.get("status_panel"), dict) else {}
+    if key in state_status:
+        return state_status.get(key)
+    return panel.get(key)
+
+
+def _merged_status_custom(bundle: dict[str, Any], scene: dict[str, Any]) -> list[dict[str, Any]]:
+    current_state = bundle.get("current_state") or {}
+    story_plan = bundle.get("story_plan") or {}
+    state_status = current_state.get("status") if isinstance(current_state.get("status"), dict) else {}
+    panel = scene.get("status_panel") if isinstance(scene.get("status_panel"), dict) else {}
+
+    state_custom = _as_list(state_status.get("custom"))
+    panel_custom = _as_list(panel.get("custom"))
+    slots = _as_list(story_plan.get("status_slots"))
+
+    result: list[dict[str, Any]] = []
+    for index in range(2):
+        slot = slots[index] if index < len(slots) and isinstance(slots[index], dict) else {}
+        st = state_custom[index] if index < len(state_custom) and isinstance(state_custom[index], dict) else {}
+        raw_pn = panel_custom[index] if index < len(panel_custom) else {}
+        if isinstance(raw_pn, dict):
+            pn = raw_pn
+        elif isinstance(raw_pn, str) and ":" in raw_pn:
+            pn_label, pn_value = raw_pn.split(":", 1)
+            pn = {"label": pn_label.strip(), "value": pn_value.strip()}
+        else:
+            pn = {"value": raw_pn} if raw_pn else {}
+        fallback_label = "Сюжетное давление" if index == 0 else "Мистический отклик"
+        label = (
+            st.get("label")
+            or slot.get("label")
+            or (pn.get("label") if not str(pn.get("label", "")).startswith("Поле истории") else "")
+            or fallback_label
+        )
+        value = st.get("value")
+        if value is None:
+            value = pn.get("value")
+        if value is None:
+            value = slot.get("initial_value", "низкий")
+        result.append({
+            "id": _as_str(st.get("id") or slot.get("id") or pn.get("id") or f"story_slot_{index + 1}"),
+            "label": _short_note(label, fallback_label, 30),
+            "value": value,
+        })
+    return result
+
+
+def _display_name_for_id(bundle: dict[str, Any], character_id: str) -> str:
+    characters = bundle.get("characters") or {}
+    card = characters.get(character_id) if isinstance(characters, dict) else None
+    if isinstance(card, dict):
+        for key in ("display_name", "visible_name", "name_ru", "russian_name", "name"):
+            value = card.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return character_id
+
+
+def _relationship_participants(pair_id_value: str, entry: dict[str, Any]) -> tuple[str | None, str | None]:
+    a = entry.get("character_a") or entry.get("a") or entry.get("left")
+    b = entry.get("character_b") or entry.get("b") or entry.get("right")
+    if a and b:
+        return str(a), str(b)
+    if "__" in pair_id_value:
+        left, right = pair_id_value.split("__", 1)
+        return left, right
+    return None, None
+
+
+def _relationship_score(entry: dict[str, Any]) -> int:
+    scores = entry.get("scores") if isinstance(entry.get("scores"), dict) else {}
+    for key in ("overall", "relationship", "trust", "respect", "attachment", "curiosity"):
+        value = scores.get(key, entry.get(key))
+        try:
+            if value is not None:
+                return max(0, min(100, int(float(value))))
+        except Exception:
+            pass
+    # High tension/fear without trust should not look like good relationship.
+    for key in ("tension", "fear"):
+        value = scores.get(key, entry.get(key))
+        try:
+            if value is not None:
+                return max(0, min(100, 100 - int(float(value))))
+        except Exception:
+            pass
+    return 50
+
+
+_EVENT_LABEL_WORDS = (
+    "пакет", "жакет", "двер", "телефон", "маршрут", "снаружи", "внутрь", "вош", "выш",
+    "принес", "забрал", "отдал", "избав", "сделал", "сказал",
+)
+
+
+def _relationship_note(entry: dict[str, Any]) -> str:
+    for key in ("status", "dynamic", "current_state", "label", "visible_label"):
+        value = _as_str(entry.get(key))
+        if value:
+            note = _short_note(value, "нейтрально", 28)
+            low = note.lower().replace("ё", "е")
+            if not any(word in low for word in _EVENT_LABEL_WORDS):
+                return note
+
+    scores = entry.get("scores") if isinstance(entry.get("scores"), dict) else {}
+    trust = scores.get("trust", entry.get("trust"))
+    tension = scores.get("tension", entry.get("tension"))
+    try:
+        if tension is not None and int(float(tension)) >= 70:
+            return "острое напряжение"
+        if trust is not None and int(float(trust)) >= 70:
+            return "устойчивое доверие"
+        if trust is not None and int(float(trust)) <= 25:
+            return "низкое доверие"
+    except Exception:
+        pass
+    return "нейтрально"
+
+
+def _state_relationships_panel(bundle: dict[str, Any], scene: dict[str, Any], updates: dict[str, Any] | None = None) -> list[dict[str, str]]:
+    relationships = bundle.get("relationships") or {}
+    current_state = bundle.get("current_state") or {}
+    player_id = str(current_state.get("player_character_id") or "pc_01")
+    active = [str(x) for x in _as_list(current_state.get("active_character_ids")) if str(x)]
+    nearby = [str(x) for x in _as_list(current_state.get("nearby_character_ids")) if str(x)]
+    visible_ids = {player_id, *active}
+    if not active:
+        visible_ids.add(player_id)
+
+    patched_pair_ids: set[str] = set()
+    if isinstance(updates, dict):
+        for patch in _as_list(updates.get("relationship_patches")):
+            if isinstance(patch, dict) and patch.get("pair_id"):
+                patched_pair_ids.add(str(patch.get("pair_id")))
+
+    result: list[dict[str, str]] = []
+    for pid, entry in relationships.items():
+        if not isinstance(entry, dict):
+            continue
+        a, b = _relationship_participants(str(pid), entry)
+        if not a or not b:
+            continue
+        in_scene = a in visible_ids and b in visible_ids
+        directly_touched = str(pid) in patched_pair_ids
+        if not in_scene and not directly_touched:
+            continue
+
+        if a == player_id:
+            label = _display_name_for_id(bundle, b)
+        elif b == player_id:
+            label = _display_name_for_id(bundle, a)
+        else:
+            label = f"{_display_name_for_id(bundle, a)} ↔ {_display_name_for_id(bundle, b)}"
+        result.append({
+            "label": _short_note(label, "Отношения", 30),
+            "value": f"{_relationship_score(entry)}/100 — {_relationship_note(entry)}",
+        })
+
+    # If state has no visible pair yet, fall back to sanitized scene panel.
+    if result:
+        return result[:4]
+
+    panel = _as_list(scene.get("relationships_panel"))
+    sanitized: list[dict[str, str]] = []
+    for item in panel[:3]:
+        if isinstance(item, dict):
+            label = _short_note(item.get("label") or item.get("name") or item.get("pair_id"), "Отношения", 30)
+            raw_value = _as_str(item.get("value") or item.get("status") or item.get("dynamic"))
+        else:
+            text = _as_str(item)
+            label, raw_value = text.split(":", 1) if ":" in text else ("Отношения", text)
+            label = _short_note(label, "Отношения", 30)
+        note = _relationship_note({"status": raw_value})
+        sanitized.append({"label": label, "value": f"{_estimate_score(raw_value, kind='relationship')}/100 — {note}"})
+    return sanitized
+
+
 def _short_note(value: Any, fallback: str = "норма", limit: int = MAX_FOOTER_NOTE_CHARS) -> str:
     text = _as_str(value, fallback)
     text = re.sub(r"\s+", " ", text).strip(" .;—-")
@@ -72,15 +292,15 @@ def _estimate_score(text: str, *, kind: str) -> int:
         return found
 
     if kind == "injuries":
-        if any(x in t for x in ["нет", "без", "свежих травм нет"]):
+        if any(x in t for x in ["нет", "без", "свежих травм нет"]) and not any(x in t for x in ["боль", "болит", "жжет", "жж", "штамп"]):
             return 0
         if any(x in t for x in ["шрам", "стар"]):
             return 10
-        if any(x in t for x in ["кров", "боль", "трав", "ран"]):
-            return 45
+        if any(x in t for x in ["штамп", "рук", "кисть", "ладон", "жжет", "жж", "ломит", "кров", "боль", "болит", "трав", "ран"]):
+            return 55
         return 0
 
-    high = ["выс", "силь", "остр", "опас", "дав", "паник", "испуг", "актив", "раст", "замет"]
+    high = ["выс", "силь", "остр", "опас", "дав", "паник", "испуг", "страх", "бою", "тревог", "актив", "раст", "замет"]
     mid = ["сред", "умерен", "напряж", "насторож", "раздраж", "голод", "устал"]
     low = ["низ", "легк", "лёгк", "слаб", "норма", "споко", "нет"]
     if any(x in t for x in high):
@@ -155,80 +375,77 @@ def _normalize_header(scene: dict[str, Any]) -> None:
 def _normalize_options(scene: dict[str, Any]) -> None:
     raw = scene.get("player_options")
     if isinstance(raw, list):
-        options = {"actions": raw, "dialogue": [], "thoughts": []}
-        scene["player_options"] = options
+        raw_options = {"actions": raw, "dialogue": [], "thoughts": []}
     elif isinstance(raw, dict):
-        options = raw
+        raw_options = raw
     else:
-        options = {}
-        scene["player_options"] = options
+        raw_options = {}
+
+    buckets = {"actions": [], "dialogue": [], "thoughts": []}
+    for preferred in ("actions", "dialogue", "thoughts"):
+        for raw_item in _as_list(raw_options.get(preferred)):
+            text = _clean_footer_option(raw_item)
+            if not text:
+                continue
+            kind = _option_kind(text, preferred)
+            # Prevent action footer from containing speech acts like "Попросить..."
+            buckets[kind].append(text)
+
     defaults = {
-        "thoughts": ["Отметить, что изменилось.", "Сдержать первую реакцию.", "Понять, чего она сейчас хочет."],
-        "dialogue": ["Сказать коротко.", "Задать прямой вопрос.", "Промолчать."],
-        "actions": ["Проверить важную деталь.", "Сделать следующий шаг.", "Выбрать границу."],
+        "actions": [
+            "Проверить важную деталь без разговора.",
+            "Сделать следующий физический шаг.",
+            "Удержать безопасную дистанцию.",
+        ],
+        "dialogue": [
+            "Сказать коротко и прямо.",
+            "Задать один конкретный вопрос.",
+            "Обозначить границу вслух.",
+        ],
+        "thoughts": [
+            "Отметить, что изменилось.",
+            "Сдержать первую реакцию.",
+            "Понять, что сейчас опаснее.",
+        ],
     }
-    for key, fallback in defaults.items():
-        items = [_as_str(x) for x in _as_list(options.get(key)) if _as_str(x)]
-        while len(items) < 3:
-            items.append(fallback[len(items)])
-        options[key] = items[:3]
+
+    options = {}
+    for key in ("actions", "dialogue", "thoughts"):
+        seen = []
+        for item in buckets[key]:
+            clean = _clean_footer_option(item)
+            if clean and clean not in seen:
+                seen.append(clean)
+        while len(seen) < 3:
+            seen.append(defaults[key][len(seen)])
+        options[key] = seen[:3]
+    scene["player_options"] = options
 
 
-def _normalize_status_panel(scene: dict[str, Any]) -> None:
+def _normalize_status_panel(scene: dict[str, Any], bundle: dict[str, Any]) -> None:
     panel = scene.setdefault("status_panel", {})
     if not isinstance(panel, dict):
         panel = {}
         scene["status_panel"] = panel
 
-    panel["hunger"] = _meter(panel.get("hunger"), kind="hunger", fallback="норма")
-    panel["fatigue"] = _meter(panel.get("fatigue"), kind="fatigue", fallback="низкая")
-    panel["injuries"] = _meter(panel.get("injuries"), kind="injuries", fallback="нет")
-    panel["emotional_state"] = _meter(panel.get("emotional_state"), kind="emotional", fallback="ровно")
-    panel["skills"] = _meter(panel.get("skills"), kind="skills", fallback="активны")
+    panel["hunger"] = _meter(_status_source_value(bundle, scene, "hunger"), kind="hunger", fallback="норма")
+    panel["fatigue"] = _meter(_status_source_value(bundle, scene, "fatigue"), kind="fatigue", fallback="низкая")
+    panel["injuries"] = _meter(_status_source_value(bundle, scene, "injuries"), kind="injuries", fallback="нет")
+    panel["emotional_state"] = _meter(_status_source_value(bundle, scene, "emotional_state"), kind="emotional", fallback="ровно")
+    panel["skills"] = _meter(_status_source_value(bundle, scene, "skills"), kind="skills", fallback="активны")
 
-    custom = _as_list(panel.get("custom"))
     normalized = []
-    for index in range(2):
-        item = custom[index] if index < len(custom) else {}
-        if not isinstance(item, dict):
-            raw_text = _as_str(item)
-            if ":" in raw_text:
-                label, value = raw_text.split(":", 1)
-                item = {"label": label.strip(), "value": value.strip()}
-            else:
-                item = {"value": raw_text}
-        label = _short_note(item.get("label") or item.get("id"), f"Поле истории {index + 1}", 26)
-        raw_value = item.get("value")
+    for index, item in enumerate(_merged_status_custom(bundle, scene)):
         normalized.append({
-            "id": _as_str(item.get("id") or label, f"story_slot_{index + 1}"),
-            "label": label,
-            "value": _meter(raw_value, kind="custom", fallback="старт"),
+            "id": _as_str(item.get("id"), f"story_slot_{index + 1}"),
+            "label": _short_note(item.get("label"), "Сюжет", 30),
+            "value": _meter(item.get("value"), kind="custom", fallback="низкий"),
         })
-    panel["custom"] = normalized
+    panel["custom"] = normalized[:2]
 
 
-def _normalize_relationships_panel(scene: dict[str, Any]) -> None:
-    panel = _as_list(scene.get("relationships_panel"))
-    result = []
-    for item in panel:
-        if not isinstance(item, dict):
-            text = _as_str(item)
-            if ":" in text:
-                label, value = text.split(":", 1)
-            else:
-                label, value = "Отношения", text
-            result.append({"label": _short_note(label, "Отношения", 28), "value": _meter(value, kind="relationship", fallback="нейтрально")})
-            continue
-        label = _short_note(item.get("label") or item.get("name") or item.get("pair_id"), "Отношения", 28)
-        value = _as_str(item.get("value"))
-        if not value:
-            bits = []
-            for key in ["status", "tension", "trust", "respect", "curiosity", "attachment", "fear"]:
-                if item.get(key) is not None:
-                    bits.append(f"{key}: {item.get(key)}")
-            value = "; ".join(bits) or "без изменений"
-        result.append({**item, "label": label, "value": _meter(value, kind="relationship", fallback="нейтрально")})
-    scene["relationships_panel"] = result
+def _normalize_relationships_panel(scene: dict[str, Any], bundle: dict[str, Any], updates: dict[str, Any] | None = None) -> None:
+    scene["relationships_panel"] = _state_relationships_panel(bundle, scene, updates)
 
 
 def _normalize_knowledge_patches(updates: dict[str, Any], bundle: dict[str, Any], scene: dict[str, Any]) -> None:
@@ -467,8 +684,8 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
 
     _normalize_header(scene)
     _normalize_options(scene)
-    _normalize_status_panel(scene)
-    _normalize_relationships_panel(scene)
+    _normalize_status_panel(scene, bundle)
+    # relationship panel is finalized after update patches are normalized
 
     current_body = _as_str(scene.get("body"), "")
     current_rendered = _as_str(scene.get("rendered_text"), "")
@@ -493,6 +710,10 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
     _normalize_knowledge_patches(updates, bundle, scene)
     _normalize_relationship_patches(updates)
     updates["new_or_updated_characters"] = _as_list(updates.get("new_or_updated_characters"))
+    _normalize_relationships_panel(scene, bundle, updates)
+
+    # Rebuild again after relationships are state-backed.
+    scene["rendered_text"] = _build_rendered_text(scene)
 
     _normalize_safety_checks(result, scene)
     return result

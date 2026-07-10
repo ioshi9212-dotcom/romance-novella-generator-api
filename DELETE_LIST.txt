@@ -1,0 +1,12 @@
+Можно удалить старые вспомогательные patch-документы, чтобы не путаться:
+
+```txt
+CUSTOM_GPT_INSTRUCTION_PATCH_v3.txt
+CUSTOM_GPT_INSTRUCTION_PATCH_v4.txt
+CUSTOM_GPT_INSTRUCTION_PATCH_v5.txt
+CUSTOM_GPT_INSTRUCTION_PATCH_v6.txt
+README_PATCH_ORDER.md
+README_RENDERED_SCENE_QUALITY_PATCH.md
+```
+
+Удаление не обязательно для работы API.
