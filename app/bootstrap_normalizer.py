@@ -10,6 +10,15 @@ TRANSLIT = {
     "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "kh", "ц": "ts",
     "ч": "ch", "ш": "sh", "щ": "shch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
 }
+TECH_LABEL_MAP = {
+    "vision_intensity": "Видения",
+    "vision": "Видения",
+    "emotional_numbness": "Эмоциональная отстранённость",
+    "mystic_pressure": "Мистическое давление",
+    "relationship_tension": "Напряжение отношений",
+    "story_slot_1": "Поле истории 1",
+    "story_slot_2": "Поле истории 2",
+}
 
 
 def _latinize(value: str, fallback: str) -> str:
@@ -72,6 +81,16 @@ def _safe_id(value: Any, fallback: str) -> str:
             allowed.append("_")
     result = "".join(allowed).strip("_")
     return result or fallback
+
+
+def _human_label(value: Any, fallback: str) -> str:
+    text = _as_str(value, fallback).strip()
+    key = text.lower()
+    if key in TECH_LABEL_MAP:
+        return TECH_LABEL_MAP[key]
+    if "_" in key and key.isascii():
+        return TECH_LABEL_MAP.get(key, fallback)
+    return text or fallback
 
 
 def _pair_id(a: str, b: str) -> str:
@@ -158,17 +177,13 @@ def _normalize_appearance(value: Any) -> dict[str, str]:
             "face": _as_str(value.get("face"), "не указано"),
             "style": _as_str(value.get("style"), "не указано"),
         }
-        joined = " ".join(
-            item for item in raw.values()
-            if item and item != "не указано"
-        )
+        joined = " ".join(item for item in raw.values() if item and item != "не указано")
         parsed = _extract_appearance_fields(joined)
         for key in ["height", "build", "face", "style"]:
             if raw.get(key) == "не указано" and parsed.get(key):
                 raw[key] = parsed[key]
         for key in ["hair", "eyes"]:
             current = raw.get(key, "не указано")
-            # If GPT duplicated the whole appearance in hair/eyes, replace it with a clean field.
             looks_like_dump = len(current) > 90 and any(marker in current.lower() for marker in ["рост", "телослож", "лицо", "глаз"])
             if (current == "не указано" or looks_like_dump) and parsed.get(key):
                 raw[key] = parsed[key]
@@ -275,15 +290,17 @@ def _normalize_story_plan(story_plan: Any, data: dict[str, Any]) -> dict[str, An
         fallback_id, fallback_label, fallback_desc, fallback_value = defaults[index]
         slot = slots_list[index] if index < len(slots_list) else {}
         if isinstance(slot, dict):
+            raw_id = slot.get("id") or slot.get("label") or fallback_id
+            raw_label = slot.get("label") or slot.get("id") or fallback_label
             normalized_slots.append({
-                "id": _safe_id(slot.get("id") or slot.get("label"), fallback_id),
-                "label": _as_str(slot.get("label") or slot.get("id"), fallback_label),
+                "id": _safe_id(raw_id, fallback_id),
+                "label": _human_label(raw_label, fallback_label),
                 "description": _as_str(slot.get("description"), fallback_desc),
                 "initial_value": _as_str(slot.get("initial_value") or slot.get("value"), fallback_value),
             })
         else:
             text = _as_str(slot, fallback_label)
-            normalized_slots.append({"id": _safe_id(text, fallback_id), "label": text, "description": fallback_desc, "initial_value": fallback_value})
+            normalized_slots.append({"id": _safe_id(text, fallback_id), "label": _human_label(text, fallback_label), "description": fallback_desc, "initial_value": fallback_value})
     return {
         **story_plan,
         "genre": _as_str(story_plan.get("genre") or data.get("genre"), "романс/драма"),
@@ -306,11 +323,66 @@ def _normalize_story_plan(story_plan: Any, data: dict[str, Any]) -> dict[str, An
     }
 
 
+def _display_name_from_card(characters: dict[str, Any], cid: str) -> str:
+    card = characters.get(cid, {}) if isinstance(characters.get(cid), dict) else {}
+    for key in ["display_name", "visible_name", "name_ru", "russian_name", "name"]:
+        value = card.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return cid
+
+
+def _baseline_scores_for_role(role: str) -> dict[str, int]:
+    role_l = role.lower()
+    if "friend" in role_l or "подруг" in role_l or "friendship" in role_l:
+        return {"trust": 55, "tension": 15, "attachment": 40, "respect": 35, "fear": 0, "curiosity": 25}
+    if "ex" in role_l or "former" in role_l or "быв" in role_l:
+        return {"trust": 20, "tension": 65, "attachment": 25, "respect": 20, "fear": 15, "curiosity": 20}
+    if "family" in role_l or "mother" in role_l or "father" in role_l:
+        return {"trust": 35, "tension": 45, "attachment": 45, "respect": 25, "fear": 5, "curiosity": 10}
+    if "love" in role_l or "romance" in role_l:
+        return {"trust": 30, "tension": 45, "attachment": 10, "respect": 30, "fear": 5, "curiosity": 45}
+    return {"trust": 50, "tension": 20, "attachment": 0, "respect": 30, "fear": 0, "curiosity": 25}
+
+
+def _baseline_relationship(characters: dict[str, Any], protagonist_id: str, other_id: str) -> dict[str, Any]:
+    other = characters.get(other_id, {}) if isinstance(characters.get(other_id), dict) else {}
+    role = _as_str(other.get("role"), "npc")
+    p_name = _display_name_from_card(characters, protagonist_id)
+    o_name = _display_name_from_card(characters, other_id)
+    return {
+        "pair_id": _pair_id(protagonist_id, other_id),
+        "character_a": protagonist_id,
+        "character_b": other_id,
+        "type": "baseline",
+        "status": "первичное отношение создано при старте",
+        "scores": _baseline_scores_for_role(role),
+        "a_view_of_b": {"summary": f"{p_name} знает {o_name} на уровне стартовой роли/первого впечатления.", "current_assumption": "может ошибаться"},
+        "b_view_of_a": {"summary": f"{o_name} воспринимает {p_name} через свою роль, цель и видимое поведение.", "current_assumption": "может ошибаться"},
+        "shared_history": [],
+        "recent_changes": [],
+        "open_threads": [],
+        "baseline_created": True,
+    }
+
+
+def _is_baseline_candidate(card: dict[str, Any], protagonist_id: str, cid: str) -> bool:
+    if cid == protagonist_id:
+        return False
+    if not isinstance(card, dict):
+        return False
+    if card.get("generate_full_card_on_first_appearance"):
+        return False
+    role = _as_str(card.get("role"), "npc").lower()
+    if any(word in role for word in ["background", "minor", "extra", "seed", "future"]):
+        return False
+    return bool(card.get("introduced", False) or card.get("known_to_player", False))
+
+
 def _normalize_relationships(relationships: Any, characters: dict[str, Any], protagonist_id: str) -> dict[str, Any]:
-    if not isinstance(relationships, dict):
-        return {}
     result: dict[str, Any] = {}
-    for _, rel in relationships.items():
+    source = relationships if isinstance(relationships, dict) else {}
+    for _, rel in source.items():
         if not isinstance(rel, dict):
             continue
         a = rel.get("character_a") or rel.get("from") or rel.get("a") or protagonist_id
@@ -337,6 +409,13 @@ def _normalize_relationships(relationships: Any, characters: dict[str, Any], pro
             "recent_changes": _as_list(rel.get("recent_changes"), []),
             "open_threads": _as_list(rel.get("open_threads"), []),
         }
+
+    for cid, card in characters.items():
+        if not _is_baseline_candidate(card, protagonist_id, cid):
+            continue
+        pid = _pair_id(protagonist_id, cid)
+        if pid not in result:
+            result[pid] = _baseline_relationship(characters, protagonist_id, cid)
     return result
 
 
@@ -370,13 +449,15 @@ def _normalize_current_state(current_state: Any, story_plan: dict[str, Any], pro
     custom_source = _as_list(status.get("custom"), [])
     custom = []
     for index in range(2):
-        slot = slots[index] if index < len(slots) else {}
+        slot = slots[index] if index < len(slots) and isinstance(slots[index], dict) else {}
         source = custom_source[index] if index < len(custom_source) else {}
         if not isinstance(source, dict):
             source = {"value": source}
+        raw_id = source.get("id") or slot.get("id") or f"story_slot_{index + 1}"
+        raw_label = source.get("label") or slot.get("label") or raw_id
         custom.append({
-            "id": _safe_id(source.get("id") or slot.get("id"), f"story_slot_{index + 1}"),
-            "label": _as_str(source.get("label") or slot.get("label"), f"Поле истории {index + 1}"),
+            "id": _safe_id(raw_id, f"story_slot_{index + 1}"),
+            "label": _human_label(raw_label, _as_str(slot.get("label"), f"Поле истории {index + 1}")),
             "value": _as_str(source.get("value") or source.get("stress") or source.get("detachment") or slot.get("initial_value"), "старт"),
         })
     return {

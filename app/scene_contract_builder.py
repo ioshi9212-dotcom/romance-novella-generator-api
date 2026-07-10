@@ -2,6 +2,17 @@ from typing import Any
 from app.id_utils import pair_id
 
 
+TECH_LABEL_MAP = {
+    "vision_intensity": "Видения",
+    "vision": "Видения",
+    "emotional_numbness": "Эмоциональная отстранённость",
+    "mystic_pressure": "Мистическое давление",
+    "relationship_tension": "Напряжение отношений",
+    "story_slot_1": "Поле истории 1",
+    "story_slot_2": "Поле истории 2",
+}
+
+
 def _clip_text(value: Any, limit: int = 500) -> str:
     text = "" if value is None else str(value)
     text = " ".join(text.split())
@@ -84,6 +95,18 @@ def _display_name(characters: dict[str, Any], character_id: str) -> str:
     return character_id
 
 
+def _human_label(value: Any, fallback: str) -> str:
+    text = _clip_text(value, 80).strip()
+    if not text or text == "—":
+        return fallback
+    key = text.strip().lower()
+    if key in TECH_LABEL_MAP:
+        return TECH_LABEL_MAP[key]
+    if "_" in key and key.isascii():
+        return TECH_LABEL_MAP.get(key, fallback)
+    return text
+
+
 def _knowledge_boundary(knowledge: dict[str, Any], character_id: str) -> dict[str, Any]:
     entry = knowledge.get(character_id, {})
     return {
@@ -103,13 +126,46 @@ def _knowledge_boundary(knowledge: dict[str, Any], character_id: str) -> dict[st
 def _normalise_status(current_state: dict[str, Any], story_plan: dict[str, Any]) -> dict[str, Any]:
     status = current_state.get("status") or {}
     status_slots = story_plan.get("status_slots") or []
-    custom = status.get("custom") or []
-    if len(custom) < 2:
-        custom = []
-        for index in range(2):
-            slot = status_slots[index] if index < len(status_slots) else {}
-            custom.append({"id": slot.get("id", f"story_slot_{index + 1}"), "label": slot.get("label", f"Поле истории {index + 1}"), "value": slot.get("initial_value", "не задано")})
-    return {"hunger": status.get("hunger", "норма"), "fatigue": status.get("fatigue", "низкая"), "injuries": status.get("injuries", []), "emotional_state": status.get("emotional_state", "нейтрально"), "skills": status.get("skills", []), "custom": custom[:2]}
+    custom_source = status.get("custom") or []
+    normalised_custom: list[dict[str, str]] = []
+    for index in range(2):
+        slot = status_slots[index] if index < len(status_slots) and isinstance(status_slots[index], dict) else {}
+        source = custom_source[index] if index < len(custom_source) else {}
+        if not isinstance(source, dict):
+            source = {"value": source}
+        raw_id = source.get("id") or slot.get("id") or f"story_slot_{index + 1}"
+        raw_label = source.get("label") or slot.get("label") or raw_id
+        fallback_label = slot.get("label") or f"Поле истории {index + 1}"
+        label = _human_label(raw_label, _human_label(raw_id, fallback_label))
+        value = source.get("value") or slot.get("initial_value") or "не задано"
+        normalised_custom.append({"id": str(raw_id), "label": str(label), "value": _clip_text(value, 160)})
+    return {
+        "hunger": status.get("hunger", "норма"),
+        "fatigue": status.get("fatigue", "низкая"),
+        "injuries": status.get("injuries", []),
+        "emotional_state": status.get("emotional_state", "нейтрально"),
+        "skills": status.get("skills", []),
+        "custom": normalised_custom,
+    }
+
+
+def _baseline_relationship_content(characters: dict[str, Any], a: str, b: str) -> dict[str, Any]:
+    a_name = _display_name(characters, a)
+    b_name = _display_name(characters, b)
+    return {
+        "pair_id": pair_id(a, b),
+        "character_a": a,
+        "character_b": b,
+        "type": "baseline",
+        "status": "первое впечатление",
+        "scores": {"trust": 50, "tension": 15, "attachment": 0, "respect": 30, "fear": 0, "curiosity": 25},
+        "a_view_of_b": {"summary": f"{a_name} пока считывает {b_name} по видимому поведению.", "current_assumption": "может ошибаться"},
+        "b_view_of_a": {"summary": f"{b_name} пока считывает {a_name} по видимому поведению.", "current_assumption": "может ошибаться"},
+        "shared_history": [],
+        "recent_changes": [],
+        "open_threads": [],
+        "is_runtime_baseline": True,
+    }
 
 
 def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None) -> dict[str, Any]:
@@ -145,14 +201,29 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
     for i, a in enumerate(focus_ids):
         for b in focus_ids[i + 1:]:
             pid = pair_id(a, b)
-            if pid not in relationships:
-                continue
             both_in_scene = a in scene_ids and b in scene_ids
-            loaded_relationships.append({"pair_id": pid, "display_label": f"{_display_name(characters, a)} ↔ {_display_name(characters, b)}", "load_reason": ["both_present"] if both_in_scene else ["nearby_context"], "visible_in_footer": both_in_scene, "content": relationships[pid]})
+            if pid in relationships:
+                content = relationships[pid]
+                load_reason = ["both_present"] if both_in_scene else ["nearby_context"]
+                is_baseline = False
+            elif both_in_scene and player_id in {a, b}:
+                content = _baseline_relationship_content(characters, a, b)
+                load_reason = ["runtime_baseline", "both_present"]
+                is_baseline = True
+            else:
+                continue
+            loaded_relationships.append({
+                "pair_id": pid,
+                "display_label": f"{_display_name(characters, a)} ↔ {_display_name(characters, b)}",
+                "load_reason": load_reason,
+                "visible_in_footer": both_in_scene,
+                "is_runtime_baseline": is_baseline,
+                "content": content,
+            })
             if both_in_scene:
                 visible_relationship_pair_ids.append(pid)
     status = _normalise_status(current_state, story_plan)
-    status_slots = story_plan.get("status_slots") or status.get("custom", [])
+    status_slots = status.get("custom", [])
     memory_chunks = [
         _compact_memory_chunk(chunk)
         for chunk in (continuity.get("memory_chunks", []) or [])[-4:]
