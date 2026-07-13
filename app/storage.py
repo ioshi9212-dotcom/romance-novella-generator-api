@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Any
 import json
+import os
+import tempfile
 
 MAX_BUNDLE_SCENE_HISTORY = 6
 MAX_BUNDLE_TURNS = 8
@@ -85,6 +87,38 @@ def _compact_continuity_for_actions(continuity: Any) -> dict[str, Any]:
     return result
 
 
+def _safe_path_component(value: str, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    if not value or value != value.strip():
+        raise ValueError(f"{label} must be non-empty and must not contain surrounding whitespace")
+    if len(value) > 128:
+        raise ValueError(f"{label} is too long")
+    if value in {".", ".."} or "/" in value or "\\" in value:
+        raise ValueError(f"{label} must be a single safe path component")
+    if any(ord(char) < 32 for char in value):
+        raise ValueError(f"{label} contains control characters")
+    return value
+
+
+def _safe_session_id(session_id: str) -> str:
+    return _safe_path_component(session_id, "session_id")
+
+
+def _safe_relative_path(filename: str) -> Path:
+    if not isinstance(filename, str):
+        raise ValueError("filename must be a string")
+    if not filename or filename != filename.strip():
+        raise ValueError("filename must be non-empty and must not contain surrounding whitespace")
+    if "\\" in filename:
+        raise ValueError("filename must use forward slashes")
+    if any(ord(char) < 32 for char in filename):
+        raise ValueError("filename contains control characters")
+    relative = Path(filename)
+    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        raise ValueError("filename must be a safe relative path")
+    return relative
+
 
 class JsonStorage:
     def __init__(self, data_dir: Path):
@@ -93,7 +127,24 @@ class JsonStorage:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     def session_dir(self, session_id: str) -> Path:
-        return self.sessions_dir / session_id
+        safe_id = _safe_session_id(session_id)
+        sessions_root = self.sessions_dir.resolve()
+        path = (sessions_root / safe_id).resolve()
+        try:
+            path.relative_to(sessions_root)
+        except ValueError as exc:
+            raise ValueError("session_id resolves outside the sessions directory") from exc
+        return path
+
+    def _session_path(self, session_id: str, filename: str) -> Path:
+        session_root = self.session_dir(session_id)
+        relative = _safe_relative_path(filename)
+        path = (session_root / relative).resolve()
+        try:
+            path.relative_to(session_root)
+        except ValueError as exc:
+            raise ValueError("filename resolves outside the session directory") from exc
+        return path
 
     def ensure_session_dir(self, session_id: str) -> Path:
         path = self.session_dir(session_id)
@@ -101,15 +152,32 @@ class JsonStorage:
         return path
 
     def write_json(self, session_id: str, filename: str, data: Any) -> None:
-        path = self.ensure_session_dir(session_id) / filename
+        path = self._session_path(session_id, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_file.write(payload)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+                temp_path = Path(temp_file.name)
+            os.replace(temp_path, path)
+        except Exception:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            raise
 
     def read_json(self, session_id: str, filename: str, default: Any | None = None) -> Any:
-        path = self.session_dir(session_id) / filename
+        path = self._session_path(session_id, filename)
         if not path.exists():
             if default is not None:
                 return default
@@ -129,7 +197,7 @@ class JsonStorage:
         return sorted([p.name for p in self.sessions_dir.iterdir() if p.is_dir()], reverse=True)
 
     def _read_dir_json_map(self, session_id: str, directory: str, key_field: str, fallback_filename: str) -> dict[str, Any]:
-        base = self.session_dir(session_id) / directory
+        base = self._session_path(session_id, directory)
         if base.exists():
             result: dict[str, Any] = {}
             for path in sorted(base.glob("*.json")):
@@ -149,6 +217,7 @@ class JsonStorage:
         return self._read_dir_json_map(session_id, "state/relationship_pairs", "pair_id", "relationships.json")
 
     def write_character(self, session_id: str, character_id: str, card: dict[str, Any]) -> None:
+        character_id = _safe_path_component(character_id, "character_id")
         self.write_json(session_id, f"characters/{character_id}.json", card)
         index = self.read_json(session_id, "characters_index.json", default={"ids": []})
         ids = index.setdefault("ids", [])
@@ -157,6 +226,7 @@ class JsonStorage:
         self.write_json(session_id, "characters_index.json", index)
 
     def write_character_knowledge(self, session_id: str, character_id: str, entry: dict[str, Any]) -> None:
+        character_id = _safe_path_component(character_id, "character_id")
         entry = {**entry, "character_id": entry.get("character_id") or character_id}
         self.write_json(session_id, f"state/knowledge/{character_id}.json", entry)
         index = self.read_json(session_id, "state/knowledge_index.json", default={"ids": []})
@@ -166,6 +236,7 @@ class JsonStorage:
         self.write_json(session_id, "state/knowledge_index.json", index)
 
     def write_relationship_pair(self, session_id: str, pair_id: str, entry: dict[str, Any]) -> None:
+        pair_id = _safe_path_component(pair_id, "pair_id")
         entry = {**entry, "pair_id": entry.get("pair_id") or pair_id}
         self.write_json(session_id, f"state/relationship_pairs/{pair_id}.json", entry)
         index = self.read_json(session_id, "state/relationship_index.json", default={"pair_ids": []})
