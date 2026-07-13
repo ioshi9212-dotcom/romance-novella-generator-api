@@ -332,7 +332,7 @@ class JsonStorage:
 
     @contextmanager
     def session_transaction(self, session_id: str) -> Iterator[None]:
-        """Serialize one session across threads and Railway worker processes."""
+        """Lock and atomically commit all JSON writes made by one outer request."""
         session_root = self.ensure_session_dir(session_id)
         key = str(session_root)
         process_lock = self._process_lock_for(key)
@@ -354,6 +354,14 @@ class JsonStorage:
             return
 
         lock_handle = None
+        batches = getattr(self._batch_local, "batches", None)
+        if batches is None:
+            batches = {}
+            self._batch_local.batches = batches
+        created_batch = key not in batches
+        if created_batch:
+            batches[key] = {"writes": {}}
+
         try:
             lock_handle = (session_root / ".session.lock").open("a+", encoding="utf-8")
             if fcntl is not None:
@@ -361,6 +369,14 @@ class JsonStorage:
             self._recover_incomplete_transactions(session_root)
             depths[key] = 1
             yield
+            if created_batch:
+                writes = dict(batches.get(key, {}).get("writes", {}))
+                batches.pop(key, None)
+                self._commit_json_batch(session_id, writes)
+        except Exception:
+            if created_batch:
+                batches.pop(key, None)
+            raise
         finally:
             depths.pop(key, None)
             if lock_handle is not None:
@@ -371,33 +387,9 @@ class JsonStorage:
 
     @contextmanager
     def atomic_batch(self, session_id: str) -> Iterator[None]:
-        """Stage every JSON write and commit the full group with a recovery journal."""
+        """Explicit alias for a journaled session transaction."""
         with self.session_transaction(session_id):
-            key = str(self.session_dir(session_id))
-            batches = getattr(self._batch_local, "batches", None)
-            if batches is None:
-                batches = {}
-                self._batch_local.batches = batches
-
-            existing = batches.get(key)
-            if existing is not None:
-                existing["depth"] = int(existing.get("depth", 1)) + 1
-                try:
-                    yield
-                finally:
-                    existing["depth"] -= 1
-                return
-
-            batch: dict[str, Any] = {"depth": 1, "writes": {}}
-            batches[key] = batch
-            try:
-                yield
-                writes = dict(batch["writes"])
-                batches.pop(key, None)
-                self._commit_json_batch(session_id, writes)
-            except Exception:
-                batches.pop(key, None)
-                raise
+            yield
 
     def write_json(self, session_id: str, filename: str, data: Any) -> None:
         relative = _safe_relative_path(filename).as_posix()
