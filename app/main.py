@@ -1,11 +1,11 @@
-from collections.abc import Iterator
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 import hashlib
 import json
 import uuid
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.openapi.utils import get_openapi
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
@@ -62,31 +62,21 @@ def custom_openapi() -> dict[str, Any]:
 app.openapi = custom_openapi
 
 
-def require_api_key(request: Request, x_api_key: str | None = Header(default=None)) -> Iterator[None]:
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = get_settings().api_key
     if expected and x_api_key != expected:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
-    session_id = request.path_params.get("session_id")
-    if not session_id:
-        yield
-        return
 
-    manager = SessionManager()
+def _session_request_context(manager: SessionManager, session_id: str):
+    """Return a same-thread transaction for an existing, safe session path."""
     try:
-        session_path = manager.storage.session_dir(str(session_id))
+        session_path = manager.storage.session_dir(session_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    # Do not create phantom directories for missing session ids. The endpoint will
-    # return its normal 404. Existing sessions are locked for the whole request,
-    # including validation, state mutation and pending-turn finalization.
     if not session_path.exists():
-        yield
-        return
-
-    with manager.storage.session_transaction(str(session_id)):
-        yield
+        return nullcontext()
+    return manager.storage.session_transaction(session_id)
 
 
 def _require_active_session(bundle: dict, action: str) -> None:
@@ -150,6 +140,7 @@ def _store_prompt_chunks(
     chunks = _split_prompt_chunks(scene_prompt)
     updated = {
         **pending,
+        "session_id": pending.get("session_id") or session_id,
         "turn_status": turn_status,
         "turn_diagnostics": turn_diagnostics,
         "scene_prompt_sha256": _hash_text(scene_prompt),
@@ -161,10 +152,10 @@ def _store_prompt_chunks(
     return updated
 
 
-def _pending_turn_response(pending: dict[str, Any]) -> dict[str, Any]:
+def _pending_turn_response(pending: dict[str, Any], session_id: str) -> dict[str, Any]:
     chunks = pending.get("prompt_chunks")
     if not isinstance(chunks, list) or not chunks:
-        raise HTTPException(status_code=409, detail="Pending turn has no stored prompt chunks. Apply or repair the pending turn before retrying.")
+        raise HTTPException(status_code=409, detail="Pending turn has no stored prompt chunks. Retry the same input to rebuild it.")
 
     chunk_count = int(pending.get("prompt_chunk_count") or len(chunks))
     has_more = chunk_count > 1
@@ -178,7 +169,7 @@ def _pending_turn_response(pending: dict[str, Any]) -> dict[str, Any]:
         "turn_id": pending.get("turn_id"),
         "expected_turn_number": pending.get("expected_turn_number"),
         "next_required_action": next_required_action,
-        "idempotent_pending_retry": True,
+        "idempotent_pending_supported": True,
         "prompt_transport": {
             "chunked": has_more,
             "chunk_count": chunk_count,
@@ -189,7 +180,7 @@ def _pending_turn_response(pending: dict[str, Any]) -> dict[str, Any]:
     })
     first_chunk = chunks[0]
     return {
-        "session_id": pending.get("session_id"),
+        "session_id": pending.get("session_id") or session_id,
         "status": pending.get("turn_status") or "pending",
         "scene": None,
         "scene_prompt": first_chunk,
@@ -384,7 +375,10 @@ def _save_pending_turn(manager: SessionManager, session_id: str, player_input: s
 
 def _load_pending_turn(manager: SessionManager, session_id: str) -> dict[str, Any]:
     pending = manager.storage.read_json(session_id, "pending_turn.json", default={})
-    return pending if isinstance(pending, dict) else {}
+    if isinstance(pending, dict):
+        pending.setdefault("session_id", session_id)
+        return pending
+    return {}
 
 
 def _extract_turn_id_from_scene_response(scene_response: dict[str, Any]) -> str | None:
@@ -475,6 +469,60 @@ def _mark_pending_turn_applied(manager: SessionManager, session_id: str, pending
     manager.storage.write_json(session_id, "pending_turn.json", {**pending, "status": "applied", "applied_at": now_iso()})
 
 
+def _process_turn_locked(manager: SessionManager, session_id: str, request: TurnRequest, player_input: str, bundle: dict[str, Any]) -> dict:
+    if request.mode == "debug_stub":
+        result = process_turn_debug_stub(bundle, player_input)
+        apply_result = StateUpdater(manager.storage).apply_scene_response(session_id, result["scene_response"])
+        return {
+            "session_id": session_id,
+            "status": apply_result["status"],
+            "scene": result["scene"],
+            "scene_prompt": None,
+            "turn_id": None,
+            "expected_turn_number": apply_result.get("next_builder_hints", {}).get("maintenance", {}).get("last_saved_turn_number"),
+            "diagnostics": result["diagnostics"] | {"apply_result": apply_result},
+        }
+
+    expected_turn_number = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
+    existing_pending = _load_pending_turn(manager, session_id)
+    if existing_pending.get("status") == "pending":
+        same_input = existing_pending.get("player_input_sha256") == _hash_text(player_input)
+        same_turn = int(existing_pending.get("expected_turn_number") or 0) == expected_turn_number
+        if same_input and same_turn:
+            has_prompt = isinstance(existing_pending.get("prompt_chunks"), list) and bool(existing_pending.get("prompt_chunks"))
+            if has_prompt:
+                return _pending_turn_response(existing_pending, session_id)
+            # Recover a turn that was reserved before prompt generation completed.
+            repaired_result = process_turn_gpt_actions(bundle, player_input)
+            repaired_pending = _store_prompt_chunks(
+                manager,
+                session_id,
+                existing_pending,
+                repaired_result["scene_prompt"],
+                turn_status=repaired_result["status"],
+                turn_diagnostics=repaired_result["diagnostics"],
+            )
+            return _pending_turn_response(repaired_pending, session_id)
+        raise HTTPException(
+            status_code=409,
+            detail="Another turn is still pending. Apply its result before sending a different player input.",
+        )
+
+    # Build the prompt before reserving the turn. A prompt-building exception must
+    # not leave an empty pending_turn that blocks the session.
+    result = process_turn_gpt_actions(bundle, player_input)
+    pending = _save_pending_turn(manager, session_id, player_input, expected_turn_number)
+    pending = _store_prompt_chunks(
+        manager,
+        session_id,
+        pending,
+        result["scene_prompt"],
+        turn_status=result["status"],
+        turn_diagnostics=result["diagnostics"],
+    )
+    return _pending_turn_response(pending, session_id)
+
+
 @app.get("/health", operation_id="health")
 def health() -> dict:
     settings = get_settings()
@@ -514,16 +562,20 @@ def get_latest_session() -> dict:
 
 @app.get("/api/v1/sessions/{session_id}", dependencies=[Depends(require_api_key)], operation_id="getSession")
 def get_session(session_id: str) -> dict:
+    manager = SessionManager()
     try:
-        return SessionManager().get_memory(session_id)["session"]
+        with _session_request_context(manager, session_id):
+            return manager.get_memory(session_id)["session"]
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
 @app.get("/api/v1/sessions/{session_id}/memory", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_memory(session_id: str) -> dict:
+    manager = SessionManager()
     try:
-        return SessionManager().get_memory(session_id)
+        with _session_request_context(manager, session_id):
+            return manager.get_memory(session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -539,8 +591,10 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
     errors = validate_bootstrap_result(normalized_bootstrap)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
+    manager = SessionManager()
     try:
-        return SessionManager().save_bootstrap_preview(session_id, normalized_bootstrap)
+        with _session_request_context(manager, session_id):
+            return manager.save_bootstrap_preview(session_id, normalized_bootstrap)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -551,8 +605,10 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
 def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest) -> dict:
     if not _is_explicit_confirmation(request.confirmation_text):
         raise HTTPException(status_code=409, detail="Bootstrap preview is not explicitly confirmed.")
+    manager = SessionManager()
     try:
-        return SessionManager().confirm_bootstrap_preview(session_id)
+        with _session_request_context(manager, session_id):
+            return manager.confirm_bootstrap_preview(session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -563,9 +619,10 @@ def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest)
 def debug_session_dump(session_id: str) -> dict:
     manager = SessionManager()
     try:
-        bundle = manager.get_memory(session_id)
-        _require_active_session(bundle, "debugging a session")
-        return _debug_dump(manager, session_id)
+        with _session_request_context(manager, session_id):
+            bundle = manager.get_memory(session_id)
+            _require_active_session(bundle, "debugging a session")
+            return _debug_dump(manager, session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -573,11 +630,12 @@ def debug_session_dump(session_id: str) -> dict:
 @app.get("/api/v1/sessions/{session_id}/scene-contract", dependencies=[Depends(require_api_key)], include_in_schema=False)
 def get_scene_contract(session_id: str) -> dict:
     from app.scene_contract_builder import build_scene_contract
+    manager = SessionManager()
     try:
-        manager = SessionManager()
-        bundle = manager.get_memory(session_id)
-        _require_active_session(bundle, "building a scene contract")
-        return build_scene_contract(bundle)
+        with _session_request_context(manager, session_id):
+            bundle = manager.get_memory(session_id)
+            _require_active_session(bundle, "building a scene contract")
+            return build_scene_contract(bundle)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -590,48 +648,12 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
 
     manager = SessionManager()
     try:
-        bundle = manager.get_memory(session_id)
-        _require_active_session(bundle, "processing a turn")
+        with _session_request_context(manager, session_id):
+            bundle = manager.get_memory(session_id)
+            _require_active_session(bundle, "processing a turn")
+            return _process_turn_locked(manager, session_id, request, player_input, bundle)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-
-    if request.mode == "debug_stub":
-        result = process_turn_debug_stub(bundle, player_input)
-        apply_result = StateUpdater(manager.storage).apply_scene_response(session_id, result["scene_response"])
-        return {
-            "session_id": session_id,
-            "status": apply_result["status"],
-            "scene": result["scene"],
-            "scene_prompt": None,
-            "turn_id": None,
-            "expected_turn_number": apply_result.get("next_builder_hints", {}).get("maintenance", {}).get("last_saved_turn_number"),
-            "diagnostics": result["diagnostics"] | {"apply_result": apply_result},
-        }
-
-    expected_turn_number = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
-    existing_pending = _load_pending_turn(manager, session_id)
-    if existing_pending.get("status") == "pending":
-        same_input = existing_pending.get("player_input_sha256") == _hash_text(player_input)
-        same_turn = int(existing_pending.get("expected_turn_number") or 0) == expected_turn_number
-        has_prompt = isinstance(existing_pending.get("prompt_chunks"), list) and bool(existing_pending.get("prompt_chunks"))
-        if same_input and same_turn and has_prompt:
-            return _pending_turn_response(existing_pending)
-        raise HTTPException(
-            status_code=409,
-            detail="Another turn is still pending. Apply its result before sending a different player input.",
-        )
-
-    pending = _save_pending_turn(manager, session_id, player_input, expected_turn_number)
-    result = process_turn_gpt_actions(bundle, player_input)
-    pending = _store_prompt_chunks(
-        manager,
-        session_id,
-        pending,
-        result["scene_prompt"],
-        turn_status=result["status"],
-        turn_diagnostics=result["diagnostics"],
-    )
-    return _pending_turn_response(pending)
 
 
 @app.get("/api/v1/sessions/{session_id}/turn-prompt-chunk", response_model=TurnPromptChunkResponse, dependencies=[Depends(require_api_key)], operation_id="getTurnPromptChunk")
@@ -642,7 +664,8 @@ def get_turn_prompt_chunk(
 ) -> dict:
     manager = SessionManager()
     try:
-        pending = _load_pending_turn(manager, session_id)
+        with _session_request_context(manager, session_id):
+            pending = _load_pending_turn(manager, session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -678,17 +701,18 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
     manager = SessionManager()
     updater = StateUpdater(manager.storage)
     try:
-        bundle = manager.get_memory(session_id)
-        _require_active_session(bundle, "applying a turn result")
-        raw_scene_response = _coerce_scene_response_payload(request)
-        compatible_turn_id = request.turn_id or _extract_turn_id_from_scene_response(raw_scene_response)
-        normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
-        pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)
-        errors = validate_scene_response(normalized_scene_response)
-        if errors:
-            raise HTTPException(status_code=422, detail=errors)
-        result = updater.apply_scene_response(session_id, normalized_scene_response)
-        _mark_pending_turn_applied(manager, session_id, pending)
+        with _session_request_context(manager, session_id):
+            bundle = manager.get_memory(session_id)
+            _require_active_session(bundle, "applying a turn result")
+            raw_scene_response = _coerce_scene_response_payload(request)
+            compatible_turn_id = request.turn_id or _extract_turn_id_from_scene_response(raw_scene_response)
+            normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
+            pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)
+            errors = validate_scene_response(normalized_scene_response)
+            if errors:
+                raise HTTPException(status_code=422, detail=errors)
+            result = updater.apply_scene_response(session_id, normalized_scene_response)
+            _mark_pending_turn_applied(manager, session_id, pending)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
