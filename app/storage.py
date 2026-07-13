@@ -1,8 +1,15 @@
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 import json
 import os
 import tempfile
+import threading
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Railway/Linux uses fcntl.
+    fcntl = None
 
 MAX_BUNDLE_SCENE_HISTORY = 6
 MAX_BUNDLE_TURNS = 8
@@ -121,10 +128,23 @@ def _safe_relative_path(filename: str) -> Path:
 
 
 class JsonStorage:
+    _process_locks_guard = threading.Lock()
+    _process_locks: dict[str, threading.RLock] = {}
+    _transaction_local = threading.local()
+
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
         self.sessions_dir = data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def _process_lock_for(cls, key: str) -> threading.RLock:
+        with cls._process_locks_guard:
+            lock = cls._process_locks.get(key)
+            if lock is None:
+                lock = threading.RLock()
+                cls._process_locks[key] = lock
+            return lock
 
     def session_dir(self, session_id: str) -> Path:
         safe_id = _safe_session_id(session_id)
@@ -150,6 +170,50 @@ class JsonStorage:
         path = self.session_dir(session_id)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @contextmanager
+    def session_transaction(self, session_id: str) -> Iterator[None]:
+        """Serialize one session across threads and Railway worker processes.
+
+        The in-process RLock prevents concurrent threads from interleaving. On
+        Linux, flock on a per-session lock file also protects separate Uvicorn
+        workers that share the same persistent volume. Nested calls in the same
+        thread are re-entrant and reuse the outer file lock.
+        """
+        session_root = self.ensure_session_dir(session_id)
+        key = str(session_root)
+        process_lock = self._process_lock_for(key)
+        process_lock.acquire()
+
+        depths = getattr(self._transaction_local, "depths", None)
+        if depths is None:
+            depths = {}
+            self._transaction_local.depths = depths
+
+        current_depth = int(depths.get(key, 0))
+        if current_depth:
+            depths[key] = current_depth + 1
+            try:
+                yield
+            finally:
+                depths[key] -= 1
+                process_lock.release()
+            return
+
+        lock_handle = None
+        try:
+            lock_handle = (session_root / ".session.lock").open("a+", encoding="utf-8")
+            if fcntl is not None:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            depths[key] = 1
+            yield
+        finally:
+            depths.pop(key, None)
+            if lock_handle is not None:
+                if fcntl is not None:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                lock_handle.close()
+            process_lock.release()
 
     def write_json(self, session_id: str, filename: str, data: Any) -> None:
         path = self._session_path(session_id, filename)
@@ -185,11 +249,12 @@ class JsonStorage:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def append_json_list(self, session_id: str, filename: str, item: Any) -> None:
-        data = self.read_json(session_id, filename, default=[])
-        if not isinstance(data, list):
-            raise ValueError(f"{filename} is not a list")
-        data.append(item)
-        self.write_json(session_id, filename, data)
+        with self.session_transaction(session_id):
+            data = self.read_json(session_id, filename, default=[])
+            if not isinstance(data, list):
+                raise ValueError(f"{filename} is not a list")
+            data.append(item)
+            self.write_json(session_id, filename, data)
 
     def list_sessions(self) -> list[str]:
         if not self.sessions_dir.exists():
@@ -218,32 +283,35 @@ class JsonStorage:
 
     def write_character(self, session_id: str, character_id: str, card: dict[str, Any]) -> None:
         character_id = _safe_path_component(character_id, "character_id")
-        self.write_json(session_id, f"characters/{character_id}.json", card)
-        index = self.read_json(session_id, "characters_index.json", default={"ids": []})
-        ids = index.setdefault("ids", [])
-        if character_id not in ids:
-            ids.append(character_id)
-        self.write_json(session_id, "characters_index.json", index)
+        with self.session_transaction(session_id):
+            self.write_json(session_id, f"characters/{character_id}.json", card)
+            index = self.read_json(session_id, "characters_index.json", default={"ids": []})
+            ids = index.setdefault("ids", [])
+            if character_id not in ids:
+                ids.append(character_id)
+            self.write_json(session_id, "characters_index.json", index)
 
     def write_character_knowledge(self, session_id: str, character_id: str, entry: dict[str, Any]) -> None:
         character_id = _safe_path_component(character_id, "character_id")
-        entry = {**entry, "character_id": entry.get("character_id") or character_id}
-        self.write_json(session_id, f"state/knowledge/{character_id}.json", entry)
-        index = self.read_json(session_id, "state/knowledge_index.json", default={"ids": []})
-        ids = index.setdefault("ids", [])
-        if character_id not in ids:
-            ids.append(character_id)
-        self.write_json(session_id, "state/knowledge_index.json", index)
+        with self.session_transaction(session_id):
+            entry = {**entry, "character_id": entry.get("character_id") or character_id}
+            self.write_json(session_id, f"state/knowledge/{character_id}.json", entry)
+            index = self.read_json(session_id, "state/knowledge_index.json", default={"ids": []})
+            ids = index.setdefault("ids", [])
+            if character_id not in ids:
+                ids.append(character_id)
+            self.write_json(session_id, "state/knowledge_index.json", index)
 
     def write_relationship_pair(self, session_id: str, pair_id: str, entry: dict[str, Any]) -> None:
         pair_id = _safe_path_component(pair_id, "pair_id")
-        entry = {**entry, "pair_id": entry.get("pair_id") or pair_id}
-        self.write_json(session_id, f"state/relationship_pairs/{pair_id}.json", entry)
-        index = self.read_json(session_id, "state/relationship_index.json", default={"pair_ids": []})
-        ids = index.setdefault("pair_ids", [])
-        if pair_id not in ids:
-            ids.append(pair_id)
-        self.write_json(session_id, "state/relationship_index.json", index)
+        with self.session_transaction(session_id):
+            entry = {**entry, "pair_id": entry.get("pair_id") or pair_id}
+            self.write_json(session_id, f"state/relationship_pairs/{pair_id}.json", entry)
+            index = self.read_json(session_id, "state/relationship_index.json", default={"pair_ids": []})
+            ids = index.setdefault("pair_ids", [])
+            if pair_id not in ids:
+                ids.append(pair_id)
+            self.write_json(session_id, "state/relationship_index.json", index)
 
     def read_session_bundle(self, session_id: str) -> dict[str, Any]:
         scalar_files = [
