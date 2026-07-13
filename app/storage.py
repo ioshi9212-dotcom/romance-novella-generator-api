@@ -3,8 +3,10 @@ from pathlib import Path
 from typing import Any, Iterator
 import json
 import os
+import shutil
 import tempfile
 import threading
+import uuid
 
 try:
     import fcntl
@@ -131,6 +133,7 @@ class JsonStorage:
     _process_locks_guard = threading.Lock()
     _process_locks: dict[str, threading.RLock] = {}
     _transaction_local = threading.local()
+    _batch_local = threading.local()
 
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
@@ -171,15 +174,165 @@ class JsonStorage:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            directory_fd = os.open(path, flags)
+        except OSError:
+            return
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    def _write_payload_atomic(self, path: Path, payload: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_file.write(payload)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+                temp_path = Path(temp_file.name)
+            os.replace(temp_path, path)
+            self._fsync_directory(path.parent)
+        except Exception:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            raise
+
+    @staticmethod
+    def _copy_file_synced(source: Path, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with source.open("rb") as source_file, target.open("wb") as target_file:
+            shutil.copyfileobj(source_file, target_file)
+            target_file.flush()
+            os.fsync(target_file.fileno())
+
+    def _batch_state(self, session_id: str) -> dict[str, Any] | None:
+        batches = getattr(self._batch_local, "batches", None)
+        if not isinstance(batches, dict):
+            return None
+        return batches.get(str(self.session_dir(session_id)))
+
+    def _rollback_transaction(self, session_root: Path, transaction_dir: Path, manifest: dict[str, Any]) -> None:
+        rollback_errors: list[str] = []
+        entries = manifest.get("entries") if isinstance(manifest, dict) else []
+        for entry in reversed(entries if isinstance(entries, list) else []):
+            if not isinstance(entry, dict):
+                continue
+            try:
+                target = (session_root / _safe_relative_path(str(entry.get("target") or ""))).resolve()
+                target.relative_to(session_root)
+                if entry.get("backup_exists"):
+                    backup = transaction_dir / str(entry.get("backup") or "")
+                    if not backup.exists():
+                        raise FileNotFoundError(f"Missing transaction backup for {target.name}")
+                    self._write_payload_atomic(target, backup.read_text(encoding="utf-8"))
+                else:
+                    target.unlink(missing_ok=True)
+                    self._fsync_directory(target.parent)
+            except Exception as exc:  # pragma: no cover - catastrophic disk failure.
+                rollback_errors.append(str(exc))
+        if rollback_errors:
+            raise RuntimeError("Could not roll back incomplete session transaction: " + "; ".join(rollback_errors))
+        shutil.rmtree(transaction_dir, ignore_errors=True)
+        self._fsync_directory(transaction_dir.parent)
+
+    def _recover_incomplete_transactions(self, session_root: Path) -> None:
+        transactions_root = session_root / ".transactions"
+        if not transactions_root.exists():
+            return
+        for transaction_dir in sorted(path for path in transactions_root.iterdir() if path.is_dir()):
+            manifest_path = transaction_dir / "manifest.json"
+            if not manifest_path.exists():
+                # Commit never started: targets were untouched.
+                shutil.rmtree(transaction_dir, ignore_errors=True)
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                raise RuntimeError(f"Unreadable transaction journal: {manifest_path}") from exc
+            if manifest.get("state") == "committed":
+                shutil.rmtree(transaction_dir, ignore_errors=True)
+                continue
+            self._rollback_transaction(session_root, transaction_dir, manifest)
+        try:
+            transactions_root.rmdir()
+        except OSError:
+            pass
+
+    def _commit_json_batch(self, session_id: str, writes: dict[str, str]) -> None:
+        if not writes:
+            return
+        session_root = self.ensure_session_dir(session_id)
+        transactions_root = session_root / ".transactions"
+        transaction_dir = transactions_root / uuid.uuid4().hex
+        staged_dir = transaction_dir / "staged"
+        backup_dir = transaction_dir / "backup"
+        staged_dir.mkdir(parents=True, exist_ok=False)
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest: dict[str, Any] = {
+            "version": 1,
+            "state": "prepared",
+            "entries": [],
+        }
+        manifest_written = False
+        try:
+            for index, filename in enumerate(sorted(writes)):
+                target = self._session_path(session_id, filename)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                staged = staged_dir / f"{index:04d}.json"
+                backup = backup_dir / f"{index:04d}.json"
+                self._write_payload_atomic(staged, writes[filename])
+                backup_exists = target.exists()
+                if backup_exists:
+                    self._copy_file_synced(target, backup)
+                manifest["entries"].append({
+                    "target": filename,
+                    "staged": str(staged.relative_to(transaction_dir)),
+                    "backup": str(backup.relative_to(transaction_dir)),
+                    "backup_exists": backup_exists,
+                })
+
+            manifest_path = transaction_dir / "manifest.json"
+            self._write_payload_atomic(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2))
+            manifest_written = True
+            self._fsync_directory(transaction_dir)
+
+            for entry in manifest["entries"]:
+                target = self._session_path(session_id, entry["target"])
+                staged = transaction_dir / entry["staged"]
+                os.replace(staged, target)
+                self._fsync_directory(target.parent)
+
+            manifest["state"] = "committed"
+            self._write_payload_atomic(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2))
+            shutil.rmtree(transaction_dir, ignore_errors=True)
+            self._fsync_directory(transactions_root)
+            try:
+                transactions_root.rmdir()
+            except OSError:
+                pass
+        except Exception:
+            if manifest_written:
+                self._rollback_transaction(session_root, transaction_dir, manifest)
+            else:
+                shutil.rmtree(transaction_dir, ignore_errors=True)
+            raise
+
     @contextmanager
     def session_transaction(self, session_id: str) -> Iterator[None]:
-        """Serialize one session across threads and Railway worker processes.
-
-        The in-process RLock prevents concurrent threads from interleaving. On
-        Linux, flock on a per-session lock file also protects separate Uvicorn
-        workers that share the same persistent volume. Nested calls in the same
-        thread are re-entrant and reuse the outer file lock.
-        """
+        """Serialize one session across threads and Railway worker processes."""
         session_root = self.ensure_session_dir(session_id)
         key = str(session_root)
         process_lock = self._process_lock_for(key)
@@ -205,6 +358,7 @@ class JsonStorage:
             lock_handle = (session_root / ".session.lock").open("a+", encoding="utf-8")
             if fcntl is not None:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            self._recover_incomplete_transactions(session_root)
             depths[key] = 1
             yield
         finally:
@@ -215,33 +369,52 @@ class JsonStorage:
                 lock_handle.close()
             process_lock.release()
 
-    def write_json(self, session_id: str, filename: str, data: Any) -> None:
-        path = self._session_path(session_id, filename)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(data, ensure_ascii=False, indent=2)
+    @contextmanager
+    def atomic_batch(self, session_id: str) -> Iterator[None]:
+        """Stage every JSON write and commit the full group with a recovery journal."""
+        with self.session_transaction(session_id):
+            key = str(self.session_dir(session_id))
+            batches = getattr(self._batch_local, "batches", None)
+            if batches is None:
+                batches = {}
+                self._batch_local.batches = batches
 
-        temp_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                prefix=f".{path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temp_file:
-                temp_file.write(payload)
-                temp_file.flush()
-                os.fsync(temp_file.fileno())
-                temp_path = Path(temp_file.name)
-            os.replace(temp_path, path)
-        except Exception:
-            if temp_path is not None:
-                temp_path.unlink(missing_ok=True)
-            raise
+            existing = batches.get(key)
+            if existing is not None:
+                existing["depth"] = int(existing.get("depth", 1)) + 1
+                try:
+                    yield
+                finally:
+                    existing["depth"] -= 1
+                return
+
+            batch: dict[str, Any] = {"depth": 1, "writes": {}}
+            batches[key] = batch
+            try:
+                yield
+                writes = dict(batch["writes"])
+                batches.pop(key, None)
+                self._commit_json_batch(session_id, writes)
+            except Exception:
+                batches.pop(key, None)
+                raise
+
+    def write_json(self, session_id: str, filename: str, data: Any) -> None:
+        relative = _safe_relative_path(filename).as_posix()
+        self._session_path(session_id, relative)
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        batch = self._batch_state(session_id)
+        if batch is not None:
+            batch["writes"][relative] = payload
+            return
+        self._write_payload_atomic(self._session_path(session_id, relative), payload)
 
     def read_json(self, session_id: str, filename: str, default: Any | None = None) -> Any:
-        path = self._session_path(session_id, filename)
+        relative = _safe_relative_path(filename).as_posix()
+        batch = self._batch_state(session_id)
+        if batch is not None and relative in batch["writes"]:
+            return json.loads(batch["writes"][relative])
+        path = self._session_path(session_id, relative)
         if not path.exists():
             if default is not None:
                 return default
@@ -263,12 +436,22 @@ class JsonStorage:
 
     def _read_dir_json_map(self, session_id: str, directory: str, key_field: str, fallback_filename: str) -> dict[str, Any]:
         base = self._session_path(session_id, directory)
+        result: dict[str, Any] = {}
         if base.exists():
-            result: dict[str, Any] = {}
             for path in sorted(base.glob("*.json")):
-                data = json.loads(path.read_text(encoding="utf-8"))
+                relative = path.relative_to(self.session_dir(session_id)).as_posix()
+                data = self.read_json(session_id, relative)
                 key = data.get(key_field) if isinstance(data, dict) else None
                 result[str(key or path.stem)] = data
+        batch = self._batch_state(session_id)
+        if batch is not None:
+            prefix = directory.rstrip("/") + "/"
+            for relative, payload in batch["writes"].items():
+                if relative.startswith(prefix) and relative.endswith(".json"):
+                    data = json.loads(payload)
+                    key = data.get(key_field) if isinstance(data, dict) else None
+                    result[str(key or Path(relative).stem)] = data
+        if result:
             return result
         return self.read_json(session_id, fallback_filename, default={})
 
