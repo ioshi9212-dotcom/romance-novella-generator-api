@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import threading
 
@@ -185,6 +186,109 @@ def test_session_transaction_serializes_same_session(tmp_path: Path):
     assert not first_thread.is_alive()
     assert not second_thread.is_alive()
     assert second_entered.is_set()
+
+
+def test_session_transaction_discards_all_staged_writes_on_body_error(tmp_path: Path):
+    from app.storage import JsonStorage
+
+    storage = JsonStorage(tmp_path)
+    session_id = "session_safe"
+    storage.write_json(session_id, "a.json", {"value": "old-a"})
+    storage.write_json(session_id, "b.json", {"value": "old-b"})
+
+    with pytest.raises(RuntimeError, match="stop before commit"):
+        with storage.session_transaction(session_id):
+            storage.write_json(session_id, "a.json", {"value": "new-a"})
+            storage.write_json(session_id, "b.json", {"value": "new-b"})
+            assert storage.read_json(session_id, "a.json") == {"value": "new-a"}
+            assert storage.read_json(session_id, "b.json") == {"value": "new-b"}
+            raise RuntimeError("stop before commit")
+
+    assert storage.read_json(session_id, "a.json") == {"value": "old-a"}
+    assert storage.read_json(session_id, "b.json") == {"value": "old-b"}
+
+
+def test_session_transaction_rolls_back_partial_disk_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from app import storage as storage_module
+
+    storage = storage_module.JsonStorage(tmp_path)
+    session_id = "session_safe"
+    storage.write_json(session_id, "a.json", {"value": "old-a"})
+    storage.write_json(session_id, "b.json", {"value": "old-b"})
+
+    real_replace = storage_module.os.replace
+    failed = False
+
+    def fail_second_target_once(source, target):
+        nonlocal failed
+        source_path = Path(source)
+        target_path = Path(target)
+        if not failed and source_path.parent.name == "staged" and target_path.name == "b.json":
+            failed = True
+            raise OSError("simulated disk failure")
+        real_replace(source, target)
+
+    monkeypatch.setattr(storage_module.os, "replace", fail_second_target_once)
+
+    with pytest.raises(OSError, match="simulated disk failure"):
+        with storage.session_transaction(session_id):
+            storage.write_json(session_id, "a.json", {"value": "new-a"})
+            storage.write_json(session_id, "b.json", {"value": "new-b"})
+
+    assert failed is True
+    assert storage.read_json(session_id, "a.json") == {"value": "old-a"}
+    assert storage.read_json(session_id, "b.json") == {"value": "old-b"}
+    transactions_root = storage.session_dir(session_id) / ".transactions"
+    assert not transactions_root.exists() or not any(transactions_root.iterdir())
+
+
+def test_session_transaction_recovers_prepared_journal_after_restart(tmp_path: Path):
+    from app.storage import JsonStorage
+
+    storage = JsonStorage(tmp_path)
+    session_id = "session_safe"
+    storage.write_json(session_id, "current_state.json", {"turn_number": 4})
+    session_root = storage.session_dir(session_id)
+
+    transaction_dir = session_root / ".transactions" / "interrupted"
+    backup_dir = transaction_dir / "backup"
+    staged_dir = transaction_dir / "staged"
+    backup_dir.mkdir(parents=True)
+    staged_dir.mkdir(parents=True)
+    (backup_dir / "0000.json").write_text(
+        json.dumps({"turn_number": 4}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (session_root / "current_state.json").write_text(
+        json.dumps({"turn_number": 5}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (transaction_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "state": "prepared",
+                "entries": [
+                    {
+                        "target": "current_state.json",
+                        "staged": "staged/0000.json",
+                        "backup": "backup/0000.json",
+                        "backup_exists": True,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    restarted_storage = JsonStorage(tmp_path)
+    with restarted_storage.session_transaction(session_id):
+        pass
+
+    assert restarted_storage.read_json(session_id, "current_state.json") == {"turn_number": 4}
+    assert not transaction_dir.exists()
 
 
 def test_process_turn_retry_reuses_pending_turn_and_blocks_different_input():
