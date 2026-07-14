@@ -159,3 +159,4 @@ python -m pytest -q
 ```
 
 GitHub Actions запускает тот же набор тестов на Python 3.11 при push в `main` и `agent/**`, а также для pull request в `main`.
+Перед слиянием изменений проверка `Tests / Python 3.11` должна завершиться успешно.
