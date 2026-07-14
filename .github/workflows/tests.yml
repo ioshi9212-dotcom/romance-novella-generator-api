@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -31,17 +31,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Apply OpenAPI component hotfix
-        run: |
-          python scripts/apply_openapi_component_fix.py
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
-            git add app tests
-            git commit -m "Hoist JSON Schema defs into OpenAPI components"
-            git push origin HEAD:agent/fix-director-status-component
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
