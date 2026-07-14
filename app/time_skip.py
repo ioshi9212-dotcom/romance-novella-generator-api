@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from app.director_bible import build_director_guidance, normalise_director_bible
+from app.npc_runtime import compact_npc_runtime_entry
 from app.scene_contract_builder import build_scene_contract
 
 
@@ -160,6 +161,38 @@ def _compact_event(event: dict[str, Any]) -> dict[str, Any]:
     return {key: event.get(key) for key in keys if key in event}
 
 
+def _target_context(bundle: dict[str, Any], target_ids: set[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    knowledge = bundle.get("knowledge") if isinstance(bundle.get("knowledge"), dict) else {}
+    npc_state = bundle.get("npc_state") if isinstance(bundle.get("npc_state"), dict) else {}
+    relationships = bundle.get("relationships") if isinstance(bundle.get("relationships"), dict) else {}
+
+    character_context: dict[str, Any] = {}
+    for character_id in sorted(target_ids):
+        knowledge_entry = knowledge.get(character_id) if isinstance(knowledge.get(character_id), dict) else {}
+        character_context[character_id] = {
+            "knowledge": {
+                "known_facts": _list(knowledge_entry.get("known_facts"))[-8:],
+                "observations": _list(knowledge_entry.get("observations"))[-6:],
+                "assumptions": _list(knowledge_entry.get("assumptions"))[-6:],
+                "wrong_beliefs": _list(knowledge_entry.get("wrong_beliefs"))[-6:],
+                "does_not_know": _string_list(knowledge_entry.get("does_not_know"), 8),
+                "must_not_assume": _string_list(knowledge_entry.get("must_not_assume"), 8),
+                "recent_memories": _string_list(knowledge_entry.get("recent_memories"), 6),
+            },
+            "npc_runtime": compact_npc_runtime_entry(npc_state.get(character_id)),
+        }
+
+    target_relationships: dict[str, Any] = {}
+    for relationship_id, relationship in relationships.items():
+        if not isinstance(relationship, dict):
+            continue
+        a = _text(relationship.get("character_a"))
+        b = _text(relationship.get("character_b"))
+        if a in target_ids and b in target_ids:
+            target_relationships[str(relationship_id)] = relationship
+    return character_context, target_relationships
+
+
 def build_time_skip_contract(bundle: dict[str, Any], player_input: str) -> dict[str, Any]:
     availability = time_skip_availability(bundle)
     if not availability["allowed"]:
@@ -167,10 +200,17 @@ def build_time_skip_contract(bundle: dict[str, Any], player_input: str) -> dict[
 
     base = build_scene_contract(bundle, player_input=player_input)
     target = availability["target_event"]
-    director_guidance = build_director_guidance(bundle)
     target_participants = set(_string_list(target.get("participants"), 12))
     player_id = _text((base.get("current_frame") or {}).get("player_character_id"), "pc_01")
     target_participants.add(player_id)
+
+    director_guidance = deepcopy(build_director_guidance(bundle))
+    director_guidance["due_or_next_events"] = [_compact_event(target)]
+    director_guidance["character_functions"] = {
+        character_id: entry
+        for character_id, entry in (director_guidance.get("character_functions") or {}).items()
+        if character_id in target_participants
+    }
 
     loaded_characters = [
         item
@@ -191,6 +231,7 @@ def build_time_skip_contract(bundle: dict[str, Any], player_input: str) -> dict[
                 "card": card,
             })
 
+    character_context, target_relationships = _target_context(bundle, target_participants)
     return {
         **base,
         "contract_version": "novella.time_skip_contract.v1",
@@ -200,6 +241,8 @@ def build_time_skip_contract(bundle: dict[str, Any], player_input: str) -> dict[
             "mode": "explicit_player_requested_transition",
             "exact_player_action": TIME_SKIP_ACTION,
             "target_event": _compact_event(target),
+            "target_character_context": character_context,
+            "target_relationships": target_relationships,
             "suggested_horizon": availability["state"].get("suggested_horizon"),
             "allowed_units": ["hours", "days", "weeks", "months"],
             "transition_rules": {
