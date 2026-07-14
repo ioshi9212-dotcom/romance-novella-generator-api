@@ -8,6 +8,16 @@ from app.relationship_updates import apply_directed_relationship_patches
 from app.storage import JsonStorage
 
 
+def scene_response_for_base_updater(scene_response: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy for StateUpdater without relationship patches handled elsewhere."""
+    result = deepcopy(scene_response) if isinstance(scene_response, dict) else {}
+    updates = result.get("proposed_updates") if isinstance(result.get("proposed_updates"), dict) else {}
+    updates = dict(updates)
+    updates["relationship_patches"] = []
+    result["proposed_updates"] = updates
+    return result
+
+
 def apply_npc_state_patches(
     storage: JsonStorage,
     session_id: str,
