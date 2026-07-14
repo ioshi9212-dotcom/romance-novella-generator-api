@@ -120,11 +120,14 @@ def _event_distance(event: dict[str, Any]) -> tuple[str, int, int]:
     return unit, amount, amount * _UNIT_HOURS[unit]
 
 
-def _pending_events(bible: dict[str, Any]) -> list[dict[str, Any]]:
+def _pending_events(bible: dict[str, Any], current_turn: int) -> list[dict[str, Any]]:
+    next_turn = current_turn + 1
     result = [
         item
         for item in bible.get("event_queue", [])
-        if isinstance(item, dict) and item.get("status") in _EVENT_STATUSES
+        if isinstance(item, dict)
+        and item.get("status") in _EVENT_STATUSES
+        and _integer(item.get("earliest_turn"), 0) <= next_turn
     ]
     result.sort(
         key=lambda item: (
@@ -185,7 +188,7 @@ def assess_time_skip(
     target_event: dict[str, Any] | None = None
     effective_unit = unit
     effective_amount = amount
-    pending_events = _pending_events(bible)
+    pending_events = _pending_events(bible, turn_number)
 
     if mode == "nearest_event":
         if not flow["allow_nearest_event"]:
@@ -298,9 +301,11 @@ def validate_time_skip_scene_response(
         errors.append("time_skip_result.routine_summary must contain at least one causal summary beat")
 
     elapsed = result.get("elapsed") if isinstance(result.get("elapsed"), dict) else {}
-    if request.get("mode") == "duration":
-        if elapsed.get("unit") != request.get("unit") or _integer(elapsed.get("amount"), 0) != _integer(request.get("amount"), 0):
-            errors.append("time_skip_result.elapsed must match the requested duration")
+    expected_unit = request.get("unit")
+    expected_amount = _integer(request.get("amount"), 0)
+    if expected_unit and expected_amount > 0:
+        if elapsed.get("unit") != expected_unit or _integer(elapsed.get("amount"), 0) != expected_amount:
+            errors.append("time_skip_result.elapsed must match the selected skip duration")
 
     target_event = request.get("target_event") if isinstance(request.get("target_event"), dict) else None
     expected_event_id = target_event.get("id") if target_event else None
@@ -314,6 +319,8 @@ def validate_time_skip_scene_response(
     control = state_patch.get("time_skip_control") if isinstance(state_patch.get("time_skip_control"), dict) else None
     if control is None or not isinstance(control.get("allowed"), bool):
         errors.append("time skip scene_state_patch.time_skip_control.allowed is required")
+    elif control.get("allowed") is not False:
+        errors.append("time skip must close time_skip_control until the new scene reaches another natural pause")
 
     if expected_event_id:
         director = proposed.get("director_bible_patches") if isinstance(proposed.get("director_bible_patches"), dict) else {}

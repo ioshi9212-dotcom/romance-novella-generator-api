@@ -493,6 +493,8 @@ def _process_turn_locked(manager: SessionManager, session_id: str, request: Turn
     expected_turn_number = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
     existing_pending = _load_pending_turn(manager, session_id)
     if existing_pending.get("status") == "pending":
+        if existing_pending.get("turn_kind", "normal") != "normal":
+            raise HTTPException(status_code=409, detail="A time-skip turn is pending. Apply it before sending a normal turn.")
         same_input = existing_pending.get("player_input_sha256") == _hash_text(player_input)
         same_turn = int(existing_pending.get("expected_turn_number") or 0) == expected_turn_number
         if same_input and same_turn:
@@ -562,6 +564,22 @@ def _advance_time_locked(manager: SessionManager, session_id: str, request: Adva
         if same_request and same_turn and existing_pending.get("turn_kind") == "time_skip":
             if isinstance(existing_pending.get("prompt_chunks"), list) and existing_pending.get("prompt_chunks"):
                 return _pending_turn_response(existing_pending, session_id)
+            repaired = process_time_skip_gpt_actions(
+                bundle,
+                player_input,
+                skip_mode=request.skip_mode,
+                unit=request.unit,
+                amount=request.amount,
+            )
+            repaired_pending = _store_prompt_chunks(
+                manager,
+                session_id,
+                existing_pending,
+                repaired["scene_prompt"],
+                turn_status=repaired["status"],
+                turn_diagnostics=repaired["diagnostics"],
+            )
+            return _pending_turn_response(repaired_pending, session_id)
         raise HTTPException(status_code=409, detail="Another turn is still pending. Apply it before advancing time.")
 
     generated = process_time_skip_gpt_actions(
@@ -762,7 +780,7 @@ def get_turn_prompt_chunk(
         raise HTTPException(status_code=404, detail=str(exc))
 
     if not pending or pending.get("turn_id") != turn_id:
-        raise HTTPException(status_code=409, detail="Missing or mismatched pending turn_id. Call processTurn again.")
+        raise HTTPException(status_code=409, detail="Missing or mismatched pending turn_id. Call processTurn or advanceTime again.")
     if pending.get("status") == "applied":
         raise HTTPException(status_code=409, detail="This turn was already applied. Call processTurn for the next player input.")
 
