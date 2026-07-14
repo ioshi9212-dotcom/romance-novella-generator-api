@@ -479,6 +479,12 @@ def _normalize_current_state(current_state: Any, story_plan: dict[str, Any], pro
         "inventory": _as_list(current_state.get("inventory"), []),
         "nearby_items": _as_list(current_state.get("nearby_items"), []),
         "environment": current_state.get("environment") if isinstance(current_state.get("environment"), dict) else {"light": "не указано", "sound": "не указано", "air": "не указано", "details": []},
+        "time_skip_state": current_state.get("time_skip_state") if isinstance(current_state.get("time_skip_state"), dict) else {
+            "allowed": False,
+            "reason": "Пропуск времени ещё не открыт: нужна естественная пауза после завершённого смыслового бита.",
+            "suggested_horizon": "до ближайшего значимого события",
+            "blocked_by": [],
+        },
         "status": {
             "hunger": _as_str(status.get("hunger"), "норма"),
             "fatigue": _as_str(status.get("fatigue"), "средняя"),

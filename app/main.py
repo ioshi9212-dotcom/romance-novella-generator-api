@@ -18,7 +18,8 @@ from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
-from app.turn_processor import process_turn_debug_stub, process_turn_gpt_actions
+from app.time_skip import TimeSkipUnavailable, ensure_time_skip_state_patch, is_time_skip_command, time_skip_availability, validate_time_skip_scene_response
+from app.turn_processor import process_time_skip_gpt_actions, process_turn_debug_stub, process_turn_gpt_actions
 from app.validators import validate_bootstrap_result, validate_scene_response
 
 RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
@@ -179,6 +180,8 @@ def _pending_turn_response(pending: dict[str, Any], session_id: str) -> dict[str
             "returned_chunk_index": 0,
             "next_chunk_index": 1 if has_more else None,
             "scene_prompt_sha256": pending.get("scene_prompt_sha256"),
+            "turn_mode": pending.get("turn_mode", "scene"),
+            "target_event_id": pending.get("target_event_id"),
         },
     })
     first_chunk = chunks[0]
@@ -362,11 +365,21 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
     }
 
 
-def _save_pending_turn(manager: SessionManager, session_id: str, player_input: str, expected_turn_number: int) -> dict[str, Any]:
+def _save_pending_turn(
+    manager: SessionManager,
+    session_id: str,
+    player_input: str,
+    expected_turn_number: int,
+    *,
+    turn_mode: str = "scene",
+    target_event_id: str | None = None,
+) -> dict[str, Any]:
     pending = {
         "session_id": session_id,
         "turn_id": _new_turn_id(),
         "status": "pending",
+        "turn_mode": turn_mode,
+        "target_event_id": target_event_id,
         "player_input": player_input,
         "player_input_sha256": _hash_text(player_input),
         "expected_turn_number": expected_turn_number,
@@ -473,7 +486,10 @@ def _mark_pending_turn_applied(manager: SessionManager, session_id: str, pending
 
 
 def _process_turn_locked(manager: SessionManager, session_id: str, request: TurnRequest, player_input: str, bundle: dict[str, Any]) -> dict:
+    wants_time_skip = is_time_skip_command(player_input)
     if request.mode == "debug_stub":
+        if wants_time_skip:
+            raise HTTPException(status_code=409, detail="Time skip is available only in the normal gpt_actions flow.")
         result = process_turn_debug_stub(bundle, player_input)
         apply_result = StateUpdater(manager.storage).apply_scene_response(session_id, result["scene_response"])
         return {
@@ -486,6 +502,16 @@ def _process_turn_locked(manager: SessionManager, session_id: str, request: Turn
             "diagnostics": result["diagnostics"] | {"apply_result": apply_result},
         }
 
+    if wants_time_skip:
+        availability = time_skip_availability(bundle)
+        if not availability.get("allowed"):
+            raise HTTPException(status_code=409, detail=availability.get("reason") or "Time skip is not available in the current frame.")
+        processor = process_time_skip_gpt_actions
+        turn_mode = "time_skip"
+    else:
+        processor = process_turn_gpt_actions
+        turn_mode = "scene"
+
     expected_turn_number = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
     existing_pending = _load_pending_turn(manager, session_id)
     if existing_pending.get("status") == "pending":
@@ -495,8 +521,8 @@ def _process_turn_locked(manager: SessionManager, session_id: str, request: Turn
             has_prompt = isinstance(existing_pending.get("prompt_chunks"), list) and bool(existing_pending.get("prompt_chunks"))
             if has_prompt:
                 return _pending_turn_response(existing_pending, session_id)
-            # Recover a turn that was reserved before prompt generation completed.
-            repaired_result = process_turn_gpt_actions(bundle, player_input)
+            repair_processor = process_time_skip_gpt_actions if existing_pending.get("turn_mode") == "time_skip" else process_turn_gpt_actions
+            repaired_result = repair_processor(bundle, player_input)
             repaired_pending = _store_prompt_chunks(
                 manager,
                 session_id,
@@ -513,8 +539,16 @@ def _process_turn_locked(manager: SessionManager, session_id: str, request: Turn
 
     # Build the prompt before reserving the turn. A prompt-building exception must
     # not leave an empty pending_turn that blocks the session.
-    result = process_turn_gpt_actions(bundle, player_input)
-    pending = _save_pending_turn(manager, session_id, player_input, expected_turn_number)
+    result = processor(bundle, player_input)
+    target_event_id = (result.get("diagnostics") or {}).get("target_event_id")
+    pending = _save_pending_turn(
+        manager,
+        session_id,
+        player_input,
+        expected_turn_number,
+        turn_mode=turn_mode,
+        target_event_id=target_event_id,
+    )
     pending = _store_prompt_chunks(
         manager,
         session_id,
@@ -661,6 +695,8 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
             return _process_turn_locked(manager, session_id, request, player_input, bundle)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except TimeSkipUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @app.get("/api/v1/sessions/{session_id}/turn-prompt-chunk", response_model=TurnPromptChunkResponse, dependencies=[Depends(require_api_key)], operation_id="getTurnPromptChunk")
@@ -715,7 +751,9 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
             compatible_turn_id = request.turn_id or _extract_turn_id_from_scene_response(raw_scene_response)
             normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
             pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)
+            normalized_scene_response = ensure_time_skip_state_patch(normalized_scene_response, pending)
             errors = validate_scene_response(normalized_scene_response)
+            errors.extend(validate_time_skip_scene_response(normalized_scene_response, pending, bundle))
             if errors:
                 raise HTTPException(status_code=422, detail=errors)
             result = updater.apply_scene_response(session_id, normalized_scene_response)
