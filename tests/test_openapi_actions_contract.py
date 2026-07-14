@@ -54,6 +54,7 @@ def test_bootstrap_contract_exposes_required_runtime_shape():
         "relationships",
         "knowledge",
         "story_plan",
+        "director_bible",
         "current_state",
         "npc_state",
         "future_locks",
@@ -128,6 +129,10 @@ def test_bootstrap_contract_exposes_required_runtime_shape():
     } <= set(story_plan["required"])
     assert story_plan["properties"]["status_slots"]["minItems"] == 2
     assert story_plan["properties"]["status_slots"]["maxItems"] == 2
+
+    director_bible = schema["properties"]["director_bible"]
+    assert director_bible["properties"]["event_queue"]["minItems"] == 3
+    assert "items" in director_bible["properties"]["time_anchors"]
 
     current_state = schema["properties"]["current_state"]
     assert "status" in current_state["required"]

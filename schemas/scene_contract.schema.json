@@ -10,6 +10,7 @@
     "current_frame",
     "loaded_characters",
     "knowledge_boundaries",
+    "director_guidance",
     "output_requirements"
   ],
   "properties": {
@@ -58,6 +59,9 @@
       "type": "array"
     },
     "story_compass": {
+      "type": "object"
+    },
+    "director_guidance": {
       "type": "object"
     },
     "status_slots": {

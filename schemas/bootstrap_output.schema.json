@@ -10,6 +10,7 @@
     "relationships",
     "knowledge",
     "story_plan",
+    "director_bible",
     "current_state",
     "npc_state",
     "future_locks",
@@ -280,6 +281,27 @@
           }
         }
       }
+    },
+    "director_bible": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["world_truth", "hidden_lore", "character_functions", "story_hooks", "planned_reveals", "active_conflicts", "event_queue", "time_anchors", "do_not_resolve_early", "continuity_truths", "future_consequences", "pacing"],
+      "properties": {
+        "version": {"type": "integer", "const": 1},
+        "world_truth": {"type": "object", "required": ["core_truth", "world_rules", "hidden_cause"], "properties": {"core_truth": {"type": "string", "minLength": 1}, "world_rules": {"type": "array", "items": {"type": "string"}}, "hidden_cause": {"type": "string", "minLength": 1}}},
+        "hidden_lore": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "truth", "status", "reveal_policy", "known_by", "related_character_ids", "evidence_chain"], "properties": {"id": {"type": "string"}, "truth": {"type": "string", "minLength": 1}, "status": {"type": "string"}, "reveal_policy": {"type": "string", "minLength": 1}, "known_by": {"type": "array", "items": {"type": "string"}}, "related_character_ids": {"type": "array", "items": {"type": "string"}}, "evidence_chain": {"type": "array", "items": {"type": "string"}}}}},
+        "character_functions": {"type": "object", "additionalProperties": {"type": "object", "required": ["story_role", "pressure_source", "conflict_function", "private_goal", "do_not_flatten_into"]}},
+        "story_hooks": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "hook", "status", "pressure", "next_escalation", "earliest_turn"]}},
+        "planned_reveals": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "reveal", "status", "earliest_turn", "prerequisites", "forbidden_before"]}},
+        "active_conflicts": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "description", "status", "pressure", "next_escalation", "do_not_resolve_with"]}},
+        "event_queue": {"type": "array", "minItems": 3, "items": {"type": "object", "required": ["id", "title", "status", "priority", "earliest_turn", "latest_turn", "conditions", "participants", "purpose", "scene_pressure", "next_if_ignored", "time_hint"], "properties": {"status": {"type": "string", "enum": ["planned", "ready", "triggered", "completed", "blocked", "deferred"]}, "priority": {"type": "integer", "minimum": 0, "maximum": 100}, "earliest_turn": {"type": "integer", "minimum": 0}, "latest_turn": {"type": "integer", "minimum": 0}}}},
+        "time_anchors": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object", "additionalProperties": true}]}},
+        "do_not_resolve_early": {"type": "array", "items": {"type": "string"}},
+        "continuity_truths": {"type": "array", "items": {"type": "string"}},
+        "future_consequences": {"type": "array", "items": {"type": "string"}},
+        "pacing": {"type": "object", "required": ["current_phase", "quiet_scene_budget", "major_reveal_spacing", "notes"]}
+      },
+      "description": "Author-only story bible. Never include it in the user-visible bootstrap preview."
     },
     "current_state": {
       "type": "object",

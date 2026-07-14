@@ -60,7 +60,7 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - Не используй seed вместо полной карточки для будущего главного персонажа. hidden_character_seeds оставь только для действительно неопределённых далёких фигур.
 
 СТРУКТУРА
-Корень: protagonist, characters, relationships, knowledge, story_plan, current_state, npc_state, future_locks, continuity, scene_history=[], turns=[].
+Корень: protagonist, characters, relationships, knowledge, story_plan, director_bible, current_state, npc_state, future_locks, continuity, scene_history=[], turns=[].
 - characters/relationships/knowledge — объекты по id.
 - protagonist.id существует в characters и имеет cast_status=player.
 - scene_history=[], turns=[], turn_number=0, last_player_input="".
@@ -71,6 +71,18 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 STORY PLAN
 Создай подробный, но открытый сюжетный компас: setting_summary, main_premise, protagonist_start, player_goal, central_conflict, central_question, opening_scene_intent, opening_pacing, scene_focus_rules, act_structure, character_arcs, relationship_focus, open_threads, forbidden_drift, current_story_position и два status_slots.
 Не фиксируй единственный финал. NPC имеют собственные дела и маршруты. Первые сцены не должны превращаться в инструкцию, квест или процедуру.
+
+DIRECTOR BIBLE — СКРЫТО ОТ ПОЛЬЗОВАТЕЛЯ
+Создай отдельный авторский файл, чтобы история не превращалась в кашу и не выдумывала тайны по ходу:
+- world_truth: core_truth, world_rules, hidden_cause;
+- hidden_lore: минимум одна конкретная причинная истина с reveal_policy и evidence_chain;
+- character_functions для каждого known_core/known_support/hidden_core: story_role, pressure_source, conflict_function, private_goal, do_not_flatten_into;
+- story_hooks: минимум два незакрытых крючка;
+- planned_reveals: что раскрывается, earliest_turn, prerequisites и forbidden_before;
+- active_conflicts и do_not_resolve_early;
+- event_queue: минимум три ближайших события с priority, earliest/latest turn, conditions, participants, purpose, scene_pressure, next_if_ignored и time_hint;
+- time_anchors, continuity_truths, future_consequences и pacing.
+События не являются рельсами: они должны адаптироваться к действиям игрока. Не решай выбор героини заранее. Не выводи director_bible в preview. `future_locks` оставь только технической блокировкой раскрытия.
 
 CURRENT STATE
 Заполни конкретно date, time, location, weather, scene_state, outfit, inventory, nearby_items, environment и status. В active/nearby только реально доступные стартовые персонажи.
