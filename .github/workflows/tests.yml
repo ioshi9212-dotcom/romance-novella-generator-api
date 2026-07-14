@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 10
 
     env:
-      DATA_DIR: ${{ runner.temp }}/novella-data
+      DATA_DIR: /tmp/novella-data
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
 
