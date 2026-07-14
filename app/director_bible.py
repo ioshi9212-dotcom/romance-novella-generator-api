@@ -10,7 +10,6 @@ HOOK_STATUSES = {"active", "advanced", "resolved", "dormant"}
 REVEAL_STATUSES = {"locked", "available", "revealed", "deferred"}
 CONFLICT_STATUSES = {"active", "escalated", "cooling", "resolved", "dormant"}
 TIME_SKIP_UNITS = {"hours", "days", "weeks", "months"}
-TIME_SKIP_UNITS = {"hours", "days", "weeks", "months"}
 
 _EVENT_TRANSITIONS = {
     "planned": EVENT_STATUSES,
@@ -69,28 +68,6 @@ def _integer(value: Any, fallback: int, minimum: int = 0, maximum: int = 9999) -
     except (TypeError, ValueError):
         number = fallback
     return max(minimum, min(maximum, number))
-
-
-def _normalise_time_flow(value: Any, story_plan: dict[str, Any]) -> dict[str, Any]:
-    source = deepcopy(value) if isinstance(value, dict) else {}
-    allowed_units = [unit for unit in _string_list(source.get("allowed_units"), 4) if unit in TIME_SKIP_UNITS]
-    if not allowed_units:
-        allowed_units = ["hours", "days", "weeks"]
-    maxima = source.get("max_amounts") if isinstance(source.get("max_amounts"), dict) else {}
-    return {
-        **source,
-        "current_period": _text(source.get("current_period") or story_plan.get("current_story_position"), "early_story"),
-        "default_mode": _text(source.get("default_mode"), "nearest_event"),
-        "allow_nearest_event": source.get("allow_nearest_event") is not False,
-        "allowed_units": allowed_units,
-        "max_amounts": {
-            "hours": _integer(maxima.get("hours"), 24, 1, 365),
-            "days": _integer(maxima.get("days"), 14, 1, 365),
-            "weeks": _integer(maxima.get("weeks"), 4, 1, 52),
-            "months": _integer(maxima.get("months"), 1, 1, 12),
-        },
-        "last_skip": source.get("last_skip") if isinstance(source.get("last_skip"), dict) else None,
-    }
 
 
 def _normalise_time_flow(value: Any, story_plan: dict[str, Any]) -> dict[str, Any]:
@@ -253,8 +230,6 @@ def _default_events(data: dict[str, Any], hooks: list[dict[str, Any]]) -> list[d
             "time_hint": "в текущей или ближайшей сцене",
             "skip_unit": "hours",
             "skip_amount": 1,
-            "skip_unit": "hours",
-            "skip_amount": 1,
         },
         {
             "id": "event_02",
@@ -271,8 +246,6 @@ def _default_events(data: dict[str, Any], hooks: list[dict[str, Any]]) -> list[d
             "time_hint": "через несколько сцен или после естественной паузы",
             "skip_unit": "days",
             "skip_amount": 2,
-            "skip_unit": "days",
-            "skip_amount": 2,
         },
         {
             "id": "event_03",
@@ -287,8 +260,6 @@ def _default_events(data: dict[str, Any], hooks: list[dict[str, Any]]) -> list[d
             "scene_pressure": "изменить отношения или положение без решения за героиню",
             "next_if_ignored": "NPC продолжает план без разрешения игрока",
             "time_hint": "когда текущая сцена достигнет естественной точки перехода",
-            "skip_unit": "weeks",
-            "skip_amount": 1,
             "skip_unit": "weeks",
             "skip_amount": 1,
         },
