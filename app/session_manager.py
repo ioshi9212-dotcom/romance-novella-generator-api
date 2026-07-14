@@ -8,6 +8,7 @@ from app.character_profiles import prepare_bootstrap_cast
 from app.config import get_settings
 from app.id_utils import new_session_id, now_iso
 from app.models import CreateSessionRequest
+from app.npc_runtime import prepare_npc_runtime_map
 from app.storage import JsonStorage
 
 
@@ -31,16 +32,13 @@ FINAL_BOOTSTRAP_FILES = [
 ]
 
 
-
 def get_storage() -> JsonStorage:
     return JsonStorage(get_settings().data_dir)
-
 
 
 def _questionnaire_text() -> str:
     path = Path(__file__).resolve().parent.parent / "prompts" / "start_questionnaire.md"
     return path.read_text(encoding="utf-8")
-
 
 
 def _needs_questionnaire(request: CreateSessionRequest) -> bool:
@@ -56,7 +54,6 @@ def _needs_questionnaire(request: CreateSessionRequest) -> bool:
     has_meaningful_detail = any(value and value not in {"-", "—", "придумай"} for value in meaningful)
     genre_only = bool(request.genre.strip()) and not has_meaningful_detail
     return genre_only or not has_meaningful_detail
-
 
 
 class SessionManager:
@@ -134,6 +131,7 @@ class SessionManager:
     def _write_bootstrap_files(self, session_id: str, bootstrap_json: dict[str, Any]) -> list[str]:
         bootstrap_json = normalize_bootstrap_json(bootstrap_json)
         prepare_bootstrap_cast(bootstrap_json)
+        prepare_npc_runtime_map(bootstrap_json)
 
         session = self.storage.read_json(session_id, "session.json", default=bootstrap_json.get("session", {}))
         session["status"] = "active"
@@ -188,6 +186,7 @@ class SessionManager:
     def save_bootstrap_preview(self, session_id: str, bootstrap_json: dict[str, Any]) -> dict[str, Any]:
         bootstrap_json = normalize_bootstrap_json(bootstrap_json)
         prepare_bootstrap_cast(bootstrap_json)
+        prepare_npc_runtime_map(bootstrap_json)
         session = self.storage.read_json(session_id, "session.json")
         if session.get("status") not in {"bootstrap_pending", "bootstrap_review_pending"}:
             raise ValueError(f"Cannot create bootstrap preview for session status: {session.get('status')}")
@@ -214,6 +213,7 @@ class SessionManager:
                 "knowledge_count": len(bootstrap_json.get("knowledge", {}) or {}),
                 "normalized": True,
                 "cast_profiles_enabled": True,
+                "npc_runtime_enabled": True,
             },
         }
 
