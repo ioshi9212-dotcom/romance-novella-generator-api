@@ -32,14 +32,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Apply bootstrap preview argument repair
+      - name: Finalize bootstrap preview argument repair
         run: |
-          python scripts/apply_bootstrap_preview_arg_repair.py
+          python scripts/finalize_bootstrap_preview_arg_repair.py
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
-            git add app gpt
-            git commit -m "Repair spilled bootstrap preview arguments"
+            git add tests
+            git commit -m "Align bootstrap preview compatibility regressions"
             git push origin HEAD:agent/bootstrap-preview-arg-repair
           fi
 
