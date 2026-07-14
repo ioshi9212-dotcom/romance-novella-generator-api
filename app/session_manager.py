@@ -7,6 +7,7 @@ from app.bootstrapper import BASE_FILES, debug_stub_bootstrap
 from app.character_profiles import prepare_bootstrap_cast
 from app.config import get_settings
 from app.directional_relationships import BOOTSTRAP_DIRECTION_RULES, append_directional_preview, prepare_directional_relationships
+from app.director_bible import prepare_director_bible
 from app.id_utils import new_session_id, now_iso
 from app.models import CreateSessionRequest
 from app.npc_runtime import prepare_npc_runtime_map
@@ -21,6 +22,7 @@ FINAL_BOOTSTRAP_FILES = [
     "state/knowledge_index.json",
     "state/relationship_index.json",
     "story_plan.json",
+    "director_bible.json",
     "current_state.json",
     "npc_state.json",
     "future_locks.json",
@@ -104,6 +106,7 @@ class SessionManager:
             "state/knowledge_index.json": {"ids": []},
             "state/relationship_index.json": {"pair_ids": []},
             "story_plan.json": {},
+            "director_bible.json": {},
             "current_state.json": {},
             "npc_state.json": {},
             "future_locks.json": {},
@@ -134,6 +137,7 @@ class SessionManager:
         prepare_bootstrap_cast(bootstrap_json)
         prepare_directional_relationships(bootstrap_json)
         prepare_npc_runtime_map(bootstrap_json)
+        prepare_director_bible(bootstrap_json)
 
         session = self.storage.read_json(session_id, "session.json", default=bootstrap_json.get("session", {}))
         session["status"] = "active"
@@ -177,6 +181,7 @@ class SessionManager:
             self.storage.write_relationship_pair(session_id, relationship_id, entry)
 
         self.storage.write_json(session_id, "story_plan.json", bootstrap_json["story_plan"])
+        self.storage.write_json(session_id, "director_bible.json", bootstrap_json.get("director_bible", {}))
         self.storage.write_json(session_id, "current_state.json", bootstrap_json["current_state"])
         self.storage.write_json(session_id, "npc_state.json", bootstrap_json.get("npc_state", {}))
         self.storage.write_json(session_id, "future_locks.json", bootstrap_json.get("future_locks", {}))
@@ -189,6 +194,7 @@ class SessionManager:
         bootstrap_json = normalize_bootstrap_json(bootstrap_json)
         prepare_bootstrap_cast(bootstrap_json)
         prepare_npc_runtime_map(bootstrap_json)
+        prepare_director_bible(bootstrap_json)
         session = self.storage.read_json(session_id, "session.json")
         if session.get("status") not in {"bootstrap_pending", "bootstrap_review_pending"}:
             raise ValueError(f"Cannot create bootstrap preview for session status: {session.get('status')}")
@@ -217,6 +223,8 @@ class SessionManager:
                 "cast_profiles_enabled": True,
                 "npc_runtime_enabled": True,
                 "directional_relationships_enabled": True,
+                "director_bible_enabled": True,
+                "event_queue_count": len((bootstrap_json.get("director_bible") or {}).get("event_queue", [])),
             },
         }
 

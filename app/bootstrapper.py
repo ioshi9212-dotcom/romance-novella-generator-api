@@ -14,6 +14,7 @@ BASE_FILES = [
     "state/knowledge_index.json",
     "state/relationship_index.json",
     "story_plan.json",
+    "director_bible.json",
     "current_state.json",
     "npc_state.json",
     "future_locks.json",
@@ -41,13 +42,14 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - Имена и фамилии персонажей должны быть не русскими, не славянскими, латиницей, в западно-японской/англо-японской стилистике.
 - Не используй кириллицу в поле name. Не копируй имена из примеров, чужих новелл или старых сессий.
 - `character_id` — машинный id этой сессии. Он создаётся в bootstrap и дальше используется для карточки, знаний и отношений. Не привязывай id к готовым именам.
-- Не раскрывай будущих важных персонажей полностью, если персонаж игрока их ещё не знает.
-- Для неизвестных будущих фигур делай только seed в future_locks.hidden_character_seeds, без имени и без полной карточки.
+- Будущих важных hidden_core создай сразу полными карточками, но не показывай в preview и не ставь в active/nearby до раскрытия.
+- `future_locks` хранит только технические блокировки; скрытый лор, крючки и события хранятся в `director_bible`.
 - Создай подробный story_plan: setting_summary, main_premise, protagonist_start, player_goal, central_conflict, central_question, opening_scene_intent, opening_pacing, scene_focus_rules, act_structure, character_arcs, relationship_focus, open_threads, forbidden_drift и ровно два story-specific status slots.
 - player_goal — это личная цель героини, а не цель всего мира.
 - NPC имеют собственные цели, маршруты, знания, страхи, сроки и желания. Они не обязаны хотеть того же, что хочет героиня.
 - Не создавай NPC как консультантов, навигаторов, справочники, психологов, квестодателей или людей, которые ждут решения героини.
 - В npc_state для значимых NPC задай коротко: current_goal, current_route, current_pressure, next_self_action_if_ignored.
+- Создай director_bible: world_truth, hidden_lore, character_functions, story_hooks, planned_reveals, active_conflicts, event_queue, time_anchors, do_not_resolve_early, continuity_truths и pacing.
 - Если пользователь просит романтическую мистику / дораму / фэнтези / лёгкий хоррор / историю про видения, первые 2–3 сцены должны быть вводными: героиня, работа/быт, ближайшие NPC, обычная динамика, слабая мистика. Не начинай сразу с главной угрозы, договора, долга, квеста, пропажи, расследования, карты, записки или мистической процедуры.
 - Мистика должна запускать отношения, ревность, недоверие, защиту, притяжение или конфликт, а не заменять их квестом.
 - В current_state обязательно заполни: date, time, location, weather, scene_state, outfit, inventory, nearby_items.

@@ -71,6 +71,7 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
         "current_frame": contract.get("current_frame", {}),
         "status_slots": contract.get("status_slots", [])[:2],
         "story_compass": _compact_dict(contract.get("story_compass", {}) if isinstance(contract.get("story_compass"), dict) else {}, 900),
+        "director_guidance": _compact_dict(contract.get("director_guidance", {}) if isinstance(contract.get("director_guidance"), dict) else {}, 900),
         "npc_runtime": _compact_dict(contract.get("npc_runtime", {}) if isinstance(contract.get("npc_runtime"), dict) else {}, 420),
         "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
         "player_input_rules": contract.get("player_input_rules", {}),

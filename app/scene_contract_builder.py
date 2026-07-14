@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.id_utils import pair_id
+from app.director_bible import build_director_guidance
 from app.npc_runtime import compact_npc_runtime_entry
 from app.relationship_state import normalize_relationship_pair
 
@@ -296,6 +297,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         "loaded_relationships": loaded_relationships,
         "visible_relationship_pair_ids": visible_relationship_pair_ids,
         "knowledge_boundaries": [_knowledge_boundary(knowledge, character_id) for character_id in focus_ids if character_id in knowledge],
+        "director_guidance": build_director_guidance(bundle),
         "story_compass": {
             "genre": story_plan.get("genre"),
             "tone": story_plan.get("tone"),

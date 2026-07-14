@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 import re
 
+from app.director_bible import prepare_director_bible
+
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 TRANSLIT = {
     "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh",
@@ -511,7 +513,7 @@ def normalize_bootstrap_json(data: dict[str, Any]) -> dict[str, Any]:
     relationships = _normalize_relationships(data.get("relationships"), characters, protagonist_id)
     knowledge = _normalize_knowledge(data.get("knowledge"), characters)
     current_state = _normalize_current_state(data.get("current_state"), story_plan, protagonist_id)
-    return {
+    normalized = {
         "protagonist": protagonist,
         "characters": characters,
         "relationships": relationships,
@@ -519,8 +521,11 @@ def normalize_bootstrap_json(data: dict[str, Any]) -> dict[str, Any]:
         "story_plan": story_plan,
         "current_state": current_state,
         "npc_state": data.get("npc_state") if isinstance(data.get("npc_state"), dict) else {},
+        "director_bible": data.get("director_bible") if isinstance(data.get("director_bible"), dict) else {},
         "future_locks": data.get("future_locks") if isinstance(data.get("future_locks"), dict) else {"hidden_character_seeds": [], "do_not_reveal_yet": []},
         "continuity": data.get("continuity") if isinstance(data.get("continuity"), dict) else {},
         "scene_history": data.get("scene_history") if isinstance(data.get("scene_history"), list) else [],
         "turns": data.get("turns") if isinstance(data.get("turns"), list) else [],
     }
+    prepare_director_bible(normalized)
+    return normalized

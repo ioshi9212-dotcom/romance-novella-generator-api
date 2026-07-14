@@ -49,6 +49,11 @@ RULE_SOURCES: tuple[RuleSource, ...] = (
         ("hidden_core", "полная карточка", "не раскры"),
     ),
     RuleSource(
+        "DIRECTOR_BIBLE",
+        "rules/director_bible_rules.md",
+        ("director_guidance", "event_queue", "author_only", "director_bible_patches"),
+    ),
+    RuleSource(
         "SCENE_STYLE",
         "rules/scene_style.md",
         ("meaningful beat", "показывай", "подтекст", "психологическая инерция"),

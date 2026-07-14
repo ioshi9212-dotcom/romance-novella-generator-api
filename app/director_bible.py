@@ -359,9 +359,11 @@ def normalise_director_bible(value: Any, data: dict[str, Any]) -> dict[str, Any]
     conflicts = _normalise_id_items(conflicts_source, "conflict", _normalise_conflict)
 
     events_source = source.get("event_queue")
-    if not isinstance(events_source, list) or len(events_source) < 3:
+    existing_events = list(events_source) if isinstance(events_source, list) else []
+    if len(existing_events) < 3:
         defaults = _default_events(data, hooks)
-        events_source = list(events_source or []) + defaults[len(events_source or []):]
+        existing_events += defaults[len(existing_events):]
+    events_source = existing_events
     events = _normalise_id_items(events_source, "event", _normalise_event)
 
     functions_source = source.get("character_functions") if isinstance(source.get("character_functions"), dict) else {}

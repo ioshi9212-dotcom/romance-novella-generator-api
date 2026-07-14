@@ -494,6 +494,7 @@ class JsonStorage:
             "user_request.json",
             "protagonist.json",
             "story_plan.json",
+            "director_bible.json",
             "current_state.json",
             "npc_state.json",
             "future_locks.json",
