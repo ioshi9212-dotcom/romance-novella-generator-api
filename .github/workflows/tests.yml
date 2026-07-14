@@ -46,20 +46,4 @@ jobs:
           python -m pip install pytest==8.3.4 httpx==0.28.1
 
       - name: Run tests
-        continue-on-error: true
-        id: pytest
-        run: |
-          set -o pipefail
-          python -m pytest -q 2>&1 | tee pytest-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
-
-      - name: Upload pytest output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: time-skip-pytest-output
-          path: pytest-output.txt
-
-      - name: Fail if tests failed
-        if: steps.pytest.outputs.exit_code != '0'
-        run: exit 1
+        run: python -m pytest -q
