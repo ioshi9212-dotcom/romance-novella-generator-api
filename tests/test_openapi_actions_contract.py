@@ -8,7 +8,9 @@ from jsonschema import Draft202012Validator
 from app.novella_openapi_actions import build_openapi_actions
 
 
-SCHEMAS_DIR = Path(__file__).resolve().parents[1] / "schemas"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SCHEMAS_DIR = ROOT_DIR / "schemas"
+INSTRUCTIONS_PATH = ROOT_DIR / "gpt" / "custom_gpt_instructions.md"
 
 
 def _load_schema(filename: str) -> dict:
@@ -161,3 +163,22 @@ def test_openapi_actions_use_strict_components_and_api_key():
     assert preview_request_ref == {
         "$ref": "#/components/schemas/BootstrapPreviewRequest"
     }
+
+
+def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
+    instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
+
+    assert len(instructions) <= 8000
+    for marker in (
+        "processTurn",
+        "getTurnPromptChunk",
+        "applyTurnResult",
+        "turn_id",
+        "PREVIEW GATE",
+        "SCENE_RESPONSE",
+        "safety_checks",
+        "no_major_player_character_choice",
+        "new_or_updated_characters",
+        "В POV не игрока",
+    ):
+        assert marker in instructions
