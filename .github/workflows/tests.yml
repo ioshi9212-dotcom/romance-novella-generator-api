@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -31,17 +31,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Apply exact contract fixes
-        run: |
-          python scripts/fix_director_bible_contracts.py
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
-            git add app/director_bible.py schemas/bootstrap_output.schema.json tests/test_openapi_actions_contract.py
-            git commit -m "Fix director bible schema and reveal validation"
-            git push origin HEAD:agent/director-bible-events
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
