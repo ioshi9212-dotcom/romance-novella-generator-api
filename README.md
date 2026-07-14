@@ -147,3 +147,16 @@ POST /api/v1/sessions/{session_id}/apply-turn-result
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
+
+## Tests and CI
+
+Локальный запуск тестов:
+
+```bash
+pip install -r requirements.txt
+pip install pytest==8.3.4 httpx==0.28.1
+python -m pytest -q
+```
+
+GitHub Actions запускает тот же набор тестов на Python 3.11 при push в `main` и `agent/**`, а также для pull request в `main`.
+Перед слиянием изменений проверка `Tests / Python 3.11` должна завершиться успешно.
