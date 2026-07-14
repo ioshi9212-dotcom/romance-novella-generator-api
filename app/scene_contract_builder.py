@@ -1,5 +1,7 @@
 from typing import Any
+
 from app.id_utils import pair_id
+from app.npc_runtime import compact_npc_runtime_entry
 
 
 TECH_LABEL_MAP = {
@@ -27,7 +29,7 @@ def _clip_list(items: Any, limit_items: int = 6, text_limit: int = 180) -> list[
         if isinstance(item, str):
             result.append(_clip_text(item, text_limit))
         elif isinstance(item, dict):
-            result.append({str(k): _clip_text(v, text_limit) if isinstance(v, str) else v for k, v in item.items()})
+            result.append({str(key): _clip_text(value, text_limit) if isinstance(value, str) else value for key, value in item.items()})
         else:
             result.append(item)
     return result
@@ -35,7 +37,7 @@ def _clip_list(items: Any, limit_items: int = 6, text_limit: int = 180) -> list[
 
 def _compact_dict(value: Any, limit: int = 500) -> Any:
     if isinstance(value, dict):
-        return {str(k): _compact_dict(v, max(160, limit // 2)) for k, v in value.items()}
+        return {str(key): _compact_dict(item, max(160, limit // 2)) for key, item in value.items()}
     if isinstance(value, list):
         return _clip_list(value, 6, max(120, limit // 3))
     if isinstance(value, str):
@@ -99,7 +101,7 @@ def _human_label(value: Any, fallback: str) -> str:
     text = _clip_text(value, 80).strip()
     if not text or text == "—":
         return fallback
-    key = text.strip().lower()
+    key = text.lower()
     if key in TECH_LABEL_MAP:
         return TECH_LABEL_MAP[key]
     if "_" in key and key.isascii():
@@ -168,6 +170,34 @@ def _baseline_relationship_content(characters: dict[str, Any], a: str, b: str) -
     }
 
 
+def _focused_npc_runtime(
+    characters: dict[str, Any],
+    npc_state: dict[str, Any],
+    focus_ids: list[str],
+    player_id: str,
+) -> dict[str, Any]:
+    focused: dict[str, Any] = {}
+    for character_id in focus_ids:
+        if character_id == player_id:
+            continue
+        card = _get_character(characters, character_id)
+        if not card or card.get("available_to_scene") is False or card.get("introduced") is False:
+            continue
+        runtime = compact_npc_runtime_entry(npc_state.get(character_id))
+        if runtime:
+            focused[character_id] = runtime
+    return {
+        "rules": {
+            "state_is_persistent": "current mood, urge, pressure and unresolved emotion carry into later scenes until events change them",
+            "awareness_is_not_change": "понимание ошибки или извинение не означает мгновенную смену привычного поведения",
+            "relapse_under_stress": "под давлением персонаж возвращается к старому конфликтному и защитному паттерну",
+            "voice_is_not_uniform": "тихо, спокойно, ровно и бережно не являются стандартной манерой всех NPC",
+            "patch_when_changed": "если сцена реально изменила runtime NPC, верни npc_state_patches с причиной и источником",
+        },
+        "characters": focused,
+    }
+
+
 def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None) -> dict[str, Any]:
     current_state = bundle.get("current_state", {})
     characters = bundle.get("characters", {})
@@ -182,46 +212,50 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
     nearby_ids = current_state.get("nearby_character_ids", []) or []
     player_id = current_state.get("player_character_id") or current_state.get("player_character_character_id") or "protagonist"
     turn_number = int(current_state.get("turn_number", 0) or 0)
+
     focus_ids: list[str] = []
-    for cid in [player_id, *active_ids, *nearby_ids]:
-        if cid and cid not in focus_ids:
-            focus_ids.append(cid)
+    for character_id in [player_id, *active_ids, *nearby_ids]:
+        if character_id and character_id not in focus_ids:
+            focus_ids.append(character_id)
     scene_ids: list[str] = []
-    for cid in [player_id, *active_ids]:
-        if cid and cid not in scene_ids:
-            scene_ids.append(cid)
+    for character_id in [player_id, *active_ids]:
+        if character_id and character_id not in scene_ids:
+            scene_ids.append(character_id)
+
     loaded_characters = []
-    for cid in focus_ids:
-        card = _get_character(characters, cid)
+    for character_id in focus_ids:
+        card = _get_character(characters, character_id)
         if card:
-            load_reason = ["player_character"] if cid == player_id else (["physically_present"] if cid in scene_ids else ["nearby_context"])
-            loaded_characters.append({"character_id": cid, "display_name": _display_name(characters, cid), "load_reason": load_reason, "card": card})
+            load_reason = ["player_character"] if character_id == player_id else (["physically_present"] if character_id in scene_ids else ["nearby_context"])
+            loaded_characters.append({"character_id": character_id, "display_name": _display_name(characters, character_id), "load_reason": load_reason, "card": card})
+
     loaded_relationships = []
     visible_relationship_pair_ids: list[str] = []
-    for i, a in enumerate(focus_ids):
-        for b in focus_ids[i + 1:]:
-            pid = pair_id(a, b)
-            both_in_scene = a in scene_ids and b in scene_ids
-            if pid in relationships:
-                content = relationships[pid]
+    for index, character_a in enumerate(focus_ids):
+        for character_b in focus_ids[index + 1:]:
+            relationship_id = pair_id(character_a, character_b)
+            both_in_scene = character_a in scene_ids and character_b in scene_ids
+            if relationship_id in relationships:
+                content = relationships[relationship_id]
                 load_reason = ["both_present"] if both_in_scene else ["nearby_context"]
                 is_baseline = False
-            elif both_in_scene and player_id in {a, b}:
-                content = _baseline_relationship_content(characters, a, b)
+            elif both_in_scene and player_id in {character_a, character_b}:
+                content = _baseline_relationship_content(characters, character_a, character_b)
                 load_reason = ["runtime_baseline", "both_present"]
                 is_baseline = True
             else:
                 continue
             loaded_relationships.append({
-                "pair_id": pid,
-                "display_label": f"{_display_name(characters, a)} ↔ {_display_name(characters, b)}",
+                "pair_id": relationship_id,
+                "display_label": f"{_display_name(characters, character_a)} ↔ {_display_name(characters, character_b)}",
                 "load_reason": load_reason,
                 "visible_in_footer": both_in_scene,
                 "is_runtime_baseline": is_baseline,
                 "content": content,
             })
             if both_in_scene:
-                visible_relationship_pair_ids.append(pid)
+                visible_relationship_pair_ids.append(relationship_id)
+
     status = _normalise_status(current_state, story_plan)
     status_slots = status.get("custom", [])
     memory_chunks = [
@@ -234,6 +268,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         for item in (scene_history[-4:] if isinstance(scene_history, list) else [])
         if isinstance(item, dict)
     ]
+
     return {
         "contract_version": "novella.scene_contract.v1",
         "session_id": bundle.get("session", {}).get("session_id"),
@@ -251,7 +286,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "scene_goal": _clip_text(current_state.get("scene_goal"), 450),
             "last_player_input": player_input if player_input is not None else current_state.get("last_player_input", ""),
             "active_character_ids": active_ids,
-            "active_character_display_names": [_display_name(characters, cid) for cid in active_ids],
+            "active_character_display_names": [_display_name(characters, character_id) for character_id in active_ids],
             "nearby_character_ids": nearby_ids,
             "environment": current_state.get("environment", {}),
             "status": status,
@@ -259,7 +294,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         "loaded_characters": loaded_characters,
         "loaded_relationships": loaded_relationships,
         "visible_relationship_pair_ids": visible_relationship_pair_ids,
-        "knowledge_boundaries": [_knowledge_boundary(knowledge, cid) for cid in focus_ids if cid in knowledge],
+        "knowledge_boundaries": [_knowledge_boundary(knowledge, character_id) for character_id in focus_ids if character_id in knowledge],
         "story_compass": {
             "genre": story_plan.get("genre"),
             "tone": story_plan.get("tone"),
@@ -277,7 +312,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "open_threads": _clip_list(story_plan.get("open_threads", []), 6, 180),
             "forbidden_drift": _clip_list(story_plan.get("forbidden_drift", []), 8, 180),
         },
-        "npc_runtime": _compact_dict(npc_state, 600) if isinstance(npc_state, dict) else {},
+        "npc_runtime": _focused_npc_runtime(characters, npc_state if isinstance(npc_state, dict) else {}, focus_ids, player_id),
         "status_slots": status_slots[:2] if isinstance(status_slots, list) else [],
         "recent_scene_history": recent_scene_history,
         "memory_chunks": memory_chunks,
