@@ -34,7 +34,9 @@ jobs:
 
       - name: Apply exact directed contract patch
         run: |
+          git fetch origin main --depth=1
           python scripts/apply_directed_contract_patch.py
+          python scripts/rebuild_bootstrap_schema_targeted.py
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
