@@ -182,6 +182,11 @@ def test_openapi_actions_use_strict_components_and_api_key():
     assert preview_request_ref == {
         "$ref": "#/components/schemas/BootstrapPreviewRequest"
     }
+    preview_request = schemas["BootstrapPreviewRequest"]
+    assert set(preview_request["properties"]) == {"bootstrap_json"}
+    assert preview_request["required"] == ["bootstrap_json"]
+    assert preview_request["additionalProperties"] is False
+    assert "mode" not in preview_request["properties"]
 
 
 def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
@@ -199,5 +204,7 @@ def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
         "no_major_player_character_choice",
         "new_or_updated_characters",
         "В POV не игрока",
+        "mode разрешён только в createSession и processTurn",
+        "createBootstrapPreview только с bootstrap_json, без mode",
     ):
         assert marker in instructions
