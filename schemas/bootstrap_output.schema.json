@@ -21,18 +21,44 @@
     "protagonist": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["id", "name", "role"],
+      "required": [
+        "id",
+        "name",
+        "role"
+      ],
       "properties": {
-        "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-        "name": {"type": "string", "minLength": 3, "pattern": "^[A-Za-z][A-Za-z' -]* [A-Za-z][A-Za-z' -]*$"},
-        "display_name": {"type": ["string", "null"]},
-        "role": {"type": "string", "minLength": 1}
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[A-Za-z][A-Za-z' -]* [A-Za-z][A-Za-z' -]*$"
+        },
+        "display_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "characters": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true,
@@ -60,61 +86,175 @@
           "connections"
         ],
         "properties": {
-          "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          },
           "name": {
             "type": "string",
             "minLength": 3,
             "pattern": "^[A-Za-z][A-Za-z' -]* [A-Za-z][A-Za-z' -]*$",
             "description": "Full Latin-script name: given name and surname; not Russian/Slavic."
           },
-          "display_name": {"type": ["string", "null"]},
-          "role": {"type": "string", "minLength": 1},
-          "age": {"type": ["integer", "null"], "minimum": 0},
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "age": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
           "cast_status": {
             "type": "string",
-            "enum": ["player", "known_core", "known_support", "hidden_core", "background"],
+            "enum": [
+              "player",
+              "known_core",
+              "known_support",
+              "hidden_core",
+              "background"
+            ],
             "description": "player=player character; known_core/known_support=known before story and visible in preview; hidden_core=fully generated now but hidden and unavailable until reveal; background=minor situational role."
           },
-          "introduced": {"type": "boolean"},
-          "known_to_player": {"type": "boolean"},
-          "show_in_preview": {"type": "boolean"},
-          "available_to_scene": {"type": "boolean"},
-          "locked": {"type": "boolean"},
+          "introduced": {
+            "type": "boolean"
+          },
+          "known_to_player": {
+            "type": "boolean"
+          },
+          "show_in_preview": {
+            "type": "boolean"
+          },
+          "available_to_scene": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
           "appearance": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["height", "build", "hair", "eyes", "face", "style"],
+            "required": [
+              "height",
+              "build",
+              "hair",
+              "eyes",
+              "face",
+              "style"
+            ],
             "properties": {
-              "height": {"type": "string", "minLength": 1},
-              "build": {"type": "string", "minLength": 1},
-              "hair": {"type": "string", "minLength": 1},
-              "eyes": {"type": "string", "minLength": 1},
-              "face": {"type": "string", "minLength": 1},
-              "style": {"type": "string", "minLength": 1}
+              "height": {
+                "type": "string",
+                "minLength": 1
+              },
+              "build": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hair": {
+                "type": "string",
+                "minLength": 1
+              },
+              "eyes": {
+                "type": "string",
+                "minLength": 1
+              },
+              "face": {
+                "type": "string",
+                "minLength": 1
+              },
+              "style": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           },
           "personality": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["core", "flaws", "speech"],
+            "required": [
+              "core",
+              "flaws",
+              "speech"
+            ],
             "properties": {
-              "core": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-              "flaws": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-              "speech": {"type": "string", "minLength": 1}
+              "core": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "flaws": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "speech": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           },
-          "goal": {"type": "string", "minLength": 1},
-          "past_short": {"type": "string", "minLength": 1},
-          "habits": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "past_short": {
+            "type": "string",
+            "minLength": 1
+          },
+          "habits": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "inner_logic": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["core_need", "main_fear", "blind_spot", "contradiction"],
+            "required": [
+              "core_need",
+              "main_fear",
+              "blind_spot",
+              "contradiction"
+            ],
             "properties": {
-              "core_need": {"type": "string", "minLength": 1, "description": "What this person emotionally needs, not what is morally correct."},
-              "main_fear": {"type": "string", "minLength": 1},
-              "blind_spot": {"type": "string", "minLength": 1, "description": "What the person repeatedly misreads about self or others."},
-              "contradiction": {"type": "string", "minLength": 1, "description": "Two motives that make the person inconsistent and human."}
+              "core_need": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What this person emotionally needs, not what is morally correct."
+              },
+              "main_fear": {
+                "type": "string",
+                "minLength": 1
+              },
+              "blind_spot": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What the person repeatedly misreads about self or others."
+              },
+              "contradiction": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Two motives that make the person inconsistent and human."
+              }
             }
           },
           "behavior": {
@@ -131,35 +271,103 @@
               "inconvenient_pattern"
             ],
             "properties": {
-              "conflict_style": {"type": "string", "minLength": 1, "description": "Concrete behavior in conflict: interrupts, withdraws, raises voice, controls, jokes, etc."},
-              "care_style": {"type": "string", "minLength": 1, "description": "How care can help and also become inconvenient."},
-              "closeness_style": {"type": "string", "minLength": 1},
-              "touch_style": {"type": "string", "minLength": 1, "description": "How the person approaches physical contact based on habit and relationship history; do not make everyone formally distant."},
-              "stress_response": {"type": "string", "minLength": 1},
-              "rejection_response": {"type": "string", "minLength": 1},
-              "change_inertia": {"type": "string", "minLength": 1, "description": "Understanding an error is not immediate behavioral change; specify relapse pattern."},
-              "inconvenient_pattern": {"type": "string", "minLength": 1, "description": "At least one stable behavior that can annoy, pressure or hurt others without random villainy."}
+              "conflict_style": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Concrete behavior in conflict: interrupts, withdraws, raises voice, controls, jokes, etc."
+              },
+              "care_style": {
+                "type": "string",
+                "minLength": 1,
+                "description": "How care can help and also become inconvenient."
+              },
+              "closeness_style": {
+                "type": "string",
+                "minLength": 1
+              },
+              "touch_style": {
+                "type": "string",
+                "minLength": 1,
+                "description": "How the person approaches physical contact based on habit and relationship history; do not make everyone formally distant."
+              },
+              "stress_response": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rejection_response": {
+                "type": "string",
+                "minLength": 1
+              },
+              "change_inertia": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Understanding an error is not immediate behavioral change; specify relapse pattern."
+              },
+              "inconvenient_pattern": {
+                "type": "string",
+                "minLength": 1,
+                "description": "At least one stable behavior that can annoy, pressure or hurt others without random villainy."
+              }
             }
           },
           "speech_profile": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["baseline", "under_pressure", "verbal_habits", "avoids"],
+            "required": [
+              "baseline",
+              "under_pressure",
+              "verbal_habits",
+              "avoids"
+            ],
             "properties": {
-              "baseline": {"type": "string", "minLength": 1},
-              "under_pressure": {"type": "string", "minLength": 1, "description": "How tempo, volume, syntax or vocabulary changes under stress."},
-              "verbal_habits": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-              "avoids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+              "baseline": {
+                "type": "string",
+                "minLength": 1
+              },
+              "under_pressure": {
+                "type": "string",
+                "minLength": 1,
+                "description": "How tempo, volume, syntax or vocabulary changes under stress."
+              },
+              "verbal_habits": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "avoids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             }
           },
           "life_outside_player": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["current_obligation", "private_problem", "person_or_place_that_matters"],
+            "required": [
+              "current_obligation",
+              "private_problem",
+              "person_or_place_that_matters"
+            ],
             "properties": {
-              "current_obligation": {"type": "string", "minLength": 1},
-              "private_problem": {"type": "string", "minLength": 1},
-              "person_or_place_that_matters": {"type": "string", "minLength": 1}
+              "current_obligation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "private_problem": {
+                "type": "string",
+                "minLength": 1
+              },
+              "person_or_place_that_matters": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           },
           "social_triggers": {
@@ -169,97 +377,658 @@
             "items": {
               "type": "object",
               "additionalProperties": true,
-              "required": ["behavior", "interpretation", "usual_reaction"],
+              "required": [
+                "behavior",
+                "interpretation",
+                "usual_reaction"
+              ],
               "properties": {
-                "behavior": {"type": "string", "minLength": 1},
-                "interpretation": {"type": "string", "minLength": 1, "description": "How this character interprets the visible behavior; may be wrong."},
-                "usual_reaction": {"type": "string", "minLength": 1}
+                "behavior": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "interpretation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "How this character interprets the visible behavior; may be wrong."
+                },
+                "usual_reaction": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             }
           },
-          "likes_in_people": {"type": "array", "items": {"type": "string", "minLength": 1}},
-          "dislikes_in_people": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "likes_in_people": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "dislikes_in_people": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "relationship_triggers": {
             "type": "object",
             "additionalProperties": true,
             "properties": {
-              "improves_when": {"type": "array", "items": {"type": "string", "minLength": 1}},
-              "worsens_when": {"type": "array", "items": {"type": "string", "minLength": 1}}
+              "improves_when": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "worsens_when": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             }
           },
-          "skills": {"type": "array", "items": {"type": "string", "minLength": 1}},
-          "connections": {"type": "array", "items": {"type": "object"}}
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
         }
       }
     },
     "relationships": {
       "type": "object",
-      "propertyNames": {"type": "string", "pattern": "^[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$"},
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true,
-        "required": ["pair_id", "character_a", "character_b", "type", "status", "scores", "a_view_of_b", "b_view_of_a", "shared_history", "recent_changes", "open_threads"],
+        "required": [
+          "pair_id",
+          "character_a",
+          "character_b",
+          "type",
+          "status",
+          "scores",
+          "a_view_of_b",
+          "b_view_of_a",
+          "shared_history",
+          "recent_changes",
+          "open_threads"
+        ],
         "properties": {
-          "pair_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$"},
-          "character_a": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-          "character_b": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-          "type": {"type": "string", "minLength": 1},
-          "status": {"type": "string", "minLength": 1},
-          "scores": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0, "maximum": 100}},
-          "a_view_of_b": {"type": "object"},
-          "b_view_of_a": {"type": "object"},
-          "shared_history": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
-          "recent_changes": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
-          "open_threads": {"type": "array", "items": {"type": "string"}}
+          "pair_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$"
+          },
+          "character_a": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          },
+          "character_b": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scores": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "a_view_of_b": {
+            "type": "object"
+          },
+          "b_view_of_a": {
+            "type": "object"
+          },
+          "shared_history": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "recent_changes": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "open_threads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shared": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "shared_history": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object"
+                    }
+                  ]
+                }
+              },
+              "unresolved_threads": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "recent_changes": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object"
+                    }
+                  ]
+                }
+              },
+              "last_major_event": {
+                "type": [
+                  "string",
+                  "object",
+                  "null"
+                ]
+              }
+            }
+          },
+          "a_to_b": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "scores": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "trust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "attachment": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "attraction": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "respect": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "resentment": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "fear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "jealousy": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "dependency": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "protectiveness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                }
+              },
+              "current_view": {
+                "type": "string",
+                "minLength": 1
+              },
+              "current_need": {
+                "type": "string",
+                "minLength": 1
+              },
+              "current_expectation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "access_boundary": {
+                "type": "string",
+                "minLength": 1
+              },
+              "interpretation_bias": {
+                "type": "string",
+                "minLength": 1
+              },
+              "unresolved_emotion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "unresolved_grievances": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "wrong_beliefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "care_risk": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "b_to_a": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "scores": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "trust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "attachment": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "attraction": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "respect": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "resentment": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "fear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "jealousy": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "dependency": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "protectiveness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                }
+              },
+              "current_view": {
+                "type": "string",
+                "minLength": 1
+              },
+              "current_need": {
+                "type": "string",
+                "minLength": 1
+              },
+              "current_expectation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "access_boundary": {
+                "type": "string",
+                "minLength": 1
+              },
+              "interpretation_bias": {
+                "type": "string",
+                "minLength": 1
+              },
+              "unresolved_emotion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "unresolved_grievances": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "wrong_beliefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "care_risk": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
         }
       }
     },
     "knowledge": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": true,
-        "required": ["character_id", "known_facts", "observations", "assumptions", "wrong_beliefs", "does_not_know", "must_not_assume", "recent_memories", "open_questions", "knows"],
+        "required": [
+          "character_id",
+          "known_facts",
+          "observations",
+          "assumptions",
+          "wrong_beliefs",
+          "does_not_know",
+          "must_not_assume",
+          "recent_memories",
+          "open_questions",
+          "knows"
+        ],
         "properties": {
-          "character_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-          "known_facts": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
-          "observations": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
-          "assumptions": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
-          "wrong_beliefs": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
-          "does_not_know": {"type": "array", "items": {"type": "string"}},
-          "must_not_assume": {"type": "array", "items": {"type": "string"}},
-          "recent_memories": {"type": "array", "items": {"type": "string"}},
-          "open_questions": {"type": "array", "items": {"type": "string"}},
-          "knows": {"type": "array", "items": {"type": "string"}},
-          "history": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+          "character_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          },
+          "known_facts": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "wrong_beliefs": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "does_not_know": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "must_not_assume": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recent_memories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "open_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "knows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
         }
       }
     },
     "story_plan": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["genre", "language", "tone", "setting_summary", "main_premise", "protagonist_start", "player_goal", "central_conflict", "central_question", "opening_scene_intent", "act_structure", "character_arcs", "relationship_focus", "open_threads", "forbidden_drift", "current_story_position", "status_slots"],
+      "required": [
+        "genre",
+        "language",
+        "tone",
+        "setting_summary",
+        "main_premise",
+        "protagonist_start",
+        "player_goal",
+        "central_conflict",
+        "central_question",
+        "opening_scene_intent",
+        "act_structure",
+        "character_arcs",
+        "relationship_focus",
+        "open_threads",
+        "forbidden_drift",
+        "current_story_position",
+        "status_slots"
+      ],
       "properties": {
-        "genre": {"type": "string", "minLength": 1},
-        "language": {"type": "string", "minLength": 1},
-        "tone": {"type": "string", "minLength": 1},
-        "setting_summary": {"type": "string", "minLength": 1},
-        "main_premise": {"type": "string", "minLength": 1},
-        "protagonist_start": {"type": "string", "minLength": 1},
-        "player_goal": {"type": "string", "minLength": 1},
-        "central_conflict": {"type": "string", "minLength": 1},
-        "central_question": {"type": "string", "minLength": 1},
-        "opening_scene_intent": {"type": "string", "minLength": 1},
-        "opening_pacing": {"type": "string", "minLength": 1},
-        "current_story_position": {"type": "string", "minLength": 1},
-        "scene_focus_rules": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-        "act_structure": {"type": "array", "minItems": 1, "items": {"type": "object"}},
-        "character_arcs": {"type": "object"},
-        "relationship_focus": {"type": "array", "items": {"type": "object"}},
-        "open_threads": {"type": "array", "items": {"type": "string"}},
-        "forbidden_drift": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "genre": {
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "setting_summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "main_premise": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protagonist_start": {
+          "type": "string",
+          "minLength": 1
+        },
+        "player_goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "central_conflict": {
+          "type": "string",
+          "minLength": 1
+        },
+        "central_question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "opening_scene_intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "opening_pacing": {
+          "type": "string",
+          "minLength": 1
+        },
+        "current_story_position": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scene_focus_rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "act_structure": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object"
+          }
+        },
+        "character_arcs": {
+          "type": "object"
+        },
+        "relationship_focus": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "open_threads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "forbidden_drift": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "status_slots": {
           "type": "array",
           "minItems": 2,
@@ -267,12 +1036,32 @@
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["id", "label", "description", "initial_value"],
+            "required": [
+              "id",
+              "label",
+              "description",
+              "initial_value"
+            ],
             "properties": {
-              "id": {"type": "string", "enum": ["story_slot_1", "story_slot_2"]},
-              "label": {"type": "string", "minLength": 1},
-              "description": {"type": "string", "minLength": 1},
-              "initial_value": {"type": "string", "minLength": 1}
+              "id": {
+                "type": "string",
+                "enum": [
+                  "story_slot_1",
+                  "story_slot_2"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "initial_value": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         }
@@ -281,33 +1070,138 @@
     "current_state": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["turn_number", "date", "time", "location", "weather", "scene_state", "player_character_id", "active_character_ids", "nearby_character_ids", "scene_goal", "last_player_input", "outfit", "inventory", "nearby_items", "environment", "status"],
+      "required": [
+        "turn_number",
+        "date",
+        "time",
+        "location",
+        "weather",
+        "scene_state",
+        "player_character_id",
+        "active_character_ids",
+        "nearby_character_ids",
+        "scene_goal",
+        "last_player_input",
+        "outfit",
+        "inventory",
+        "nearby_items",
+        "environment",
+        "status"
+      ],
       "properties": {
-        "turn_number": {"type": "integer", "minimum": 0, "const": 0},
-        "date": {"type": "string", "minLength": 1},
-        "time": {"type": "string", "minLength": 1},
-        "location": {"type": "string", "minLength": 1},
-        "weather": {"type": "string", "minLength": 1},
-        "scene_state": {"type": "string", "minLength": 1},
-        "player_character_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-        "active_character_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"}},
-        "nearby_character_ids": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"}},
-        "scene_goal": {"type": "string", "minLength": 1},
-        "last_player_input": {"type": "string", "maxLength": 0},
-        "outfit": {"type": "string", "minLength": 1},
-        "inventory": {"type": "array", "items": {"type": "string"}},
-        "nearby_items": {"type": "array", "items": {"type": "string"}},
-        "environment": {"type": "object"},
+        "turn_number": {
+          "type": "integer",
+          "minimum": 0,
+          "const": 0
+        },
+        "date": {
+          "type": "string",
+          "minLength": 1
+        },
+        "time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1
+        },
+        "weather": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scene_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "player_character_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "active_character_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          }
+        },
+        "nearby_character_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          }
+        },
+        "scene_goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "last_player_input": {
+          "type": "string",
+          "maxLength": 0
+        },
+        "outfit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nearby_items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "object"
+        },
         "status": {
           "type": "object",
           "additionalProperties": true,
-          "required": ["hunger", "fatigue", "injuries", "emotional_state", "skills", "custom"],
+          "required": [
+            "hunger",
+            "fatigue",
+            "injuries",
+            "emotional_state",
+            "skills",
+            "custom"
+          ],
           "properties": {
-            "hunger": {"type": "string", "minLength": 1},
-            "fatigue": {"type": "string", "minLength": 1},
-            "injuries": {"type": "array", "items": {"type": "string"}},
-            "emotional_state": {"type": "string", "minLength": 1},
-            "skills": {"type": "array", "items": {"type": "string"}},
+            "hunger": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fatigue": {
+              "type": "string",
+              "minLength": 1
+            },
+            "injuries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "emotional_state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "skills": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "custom": {
               "type": "array",
               "minItems": 2,
@@ -315,11 +1209,27 @@
               "items": {
                 "type": "object",
                 "additionalProperties": true,
-                "required": ["id", "label", "value"],
+                "required": [
+                  "id",
+                  "label",
+                  "value"
+                ],
                 "properties": {
-                  "id": {"type": "string", "enum": ["story_slot_1", "story_slot_2"]},
-                  "label": {"type": "string", "minLength": 1},
-                  "value": {"type": "string", "minLength": 1}
+                  "id": {
+                    "type": "string",
+                    "enum": [
+                      "story_slot_1",
+                      "story_slot_2"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               }
             }
@@ -333,41 +1243,100 @@
         "type": "object",
         "additionalProperties": true,
         "properties": {
-          "current_goal": {"type": "string"},
-          "current_route": {"type": "string"},
-          "current_pressure": {"type": "string"},
-          "next_self_action_if_ignored": {"type": "string"}
+          "current_goal": {
+            "type": "string"
+          },
+          "current_route": {
+            "type": "string"
+          },
+          "current_pressure": {
+            "type": "string"
+          },
+          "next_self_action_if_ignored": {
+            "type": "string"
+          }
         }
       }
     },
     "future_locks": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["hidden_character_seeds", "do_not_reveal_yet"],
+      "required": [
+        "hidden_character_seeds",
+        "do_not_reveal_yet"
+      ],
       "properties": {
         "hidden_character_seeds": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["id", "role", "known_to_player", "introduced", "generate_full_card_on_first_appearance"],
+            "required": [
+              "id",
+              "role",
+              "known_to_player",
+              "introduced",
+              "generate_full_card_on_first_appearance"
+            ],
             "properties": {
-              "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-              "role": {"type": "string", "minLength": 1},
-              "known_to_player": {"const": false},
-              "introduced": {"const": false},
-              "generate_full_card_on_first_appearance": {"type": "boolean"},
-              "notes_for_engine": {"type": "string"}
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1
+              },
+              "known_to_player": {
+                "const": false
+              },
+              "introduced": {
+                "const": false
+              },
+              "generate_full_card_on_first_appearance": {
+                "type": "boolean"
+              },
+              "notes_for_engine": {
+                "type": "string"
+              }
             }
           }
         },
-        "hidden_character_ids": {"type": "array", "items": {"type": "string"}},
-        "do_not_reveal_yet": {"type": "array", "items": {"type": "string"}}
+        "hidden_character_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "do_not_reveal_yet": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       },
       "description": "Engine-only reveal locks. Important hidden_core characters already have full cards in characters but must not appear in preview or scene until unlocked."
     },
-    "continuity": {"type": "object"},
-    "scene_history": {"type": "array", "maxItems": 0, "items": {"type": "object", "additionalProperties": true}},
-    "turns": {"type": "array", "maxItems": 0, "items": {"type": "object", "additionalProperties": true}}
+    "continuity": {
+      "type": "object"
+    },
+    "scene_history": {
+      "type": "array",
+      "maxItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "turns": {
+      "type": "array",
+      "maxItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
   }
 }

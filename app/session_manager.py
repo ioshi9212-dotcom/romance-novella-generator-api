@@ -6,6 +6,7 @@ from app.bootstrap_setup import build_bootstrap_prompt, build_setup_preview
 from app.bootstrapper import BASE_FILES, debug_stub_bootstrap
 from app.character_profiles import prepare_bootstrap_cast
 from app.config import get_settings
+from app.directional_relationships import BOOTSTRAP_DIRECTION_RULES, append_directional_preview, prepare_directional_relationships
 from app.id_utils import new_session_id, now_iso
 from app.models import CreateSessionRequest
 from app.npc_runtime import prepare_npc_runtime_map
@@ -116,7 +117,7 @@ class SessionManager:
         (session_dir / "state" / "knowledge").mkdir(parents=True, exist_ok=True)
         (session_dir / "state" / "relationship_pairs").mkdir(parents=True, exist_ok=True)
 
-        prompt = build_bootstrap_prompt(user_request)
+        prompt = build_bootstrap_prompt(user_request) + "\n\n" + BOOTSTRAP_DIRECTION_RULES
         (session_dir / "pending_bootstrap_prompt.md").write_text(prompt, encoding="utf-8")
         return {
             "session_id": session_id,
@@ -131,6 +132,7 @@ class SessionManager:
     def _write_bootstrap_files(self, session_id: str, bootstrap_json: dict[str, Any]) -> list[str]:
         bootstrap_json = normalize_bootstrap_json(bootstrap_json)
         prepare_bootstrap_cast(bootstrap_json)
+        prepare_directional_relationships(bootstrap_json)
         prepare_npc_runtime_map(bootstrap_json)
 
         session = self.storage.read_json(session_id, "session.json", default=bootstrap_json.get("session", {}))
@@ -191,7 +193,7 @@ class SessionManager:
         if session.get("status") not in {"bootstrap_pending", "bootstrap_review_pending"}:
             raise ValueError(f"Cannot create bootstrap preview for session status: {session.get('status')}")
 
-        preview = build_setup_preview(bootstrap_json)
+        preview = append_directional_preview(build_setup_preview(bootstrap_json), bootstrap_json)
         self.storage.write_json(session_id, "pending_bootstrap.json", bootstrap_json)
         (self.storage.session_dir(session_id) / "pending_setup_preview.md").write_text(preview, encoding="utf-8")
         session["status"] = "bootstrap_review_pending"
@@ -214,6 +216,7 @@ class SessionManager:
                 "normalized": True,
                 "cast_profiles_enabled": True,
                 "npc_runtime_enabled": True,
+                "directional_relationships_enabled": True,
             },
         }
 
