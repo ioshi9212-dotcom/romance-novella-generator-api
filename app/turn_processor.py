@@ -5,6 +5,7 @@ import json
 
 from app.scene_contract_builder import build_scene_contract
 from app.scene_rules_compiler import compile_scene_rules, scene_rules_diagnostics
+from app.time_skip import build_time_skip_contract
 
 
 SCENE_WRITER_TOOL_FLOW = """
@@ -13,6 +14,14 @@ SCENE_WRITER_TOOL_FLOW = """
 Если processTurn вернул несколько чанков, сначала прочитай все через getTurnPromptChunk и склей их по порядку. RUNTIME_SCENE_RULES — канонический контракт; SCENE_CONTRACT_JSON — state текущего хода.
 
 Создай строго scene_response JSON без комментариев и markdown-обёртки. Не показывай JSON пользователю. Сразу вызови applyTurnResult и после успеха покажи только response.message_to_user.
+""".strip()
+
+TIME_SKIP_TOOL_FLOW = """
+Ты внутри специального tool-flow пропуска времени. Это не финальный ответ пользователю.
+
+Игрок явно выбрал «Пропустить время до ближайших событий». Прочитай все чанки, затем создай scene_response перехода: коротко суммируй реально прошедший интервал и открой новую сцену на пороге target_event. Не решай событие и не делай важный выбор за героиню.
+
+Обязательно выполни TIME_SKIP_CONTRACT_JSON.time_skip.transition_rules и required_metadata. Сразу вызови applyTurnResult и после успеха покажи только response.message_to_user.
 """.strip()
 
 # Backward-compatible public name. The value is compiled from repository rule files,
@@ -72,6 +81,7 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
         "status_slots": contract.get("status_slots", [])[:2],
         "story_compass": _compact_dict(contract.get("story_compass", {}) if isinstance(contract.get("story_compass"), dict) else {}, 900),
         "director_guidance": _compact_dict(contract.get("director_guidance", {}) if isinstance(contract.get("director_guidance"), dict) else {}, 900),
+        "time_skip": _compact_dict(contract.get("time_skip", {}) if isinstance(contract.get("time_skip"), dict) else {}, 900),
         "npc_runtime": _compact_dict(contract.get("npc_runtime", {}) if isinstance(contract.get("npc_runtime"), dict) else {}, 420),
         "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
         "player_input_rules": contract.get("player_input_rules", {}),
@@ -124,6 +134,15 @@ def build_scene_prompt(scene_contract: dict[str, Any]) -> str:
         f"{SCENE_WRITER_TOOL_FLOW}\n\n"
         f"RUNTIME_SCENE_RULES:\n{COMPACT_SCENE_WRITER_PROMPT}\n\n"
         f"SCENE_CONTRACT_JSON:\n{contract_json}"
+    )
+
+
+def build_time_skip_prompt(time_skip_contract: dict[str, Any]) -> str:
+    contract_json = json.dumps(_compact_contract(time_skip_contract), ensure_ascii=False, separators=(",", ":"))
+    return (
+        f"{TIME_SKIP_TOOL_FLOW}\n\n"
+        f"RUNTIME_SCENE_RULES:\n{COMPACT_SCENE_WRITER_PROMPT}\n\n"
+        f"TIME_SKIP_CONTRACT_JSON:\n{contract_json}"
     )
 
 
@@ -209,6 +228,26 @@ def process_turn_gpt_actions(bundle: dict[str, Any], player_input: str) -> dict[
             "compact_prompt_chars": len(prompt),
             "scene_rules": rules_diagnostics,
             "next_required_action": "generate scene_response internally, call applyTurnResult, then show response.message_to_user",
+        },
+    }
+
+
+def process_time_skip_gpt_actions(bundle: dict[str, Any], player_input: str) -> dict[str, Any]:
+    contract = build_time_skip_contract(bundle, player_input)
+    prompt = build_time_skip_prompt(contract)
+    target_event = (contract.get("time_skip") or {}).get("target_event") or {}
+    rules_diagnostics = scene_rules_diagnostics()
+    return {
+        "status": "gpt_actions_time_skip_prompt_ready",
+        "scene": None,
+        "scene_prompt": prompt,
+        "diagnostics": {
+            "turn_mode": "time_skip",
+            "target_event_id": target_event.get("id"),
+            "target_event_title": target_event.get("title"),
+            "compact_prompt_chars": len(prompt),
+            "scene_rules": rules_diagnostics,
+            "next_required_action": "generate transition scene_response internally, call applyTurnResult, then show response.message_to_user",
         },
     }
 

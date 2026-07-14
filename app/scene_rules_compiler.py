@@ -64,6 +64,11 @@ RULE_SOURCES: tuple[RuleSource, ...] = (
         ("микровыбор", "последствия", "границ"),
     ),
     RuleSource(
+        "TIME_SKIP",
+        "rules/time_skip_rules.md",
+        ("Пропустить время до ближайших событий", "естественной паузе", "time_skip_state", "немедленной опасности"),
+    ),
+    RuleSource(
         "SCENE_FORMAT",
         "prompts/scene_format_rules.md",
         ("rendered_text", "ровно 3", "relationships_panel", "proposed_updates"),
