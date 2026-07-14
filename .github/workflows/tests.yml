@@ -36,6 +36,7 @@ jobs:
         id: patch
         continue-on-error: true
         run: |
+          python scripts/fix_time_skip_patch_script.py
           python scripts/apply_time_skip_patch.py > patch-output.txt 2>&1
           status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
