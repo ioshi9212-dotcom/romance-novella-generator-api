@@ -142,3 +142,30 @@ replace_once(
     '4. createBootstrapPreview только с bootstrap_json, без mode и других верхнеуровневых полей.\n',
     '4. createBootstrapPreview: session_id + один bootstrap_json со всеми корневыми полями; снаружи ничего не дублируй. UnrecognizedKwargsError → повтори тот же вызов в этой сессии, упаковав всё внутрь bootstrap_json.\n',
 )
+replace_once(
+    instructions,
+    '4. createBootstrapPreview: session_id + один bootstrap_json со всеми корневыми полями; снаружи ничего не дублируй. UnrecognizedKwargsError → повтори тот же вызов в этой сессии, упаковав всё внутрь bootstrap_json.\n',
+    '4. createBootstrapPreview только с bootstrap_json, без mode. Внутри — все корневые поля; не закрывай объект раньше и не дублируй снаружи. UnrecognizedKwargsError → повтори тот же вызов в этой сессии, упаковав всё внутрь bootstrap_json.\n',
+)
+
+contract_tests = ROOT / "tests" / "test_openapi_actions_contract.py"
+replace_once(
+    contract_tests,
+    '    assert set(preview_request["properties"]) == {"bootstrap_json"}\n',
+    '''    assert set(preview_request["properties"]) == {
+        "bootstrap_json",
+        "protagonist",
+        "characters",
+        "relationships",
+        "knowledge",
+        "story_plan",
+        "director_bible",
+        "current_state",
+        "npc_state",
+        "future_locks",
+        "continuity",
+        "scene_history",
+        "turns",
+    }
+''',
+)
