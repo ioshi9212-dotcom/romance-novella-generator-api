@@ -90,6 +90,24 @@ def build_initial_npc_runtime(card: dict[str, Any], existing: Any = None) -> dic
     return state
 
 
+def prepare_npc_runtime_map(data: dict[str, Any]) -> dict[str, Any]:
+    """Ensure every non-player significant character has a complete runtime entry."""
+    if not isinstance(data, dict):
+        return data
+    characters = data.get("characters") if isinstance(data.get("characters"), dict) else {}
+    current_state = data.get("current_state") if isinstance(data.get("current_state"), dict) else {}
+    protagonist = data.get("protagonist") if isinstance(data.get("protagonist"), dict) else {}
+    player_id = str(protagonist.get("id") or current_state.get("player_character_id") or "pc_01")
+    source = data.get("npc_state") if isinstance(data.get("npc_state"), dict) else {}
+    prepared: dict[str, Any] = {}
+    for character_id, card in characters.items():
+        if not isinstance(card, dict) or character_id == player_id or card.get("cast_status") == "background":
+            continue
+        prepared[str(character_id)] = build_initial_npc_runtime(card, source.get(character_id))
+    data["npc_state"] = prepared
+    return data
+
+
 def compact_npc_runtime_entry(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
