@@ -10,6 +10,7 @@ from fastapi.openapi.utils import get_openapi
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.config import get_settings
+from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
 from app.id_utils import now_iso
 from app.models import ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.npc_state_updates import apply_npc_state_patches
@@ -590,6 +591,8 @@ def apply_bootstrap_result_disabled(session_id: str) -> dict:
 def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) -> dict:
     normalized_bootstrap = normalize_bootstrap_json(request.bootstrap_json)
     errors = validate_bootstrap_result(normalized_bootstrap)
+    prepare_directional_relationships(normalized_bootstrap)
+    errors.extend(validate_directional_relationships(normalized_bootstrap))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
     manager = SessionManager()
@@ -714,6 +717,13 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
                 raise HTTPException(status_code=422, detail=errors)
             result = updater.apply_scene_response(session_id, normalized_scene_response)
             result = apply_npc_state_patches(
+                manager.storage,
+                session_id,
+                normalized_scene_response,
+                bundle,
+                result,
+            )
+            result = apply_directional_relationship_patches(
                 manager.storage,
                 session_id,
                 normalized_scene_response,

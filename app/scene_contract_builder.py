@@ -2,6 +2,7 @@ from typing import Any
 
 from app.id_utils import pair_id
 from app.npc_runtime import compact_npc_runtime_entry
+from app.relationship_state import normalize_relationship_pair
 
 
 TECH_LABEL_MAP = {
@@ -236,11 +237,11 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             relationship_id = pair_id(character_a, character_b)
             both_in_scene = character_a in scene_ids and character_b in scene_ids
             if relationship_id in relationships:
-                content = relationships[relationship_id]
+                content = normalize_relationship_pair(relationships[relationship_id], characters, str(player_id))
                 load_reason = ["both_present"] if both_in_scene else ["nearby_context"]
                 is_baseline = False
             elif both_in_scene and player_id in {character_a, character_b}:
-                content = _baseline_relationship_content(characters, character_a, character_b)
+                content = normalize_relationship_pair(_baseline_relationship_content(characters, character_a, character_b), characters, str(player_id))
                 load_reason = ["runtime_baseline", "both_present"]
                 is_baseline = True
             else:
@@ -338,6 +339,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         "output_requirements": {
             "response_schema": "schemas/scene_response.schema.json",
             "state_update_mode": "propose_patch_only",
+            "directional_relationship_rule": "Update only the side whose perception/need/feeling changed. Use from_character_id, to_character_id and direction_patch; never mirror one person's change onto the other.",
             "if_prompt_chunked": "read all chunks in order before writing scene_response",
         },
     }

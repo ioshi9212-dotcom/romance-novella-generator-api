@@ -61,7 +61,7 @@ scene: header, body, player_options, status_panel, relationships_panel, rendered
 player_options: ровно 3 actions, 3 dialogue, 3 thoughts; actions — физические действия, речь/вопросы — dialogue. Dialogue без начального «—».
 safety_checks — все true: used_only_loaded_characters, respected_knowledge_boundaries, no_hidden_future_reveal, no_major_player_character_choice, respected_player_input_order, showed_only_scene_relationships, header_has_no_focus_or_active_list.
 proposed_updates всегда: scene_state_patch{}, continuity_patch{}, relationship_patches[], knowledge_patches[], npc_state_patches[], new_or_updated_characters[].
-relationship_patch: pair_id,change_type,entry,reason,source_in_scene. knowledge_patch/npc_state_patch: character_id,reason,source_in_scene.
+relationship_patch: pair_id,change_type,entry,reason,source_in_scene. Для одной стороны: from_character_id,to_character_id,direction_patch; не зеркаль изменения на второго. knowledge_patch/npc_state_patch: character_id,reason,source_in_scene.
 npc_state_patch — только реальные изменения mood/urge/pressure/behavior_mode/unresolved_emotion/next action/change_stage. Извинение не равно изменению; под стрессом возможен relapse.
 Новый важный NPC — new_or_updated_characters. У locked-персонажа меняй только runtime-поля.
 
