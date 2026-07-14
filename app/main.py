@@ -12,6 +12,7 @@ from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.config import get_settings
 from app.id_utils import now_iso
 from app.models import ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
+from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
@@ -712,6 +713,13 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
             if errors:
                 raise HTTPException(status_code=422, detail=errors)
             result = updater.apply_scene_response(session_id, normalized_scene_response)
+            result = apply_npc_state_patches(
+                manager.storage,
+                session_id,
+                normalized_scene_response,
+                bundle,
+                result,
+            )
             _mark_pending_turn_applied(manager, session_id, pending)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
