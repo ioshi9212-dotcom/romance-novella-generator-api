@@ -45,26 +45,5 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest==8.3.4 httpx==0.28.1
 
-      - name: Run tests and capture diagnostics
-        id: pytest_run
-        shell: bash
-        run: |
-          set +e
-          python -m pytest -q --tb=short > pytest-output.txt 2>&1
-          exit_code=$?
-          cat pytest-output.txt
-          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Upload pytest diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-output
-          path: pytest-output.txt
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Fail when pytest failed
-        if: always()
-        run: exit "${{ steps.pytest_run.outputs.exit_code }}"
+      - name: Run tests
+        run: python -m pytest -q
