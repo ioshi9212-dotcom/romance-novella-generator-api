@@ -13,12 +13,13 @@ from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
 from app.director_bible import apply_director_bible_patches, prepare_director_bible, validate_director_bible
 from app.id_utils import now_iso
-from app.models import ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
+from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
-from app.turn_processor import process_turn_debug_stub, process_turn_gpt_actions
+from app.turn_processor import process_time_skip_gpt_actions, process_turn_debug_stub, process_turn_gpt_actions
+from app.time_skip import assess_time_skip, record_time_skip_result, validate_time_skip_scene_response
 from app.validators import validate_bootstrap_result, validate_scene_response
 
 RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
@@ -288,6 +289,7 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
             "turn_id": pending.get("turn_id"),
             "status": pending.get("status"),
             "expected_turn_number": pending.get("expected_turn_number"),
+            "turn_kind": pending.get("turn_kind", "normal"),
             "player_input": _debug_clip_text(pending.get("player_input"), 500),
             "prompt_chunk_count": chunk_count,
             "has_more_prompt_chunks": chunk_count > 1,
@@ -362,7 +364,7 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
     }
 
 
-def _save_pending_turn(manager: SessionManager, session_id: str, player_input: str, expected_turn_number: int) -> dict[str, Any]:
+def _save_pending_turn(manager: SessionManager, session_id: str, player_input: str, expected_turn_number: int, *, turn_kind: str = "normal", metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     pending = {
         "session_id": session_id,
         "turn_id": _new_turn_id(),
@@ -371,6 +373,8 @@ def _save_pending_turn(manager: SessionManager, session_id: str, player_input: s
         "player_input_sha256": _hash_text(player_input),
         "expected_turn_number": expected_turn_number,
         "created_at": now_iso(),
+        "turn_kind": turn_kind,
+        **(metadata or {}),
     }
     manager.storage.write_json(session_id, "pending_turn.json", pending)
     return pending
@@ -441,7 +445,7 @@ def _coerce_scene_response_payload(request: ApplyTurnResultRequest) -> dict[str,
 def _require_pending_turn_match(manager: SessionManager, session_id: str, request_turn_id: str | None, normalized_scene_response: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
     pending = _load_pending_turn(manager, session_id)
     if not pending or not pending.get("turn_id"):
-        raise HTTPException(status_code=409, detail="No pending turn. Call processTurn before applyTurnResult.")
+        raise HTTPException(status_code=409, detail="No pending turn. Call processTurn or advanceTime before applyTurnResult.")
     if pending.get("status") == "applied":
         raise HTTPException(status_code=409, detail="This turn was already applied. Call processTurn for the next player input.")
 
@@ -489,6 +493,8 @@ def _process_turn_locked(manager: SessionManager, session_id: str, request: Turn
     expected_turn_number = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
     existing_pending = _load_pending_turn(manager, session_id)
     if existing_pending.get("status") == "pending":
+        if existing_pending.get("turn_kind", "normal") != "normal":
+            raise HTTPException(status_code=409, detail="A time-skip turn is pending. Apply it before sending a normal turn.")
         same_input = existing_pending.get("player_input_sha256") == _hash_text(player_input)
         same_turn = int(existing_pending.get("expected_turn_number") or 0) == expected_turn_number
         if same_input and same_turn:
@@ -522,6 +528,85 @@ def _process_turn_locked(manager: SessionManager, session_id: str, request: Turn
         result["scene_prompt"],
         turn_status=result["status"],
         turn_diagnostics=result["diagnostics"],
+    )
+    return _pending_turn_response(pending, session_id)
+
+
+def _advance_time_locked(manager: SessionManager, session_id: str, request: AdvanceTimeRequest, player_input: str, bundle: dict[str, Any]) -> dict:
+    expected_turn_number = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
+    assessment = assess_time_skip(
+        bundle,
+        mode=request.skip_mode,
+        unit=request.unit,
+        amount=request.amount,
+    )
+    if not assessment["allowed"]:
+        control = assessment.get("control") or {}
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "time_skip_blocked",
+                "reason": control.get("reason"),
+                "blockers": assessment.get("blockers", []),
+            },
+        )
+
+    request_fingerprint = _hash_text(json.dumps({
+        "player_input": player_input,
+        "skip_mode": request.skip_mode,
+        "unit": request.unit,
+        "amount": request.amount,
+    }, ensure_ascii=False, sort_keys=True))
+    existing_pending = _load_pending_turn(manager, session_id)
+    if existing_pending.get("status") == "pending":
+        same_request = existing_pending.get("time_skip_request_sha256") == request_fingerprint
+        same_turn = int(existing_pending.get("expected_turn_number") or 0) == expected_turn_number
+        if same_request and same_turn and existing_pending.get("turn_kind") == "time_skip":
+            if isinstance(existing_pending.get("prompt_chunks"), list) and existing_pending.get("prompt_chunks"):
+                return _pending_turn_response(existing_pending, session_id)
+            repaired = process_time_skip_gpt_actions(
+                bundle,
+                player_input,
+                skip_mode=request.skip_mode,
+                unit=request.unit,
+                amount=request.amount,
+            )
+            repaired_pending = _store_prompt_chunks(
+                manager,
+                session_id,
+                existing_pending,
+                repaired["scene_prompt"],
+                turn_status=repaired["status"],
+                turn_diagnostics=repaired["diagnostics"],
+            )
+            return _pending_turn_response(repaired_pending, session_id)
+        raise HTTPException(status_code=409, detail="Another turn is still pending. Apply it before advancing time.")
+
+    generated = process_time_skip_gpt_actions(
+        bundle,
+        player_input,
+        skip_mode=request.skip_mode,
+        unit=request.unit,
+        amount=request.amount,
+    )
+    pending = _save_pending_turn(
+        manager,
+        session_id,
+        player_input,
+        expected_turn_number,
+        turn_kind="time_skip",
+        metadata={
+            "time_skip_request_sha256": request_fingerprint,
+            "time_skip_request": generated.get("time_skip_request", {}),
+        },
+    )
+    pending = _store_prompt_chunks(
+        manager,
+        session_id,
+        pending,
+        generated["scene_prompt"],
+        turn_status=generated["status"],
+        turn_diagnostics=generated["diagnostics"],
     )
     return _pending_turn_response(pending, session_id)
 
@@ -663,6 +748,24 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@app.post("/api/v1/sessions/{session_id}/advance-time", response_model=TurnResponse, dependencies=[Depends(require_api_key)], operation_id="advanceTime")
+def advance_time(session_id: str, request: AdvanceTimeRequest) -> dict:
+    player_input = (request.player_input or "").strip()
+    if not player_input:
+        raise HTTPException(status_code=422, detail="player_input is empty; time skip must come from the latest user request.")
+    if request.skip_mode == "duration" and (request.unit is None or request.amount is None):
+        raise HTTPException(status_code=422, detail="duration time skip requires unit and amount.")
+
+    manager = SessionManager()
+    try:
+        with _session_request_context(manager, session_id):
+            bundle = manager.get_memory(session_id)
+            _require_active_session(bundle, "advancing time")
+            return _advance_time_locked(manager, session_id, request, player_input, bundle)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @app.get("/api/v1/sessions/{session_id}/turn-prompt-chunk", response_model=TurnPromptChunkResponse, dependencies=[Depends(require_api_key)], operation_id="getTurnPromptChunk")
 def get_turn_prompt_chunk(
     session_id: str,
@@ -677,7 +780,7 @@ def get_turn_prompt_chunk(
         raise HTTPException(status_code=404, detail=str(exc))
 
     if not pending or pending.get("turn_id") != turn_id:
-        raise HTTPException(status_code=409, detail="Missing or mismatched pending turn_id. Call processTurn again.")
+        raise HTTPException(status_code=409, detail="Missing or mismatched pending turn_id. Call processTurn or advanceTime again.")
     if pending.get("status") == "applied":
         raise HTTPException(status_code=409, detail="This turn was already applied. Call processTurn for the next player input.")
 
@@ -716,6 +819,7 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
             normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
             pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)
             errors = validate_scene_response(normalized_scene_response)
+            errors.extend(validate_time_skip_scene_response(pending, normalized_scene_response, bundle))
             if errors:
                 raise HTTPException(status_code=422, detail=errors)
             result = updater.apply_scene_response(session_id, normalized_scene_response)
@@ -736,6 +840,14 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
             result = apply_director_bible_patches(
                 manager.storage,
                 session_id,
+                normalized_scene_response,
+                bundle,
+                result,
+            )
+            result = record_time_skip_result(
+                manager.storage,
+                session_id,
+                pending,
                 normalized_scene_response,
                 bundle,
                 result,

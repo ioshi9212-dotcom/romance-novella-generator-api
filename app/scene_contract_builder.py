@@ -291,6 +291,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "active_character_display_names": [_display_name(characters, character_id) for character_id in active_ids],
             "nearby_character_ids": nearby_ids,
             "environment": current_state.get("environment", {}),
+            "time_skip_control": current_state.get("time_skip_control", {}),
             "status": status,
         },
         "loaded_characters": loaded_characters,

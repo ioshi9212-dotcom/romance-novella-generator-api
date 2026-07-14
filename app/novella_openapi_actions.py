@@ -147,6 +147,17 @@ TURN_SCHEMA = _schema_obj(
     required=["player_input"],
 )
 
+
+ADVANCE_TIME_SCHEMA = _schema_obj(
+    {
+        "player_input": {"type": "string", "minLength": 1, "description": "Exact latest user request selecting time skip."},
+        "skip_mode": {"type": "string", "enum": ["nearest_event", "duration"], "default": "nearest_event"},
+        "unit": {"type": ["string", "null"], "enum": ["hours", "days", "weeks", "months", None]},
+        "amount": {"type": ["integer", "null"], "minimum": 1, "maximum": 365},
+    },
+    required=["player_input"],
+)
+
 APPLY_TURN_RESULT_SCHEMA = _schema_obj(
     {
         "turn_id": {
@@ -345,7 +356,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
             "description": (
                 "Custom GPT Actions schema for generated novella sessions. "
                 "Use questionnaire, preview-confirm launch flow, chunked processTurn, "
-                "then applyTurnResult with the exact turn_id."
+                "then applyTurnResult with the exact turn_id. Use advanceTime only for a user-selected natural-pause skip."
             ),
         },
         "servers": [{"url": url}],
@@ -372,6 +383,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "BootstrapConfirmRequest": BOOTSTRAP_CONFIRM_SCHEMA,
                 "BootstrapConfirmResponse": BOOTSTRAP_CONFIRM_RESPONSE_SCHEMA,
                 "TurnRequest": TURN_SCHEMA,
+                "AdvanceTimeRequest": ADVANCE_TIME_SCHEMA,
                 "TurnResponse": TURN_RESPONSE_SCHEMA,
                 "TurnPromptChunkResponse": TURN_PROMPT_CHUNK_RESPONSE_SCHEMA,
                 "DebugSessionDumpResponse": DEBUG_SESSION_DUMP_RESPONSE_SCHEMA,
@@ -512,6 +524,19 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                             _loose_obj(),
                         ),
                         "422": _json_response("Empty input", _loose_obj()),
+                    },
+                }
+            },
+            "/api/v1/sessions/{session_id}/advance-time": {
+                "post": {
+                    "operationId": "advanceTime",
+                    "summary": "Create a guarded time-skip prompt only after the scene saved a natural pause.",
+                    "parameters": [_session_id_param()],
+                    "requestBody": _request_body({"$ref": "#/components/schemas/AdvanceTimeRequest"}),
+                    "responses": {
+                        "200": _json_response("Pending time-skip turn and first prompt chunk.", {"$ref": "#/components/schemas/TurnResponse"}),
+                        "409": _json_response("Time skip blocked or another turn is pending.", _loose_obj()),
+                        "422": _json_response("Invalid time skip request.", _loose_obj()),
                     },
                 }
             },

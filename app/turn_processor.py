@@ -5,6 +5,7 @@ import json
 
 from app.scene_contract_builder import build_scene_contract
 from app.scene_rules_compiler import compile_scene_rules, scene_rules_diagnostics
+from app.time_skip import build_time_skip_contract
 
 
 SCENE_WRITER_TOOL_FLOW = """
@@ -72,6 +73,7 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
         "status_slots": contract.get("status_slots", [])[:2],
         "story_compass": _compact_dict(contract.get("story_compass", {}) if isinstance(contract.get("story_compass"), dict) else {}, 900),
         "director_guidance": _compact_dict(contract.get("director_guidance", {}) if isinstance(contract.get("director_guidance"), dict) else {}, 900),
+        "time_skip_request": _compact_dict(contract.get("time_skip_request", {}) if isinstance(contract.get("time_skip_request"), dict) else {}, 900),
         "npc_runtime": _compact_dict(contract.get("npc_runtime", {}) if isinstance(contract.get("npc_runtime"), dict) else {}, 420),
         "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
         "player_input_rules": contract.get("player_input_rules", {}),
@@ -209,6 +211,47 @@ def process_turn_gpt_actions(bundle: dict[str, Any], player_input: str) -> dict[
             "compact_prompt_chars": len(prompt),
             "scene_rules": rules_diagnostics,
             "next_required_action": "generate scene_response internally, call applyTurnResult, then show response.message_to_user",
+        },
+    }
+
+
+def process_time_skip_gpt_actions(
+    bundle: dict[str, Any],
+    player_input: str,
+    *,
+    skip_mode: str,
+    unit: str | None = None,
+    amount: int | None = None,
+) -> dict[str, Any]:
+    contract, assessment = build_time_skip_contract(
+        bundle,
+        player_input=player_input,
+        mode=skip_mode,
+        unit=unit,
+        amount=amount,
+    )
+    prompt = build_scene_prompt(contract)
+    return {
+        "status": "time_skip_prompt_ready",
+        "scene": None,
+        "scene_prompt": prompt,
+        "time_skip_request": {
+            "mode": skip_mode,
+            "unit": assessment.get("unit"),
+            "amount": assessment.get("amount"),
+            "target_event": assessment.get("target_event"),
+            "from_frame": {
+                "date": (bundle.get("current_state") or {}).get("date"),
+                "time": (bundle.get("current_state") or {}).get("time"),
+                "location": (bundle.get("current_state") or {}).get("location"),
+            },
+        },
+        "diagnostics": {
+            "turn_kind": "time_skip",
+            "target_event_id": (assessment.get("target_event") or {}).get("id"),
+            "compact_prompt_chars": len(prompt),
+            "scene_rules": scene_rules_diagnostics(),
+            "next_required_action": "generate time-skip scene_response, call applyTurnResult, then show response.message_to_user",
         },
     }
 

@@ -61,6 +61,9 @@
     "story_compass": {
       "type": "object"
     },
+    "time_skip_request": {
+      "type": "object"
+    },
     "director_guidance": {
       "type": "object"
     },
