@@ -56,7 +56,7 @@ def _role_kind(role: Any) -> str:
         return "friend"
     if any(word in text for word in ("brother", "sister", "mother", "father", "family", "брат", "сестр", "мать", "отец", "семь")):
         return "family"
-    if any(word in text for word in ("love", "romance", "boyfriend", "girlfriend", "partner", "crush", "lover", "парень", "девуш", "быв", "влюб")):
+    if any(word in text for word in ("love", "romance", "romantic", "boyfriend", "girlfriend", "partner", "crush", "lover", "парень", "девуш", "быв", "влюб")):
         return "romance"
     if any(word in text for word in ("colleague", "coworker", "boss", "manager", "коллег", "началь", "сотруд")):
         return "colleague"
