@@ -2,6 +2,7 @@ from typing import Any
 
 from app.id_utils import pair_id
 from app.npc_runtime import compact_npc_runtime_entry
+from app.relationship_state import build_starting_relationship, normalize_relationship_entry
 
 
 TECH_LABEL_MAP = {
@@ -151,23 +152,26 @@ def _normalise_status(current_state: dict[str, Any], story_plan: dict[str, Any])
     }
 
 
-def _baseline_relationship_content(characters: dict[str, Any], a: str, b: str) -> dict[str, Any]:
-    a_name = _display_name(characters, a)
-    b_name = _display_name(characters, b)
+def _relationship_scene_rules(player_id: str) -> dict[str, Any]:
     return {
-        "pair_id": pair_id(a, b),
-        "character_a": a,
-        "character_b": b,
-        "type": "baseline",
-        "status": "первое впечатление",
-        "scores": {"trust": 50, "tension": 15, "attachment": 0, "respect": 30, "fear": 0, "curiosity": 25},
-        "a_view_of_b": {"summary": f"{a_name} пока считывает {b_name} по видимому поведению.", "current_assumption": "может ошибаться"},
-        "b_view_of_a": {"summary": f"{b_name} пока считывает {a_name} по видимому поведению.", "current_assumption": "может ошибаться"},
-        "shared_history": [],
-        "recent_changes": [],
-        "open_threads": [],
-        "is_runtime_baseline": True,
+        "independent_directions": "a_to_b and b_to_a are independent; never mirror a change automatically",
+        "shared_scope": "shared history, tension and mutual open threads change only through scope=shared",
+        "directed_patch": "use scope=directed with source_character_id and target_character_id",
+        "player_side_agency": f"when source_character_id={player_id}, include exact player_input_evidence; do not invent the heroine's feelings",
+        "legacy_pair_with_player": "a patch without direction is interpreted as the NPC changing toward the player, not both sides",
+        "score_inertia": "one line or apology should not erase attachment, resentment, jealousy, dependency or old expectations",
     }
+
+
+def _baseline_relationship_content(characters: dict[str, Any], player_id: str, a: str, b: str) -> dict[str, Any]:
+    other_id = b if a == player_id else a
+    relation = build_starting_relationship(characters, player_id, other_id)
+    relation["type"] = "baseline"
+    relation["status"] = "первое впечатление; стороны ещё не обязаны одинаково оценивать встречу"
+    relation["shared"]["status"] = relation["status"]
+    relation["is_runtime_baseline"] = True
+    relation["_scene_rules"] = _relationship_scene_rules(player_id)
+    return relation
 
 
 def _focused_npc_runtime(
@@ -236,11 +240,12 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             relationship_id = pair_id(character_a, character_b)
             both_in_scene = character_a in scene_ids and character_b in scene_ids
             if relationship_id in relationships:
-                content = relationships[relationship_id]
+                content = normalize_relationship_entry(relationships[relationship_id], characters, str(player_id))
+                content["_scene_rules"] = _relationship_scene_rules(str(player_id))
                 load_reason = ["both_present"] if both_in_scene else ["nearby_context"]
                 is_baseline = False
             elif both_in_scene and player_id in {character_a, character_b}:
-                content = _baseline_relationship_content(characters, character_a, character_b)
+                content = _baseline_relationship_content(characters, str(player_id), character_a, character_b)
                 load_reason = ["runtime_baseline", "both_present"]
                 is_baseline = True
             else:
