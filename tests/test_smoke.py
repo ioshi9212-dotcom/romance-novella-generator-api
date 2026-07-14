@@ -607,7 +607,7 @@ def test_runtime_history_is_compacted_without_full_scene_response():
     assert all("scene_response" not in item for item in bundle["turns"])
 
 
-def test_footer_options_are_separated_and_state_backed():
+def test_footer_options_are_separated_and_current_patch_backed():
     from app.scene_response_normalizer import normalize_scene_response
 
     bundle = _valid_bootstrap()
@@ -651,9 +651,9 @@ def test_footer_options_are_separated_and_state_backed():
     assert "Попросить Неру" not in action_block
     assert "Попросить Неру" in dialogue_block
     assert "— —" not in text
-    assert "Усталость: 100/100" in text
-    assert "Травмы: 55/100" in text
-    assert "Эмоциональное состояние: 80/100" in text
+    assert "Усталость: 75/100" in text
+    assert "Травмы: 0/100" in text
+    assert "Эмоциональное состояние: 75/100" in text
     assert "Домашнее давление:" in text
     assert "Поле истории" not in text
 
