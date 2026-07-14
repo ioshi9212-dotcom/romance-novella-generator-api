@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -31,47 +31,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Apply exact time skip patch
-        id: patch
-        continue-on-error: true
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('scripts/apply_time_skip_patch.py')
-          text = path.read_text(encoding='utf-8')
-          old = '''    "- `proposed_updates` всегда содержит объекты/массивы по schema; пустые обновления не выдумывай.\\n",
-              "- `proposed_updates` всегда содержит объекты/массивы по schema; пустые обновления не выдумывай. Для `advanceTime` дополнительно обязателен `time_skip_result`.\\n",'''
-          new = '''    "- `proposed_updates` всегда содержит `scene_state_patch`, `continuity_patch`, `relationship_patches`, `knowledge_patches`, `npc_state_patches`, `director_bible_patches`, `new_or_updated_characters`;\\n",
-              "- `proposed_updates` всегда содержит `scene_state_patch`, `continuity_patch`, `relationship_patches`, `knowledge_patches`, `npc_state_patches`, `director_bible_patches`, `new_or_updated_characters`; для `advanceTime` дополнительно обязателен `time_skip_result`;\\n",'''
-          if old not in text:
-              raise SystemExit('temporary repair anchor not found')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-          python scripts/apply_time_skip_patch.py > patch-output.txt 2>&1
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
-
-      - name: Upload patch diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: time-skip-patch-output
-          path: patch-output.txt
-
-      - name: Commit applied patch
-        if: steps.patch.outputs.exit_code == '0'
-        run: |
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
-            git add app gpt prompts rules schemas tests
-            git commit -m "Wire guarded time skip flow"
-            git push origin HEAD:agent/time-skip-event-flow
-          fi
-
-      - name: Fail on patch error
-        if: steps.patch.outputs.exit_code != '0'
-        run: exit 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
