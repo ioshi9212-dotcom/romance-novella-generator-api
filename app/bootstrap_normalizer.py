@@ -4,6 +4,7 @@ from typing import Any
 import re
 
 from app.director_bible import prepare_director_bible
+from app.time_skip import prepare_time_skip_state
 
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 TRANSLIT = {
@@ -528,4 +529,5 @@ def normalize_bootstrap_json(data: dict[str, Any]) -> dict[str, Any]:
         "turns": data.get("turns") if isinstance(data.get("turns"), list) else [],
     }
     prepare_director_bible(normalized)
+    prepare_time_skip_state(normalized)
     return normalized

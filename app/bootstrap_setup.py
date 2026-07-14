@@ -80,12 +80,12 @@ DIRECTOR BIBLE — СКРЫТО ОТ ПОЛЬЗОВАТЕЛЯ
 - story_hooks: минимум два незакрытых крючка;
 - planned_reveals: что раскрывается, earliest_turn, prerequisites и forbidden_before;
 - active_conflicts и do_not_resolve_early;
-- event_queue: минимум три ближайших события с priority, earliest/latest turn, conditions, participants, purpose, scene_pressure, next_if_ignored и time_hint;
-- time_anchors, continuity_truths, future_consequences и pacing.
+- event_queue: минимум три ближайших события с priority, earliest/latest turn, conditions, participants, purpose, scene_pressure, next_if_ignored, time_hint, skip_unit и skip_amount;
+- time_anchors, continuity_truths, future_consequences, pacing и time_flow с allowed_units/max_amounts.
 События не являются рельсами: они должны адаптироваться к действиям игрока. Не решай выбор героини заранее. Не выводи director_bible в preview. `future_locks` оставь только технической блокировкой раскрытия.
 
 CURRENT STATE
-Заполни конкретно date, time, location, weather, scene_state, outfit, inventory, nearby_items, environment и status. В active/nearby только реально доступные стартовые персонажи.
+Заполни конкретно date, time, location, weather, scene_state, outfit, inventory, nearby_items, environment и status. В active/nearby только реально доступные стартовые персонажи. time_skip_control на старте: allowed=false, blockers=["opening_scene_not_played"].
 
 ЗАПРОС ПОЛЬЗОВАТЕЛЯ:
 {user_request}

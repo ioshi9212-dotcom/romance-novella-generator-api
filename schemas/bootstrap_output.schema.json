@@ -285,7 +285,7 @@
     "director_bible": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["world_truth", "hidden_lore", "character_functions", "story_hooks", "planned_reveals", "active_conflicts", "event_queue", "time_anchors", "do_not_resolve_early", "continuity_truths", "future_consequences", "pacing"],
+      "required": ["world_truth", "hidden_lore", "character_functions", "story_hooks", "planned_reveals", "active_conflicts", "event_queue", "time_anchors", "time_flow", "do_not_resolve_early", "continuity_truths", "future_consequences", "pacing"],
       "properties": {
         "version": {"type": "integer", "const": 1},
         "world_truth": {"type": "object", "required": ["core_truth", "world_rules", "hidden_cause"], "properties": {"core_truth": {"type": "string", "minLength": 1}, "world_rules": {"type": "array", "items": {"type": "string"}}, "hidden_cause": {"type": "string", "minLength": 1}}},
@@ -294,8 +294,9 @@
         "story_hooks": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "hook", "status", "pressure", "next_escalation", "earliest_turn"]}},
         "planned_reveals": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "reveal", "status", "earliest_turn", "prerequisites", "forbidden_before"]}},
         "active_conflicts": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "description", "status", "pressure", "next_escalation", "do_not_resolve_with"]}},
-        "event_queue": {"type": "array", "minItems": 3, "items": {"type": "object", "required": ["id", "title", "status", "priority", "earliest_turn", "latest_turn", "conditions", "participants", "purpose", "scene_pressure", "next_if_ignored", "time_hint"], "properties": {"status": {"type": "string", "enum": ["planned", "ready", "triggered", "completed", "blocked", "deferred"]}, "priority": {"type": "integer", "minimum": 0, "maximum": 100}, "earliest_turn": {"type": "integer", "minimum": 0}, "latest_turn": {"type": "integer", "minimum": 0}}}},
+        "event_queue": {"type": "array", "minItems": 3, "items": {"type": "object", "required": ["id", "title", "status", "priority", "earliest_turn", "latest_turn", "conditions", "participants", "purpose", "scene_pressure", "next_if_ignored", "time_hint", "skip_unit", "skip_amount"], "properties": {"status": {"type": "string", "enum": ["planned", "ready", "triggered", "completed", "blocked", "deferred"]}, "priority": {"type": "integer", "minimum": 0, "maximum": 100}, "earliest_turn": {"type": "integer", "minimum": 0}, "latest_turn": {"type": "integer", "minimum": 0}, "skip_unit": {"type": "string", "enum": ["hours", "days", "weeks", "months"]}, "skip_amount": {"type": "integer", "minimum": 0, "maximum": 365}}}},
         "time_anchors": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object", "additionalProperties": true}]}},
+        "time_flow": {"type": "object", "required": ["current_period", "default_mode", "allow_nearest_event", "allowed_units", "max_amounts"], "properties": {"current_period": {"type": "string", "minLength": 1}, "default_mode": {"type": "string", "enum": ["nearest_event", "duration"]}, "allow_nearest_event": {"type": "boolean"}, "allowed_units": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["hours", "days", "weeks", "months"]}}, "max_amounts": {"type": "object", "properties": {"hours": {"type": "integer", "minimum": 1}, "days": {"type": "integer", "minimum": 1}, "weeks": {"type": "integer", "minimum": 1}, "months": {"type": "integer", "minimum": 1}}}, "last_skip": {"type": ["object", "null"]}}},
         "do_not_resolve_early": {"type": "array", "items": {"type": "string"}},
         "continuity_truths": {"type": "array", "items": {"type": "string"}},
         "future_consequences": {"type": "array", "items": {"type": "string"}},
@@ -306,7 +307,7 @@
     "current_state": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["turn_number", "date", "time", "location", "weather", "scene_state", "player_character_id", "active_character_ids", "nearby_character_ids", "scene_goal", "last_player_input", "outfit", "inventory", "nearby_items", "environment", "status"],
+      "required": ["turn_number", "date", "time", "location", "weather", "scene_state", "player_character_id", "active_character_ids", "nearby_character_ids", "scene_goal", "last_player_input", "outfit", "inventory", "nearby_items", "environment", "time_skip_control", "status"],
       "properties": {
         "turn_number": {"type": "integer", "minimum": 0, "const": 0},
         "date": {"type": "string", "minLength": 1},
@@ -323,6 +324,7 @@
         "inventory": {"type": "array", "items": {"type": "string"}},
         "nearby_items": {"type": "array", "items": {"type": "string"}},
         "environment": {"type": "object"},
+        "time_skip_control": {"type": "object", "required": ["allowed", "reason", "blockers", "suggested_mode", "max_unit", "max_amount"], "properties": {"allowed": {"type": "boolean"}, "reason": {"type": "string", "minLength": 1}, "blockers": {"type": "array", "items": {"type": "string"}}, "suggested_mode": {"type": "string", "enum": ["nearest_event", "duration"]}, "max_unit": {"type": "string", "enum": ["hours", "days", "weeks", "months"]}, "max_amount": {"type": "integer", "minimum": 1, "maximum": 365}}},
         "status": {
           "type": "object",
           "additionalProperties": true,

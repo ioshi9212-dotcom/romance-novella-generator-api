@@ -2,6 +2,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 SessionMode = Literal["debug_stub", "gpt_actions"]
+TimeSkipMode = Literal["nearest_event", "duration"]
+TimeSkipUnit = Literal["hours", "days", "weeks", "months"]
 
 class CreateSessionRequest(BaseModel):
     title: str | None = None
@@ -55,6 +57,13 @@ class BootstrapConfirmResponse(BaseModel):
 class TurnRequest(BaseModel):
     player_input: str = Field(..., min_length=1, description="Exact latest player input. Whitespace-only values are rejected by the route.")
     mode: SessionMode = "gpt_actions"
+
+
+class AdvanceTimeRequest(BaseModel):
+    player_input: str = Field(..., min_length=1, description="Exact latest user request that selected time skip.")
+    skip_mode: TimeSkipMode = "nearest_event"
+    unit: TimeSkipUnit | None = None
+    amount: int | None = Field(default=None, ge=1, le=365)
 
 class TurnResponse(BaseModel):
     session_id: str

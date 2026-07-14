@@ -9,6 +9,7 @@ EVENT_STATUSES = {"planned", "ready", "triggered", "completed", "blocked", "defe
 HOOK_STATUSES = {"active", "advanced", "resolved", "dormant"}
 REVEAL_STATUSES = {"locked", "available", "revealed", "deferred"}
 CONFLICT_STATUSES = {"active", "escalated", "cooling", "resolved", "dormant"}
+TIME_SKIP_UNITS = {"hours", "days", "weeks", "months"}
 
 _EVENT_TRANSITIONS = {
     "planned": EVENT_STATUSES,
@@ -67,6 +68,28 @@ def _integer(value: Any, fallback: int, minimum: int = 0, maximum: int = 9999) -
     except (TypeError, ValueError):
         number = fallback
     return max(minimum, min(maximum, number))
+
+
+def _normalise_time_flow(value: Any, story_plan: dict[str, Any]) -> dict[str, Any]:
+    source = deepcopy(value) if isinstance(value, dict) else {}
+    allowed_units = [unit for unit in _string_list(source.get("allowed_units"), 4) if unit in TIME_SKIP_UNITS]
+    if not allowed_units:
+        allowed_units = ["hours", "days", "weeks"]
+    maxima = source.get("max_amounts") if isinstance(source.get("max_amounts"), dict) else {}
+    return {
+        **source,
+        "current_period": _text(source.get("current_period") or story_plan.get("current_story_position"), "early_story"),
+        "default_mode": _text(source.get("default_mode"), "nearest_event"),
+        "allow_nearest_event": source.get("allow_nearest_event") is not False,
+        "allowed_units": allowed_units,
+        "max_amounts": {
+            "hours": _integer(maxima.get("hours"), 24, 1, 365),
+            "days": _integer(maxima.get("days"), 14, 1, 365),
+            "weeks": _integer(maxima.get("weeks"), 4, 1, 52),
+            "months": _integer(maxima.get("months"), 1, 1, 12),
+        },
+        "last_skip": source.get("last_skip") if isinstance(source.get("last_skip"), dict) else None,
+    }
 
 
 def _character_ids(data: dict[str, Any]) -> list[str]:
@@ -205,6 +228,8 @@ def _default_events(data: dict[str, Any], hooks: list[dict[str, Any]]) -> list[d
             "scene_pressure": "дать реальный сдвиг, а не бытовую петлю",
             "next_if_ignored": "давление возвращается через действие NPC или внешнее последствие",
             "time_hint": "в текущей или ближайшей сцене",
+            "skip_unit": "hours",
+            "skip_amount": 1,
         },
         {
             "id": "event_02",
@@ -219,6 +244,8 @@ def _default_events(data: dict[str, Any], hooks: list[dict[str, Any]]) -> list[d
             "scene_pressure": "дать новый след, ошибку или цену",
             "next_if_ignored": "крючок становится заметнее и менее удобным",
             "time_hint": "через несколько сцен или после естественной паузы",
+            "skip_unit": "days",
+            "skip_amount": 2,
         },
         {
             "id": "event_03",
@@ -233,6 +260,8 @@ def _default_events(data: dict[str, Any], hooks: list[dict[str, Any]]) -> list[d
             "scene_pressure": "изменить отношения или положение без решения за героиню",
             "next_if_ignored": "NPC продолжает план без разрешения игрока",
             "time_hint": "когда текущая сцена достигнет естественной точки перехода",
+            "skip_unit": "weeks",
+            "skip_amount": 1,
         },
     ]
 
@@ -309,6 +338,9 @@ def _normalise_conflict(item: dict[str, Any], item_id: str, _: int) -> dict[str,
 
 def _normalise_event(item: dict[str, Any], item_id: str, index: int) -> dict[str, Any]:
     status = _text(item.get("status"), "planned")
+    skip_unit = _text(item.get("skip_unit"), "days")
+    if skip_unit not in TIME_SKIP_UNITS:
+        skip_unit = "days"
     return {
         **item,
         "id": item_id,
@@ -323,6 +355,8 @@ def _normalise_event(item: dict[str, Any], item_id: str, index: int) -> dict[str
         "scene_pressure": _text(item.get("scene_pressure"), "изменить положение, риск или отношения"),
         "next_if_ignored": _text(item.get("next_if_ignored"), "событие возвращается изменённым последствием"),
         "time_hint": _text(item.get("time_hint"), "при первой естественной возможности"),
+        "skip_unit": skip_unit,
+        "skip_amount": _integer(item.get("skip_amount"), max(1, index), 0, 365),
     }
 
 
@@ -393,6 +427,7 @@ def normalise_director_bible(value: Any, data: dict[str, Any]) -> dict[str, Any]
         "active_conflicts": conflicts,
         "event_queue": events,
         "time_anchors": _list(source.get("time_anchors")),
+        "time_flow": _normalise_time_flow(source.get("time_flow"), story_plan),
         "do_not_resolve_early": _string_list(source.get("do_not_resolve_early") or story_plan.get("forbidden_drift"), 16),
         "continuity_truths": _string_list(source.get("continuity_truths"), 20),
         "future_consequences": _string_list(source.get("future_consequences"), 20),
@@ -477,7 +512,7 @@ def build_director_guidance(bundle: dict[str, Any]) -> dict[str, Any]:
         ]
     event_candidates.sort(key=lambda item: (-int(item.get("priority", 0) or 0), int(item.get("earliest_turn", 0) or 0)))
     due_events = [
-        _compact_item(item, ("id", "title", "status", "priority", "earliest_turn", "latest_turn", "conditions", "participants", "purpose", "scene_pressure", "next_if_ignored", "time_hint"))
+        _compact_item(item, ("id", "title", "status", "priority", "earliest_turn", "latest_turn", "conditions", "participants", "purpose", "scene_pressure", "next_if_ignored", "time_hint", "skip_unit", "skip_amount"))
         for item in event_candidates[:4]
     ]
 
@@ -529,6 +564,7 @@ def build_director_guidance(bundle: dict[str, Any]) -> dict[str, Any]:
         "continuity_truths": bible.get("continuity_truths", [])[-10:],
         "future_consequences": bible.get("future_consequences", [])[-8:],
         "pacing": bible.get("pacing", {}),
+        "time_flow": bible.get("time_flow", {}),
     }
 
 
