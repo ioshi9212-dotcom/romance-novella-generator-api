@@ -47,6 +47,28 @@ def _player_input_evidence_is_valid(scene_response: dict[str, Any], patch: dict[
     return evidence in exact_input or exact_input in evidence
 
 
+def _new_relationship_for_pair(
+    characters: dict[str, Any],
+    player_id: str,
+    left: str,
+    right: str,
+) -> dict[str, Any]:
+    if player_id in {left, right}:
+        other_id = right if left == player_id else left
+        return build_starting_relationship(characters, player_id, other_id)
+    return normalize_relationship_entry(
+        {
+            "pair_id": pair_id(left, right),
+            "character_a": left,
+            "character_b": right,
+            "type": "runtime_relationship",
+            "status": "отношение возникло в сцене и развивается независимо с каждой стороны",
+        },
+        characters,
+        player_id,
+    )
+
+
 def apply_directed_relationship_patches(
     storage: JsonStorage,
     session_id: str,
@@ -70,11 +92,17 @@ def apply_directed_relationship_patches(
     rejected = result.setdefault("rejected", [])
     applied.setdefault("relationships", [])
 
+    working_relationships: dict[str, dict[str, Any]] = {
+        str(pid): normalize_relationship_entry(entry, characters, player_id)
+        for pid, entry in original_relationships.items()
+        if isinstance(entry, dict)
+    }
     touched_pair_ids: set[str] = set()
     directed_applied: list[dict[str, Any]] = []
 
     for raw_patch in patches:
         if not isinstance(raw_patch, dict):
+            rejected.append({"target": "relationships", "reason": "patch must be an object", "severity": "error"})
             continue
         patch = deepcopy(raw_patch)
         pair_id_value = str(patch.get("pair_id") or "").strip()
@@ -89,7 +117,7 @@ def apply_directed_relationship_patches(
             })
             continue
 
-        existing = original_relationships.get(pair_id_value)
+        existing = working_relationships.get(pair_id_value)
         if not isinstance(existing, dict):
             if "__" not in pair_id_value:
                 rejected.append({"target": f"relationships.{pair_id_value}", "reason": "invalid pair_id", "severity": "error"})
@@ -98,7 +126,7 @@ def apply_directed_relationship_patches(
             if left not in characters or right not in characters:
                 rejected.append({"target": f"relationships.{pair_id_value}", "reason": "unknown relationship participants", "severity": "error"})
                 continue
-            existing = build_starting_relationship(characters, left, right)
+            existing = _new_relationship_for_pair(characters, player_id, left, right)
 
         existing = normalize_relationship_entry(existing, characters, player_id)
         character_a, character_b = _pair_participants(existing, pair_id_value)
@@ -121,7 +149,15 @@ def apply_directed_relationship_patches(
                 patch["scope"] = "legacy_symmetric"
                 scope = "legacy_symmetric"
 
-        if scope == "directed" or source_id or target_id:
+        if scope == "shared":
+            if character_a not in scene_ids or character_b not in scene_ids:
+                rejected.append({
+                    "target": f"relationships.{pair_id_value}",
+                    "reason": "shared relationship change requires both people to be involved in the played scene",
+                    "severity": "error",
+                })
+                continue
+        elif scope == "directed" or source_id or target_id:
             if not source_id or not target_id or {source_id, target_id} != {character_a, character_b}:
                 rejected.append({
                     "target": f"relationships.{pair_id_value}",
@@ -155,7 +191,7 @@ def apply_directed_relationship_patches(
             continue
 
         canonical_pair_id = str(updated.get("pair_id") or pair_id(character_a, character_b))
-        storage.write_relationship_pair(session_id, canonical_pair_id, updated)
+        working_relationships[canonical_pair_id] = updated
         touched_pair_ids.add(canonical_pair_id)
         directed_applied.append({
             "pair_id": canonical_pair_id,
@@ -165,6 +201,9 @@ def apply_directed_relationship_patches(
             "target_character_id": patch.get("target_character_id"),
             "changed": changed,
         })
+
+    for relationship_id in sorted(touched_pair_ids):
+        storage.write_relationship_pair(session_id, relationship_id, working_relationships[relationship_id])
 
     if touched_pair_ids:
         applied["relationships"] = [
