@@ -595,11 +595,11 @@ def apply_director_bible_patches(
                     _reject(result, patch_key, item_id, f"invalid event transition {target.get('status')} -> {next_status}")
                     continue
                 if collection_key == "planned_reveals":
-                    if next_status not in _REVEAL_TRANSITIONS.get(target.get("status"), {target.get("status")}):
-                        _reject(result, patch_key, item_id, f"invalid reveal transition {target.get('status')} -> {next_status}")
-                        continue
                     if next_status == "revealed" and current_turn < int(target.get("earliest_turn", 0) or 0):
                         _reject(result, patch_key, item_id, "reveal attempted before earliest_turn")
+                        continue
+                    if next_status not in _REVEAL_TRANSITIONS.get(target.get("status"), {target.get("status")}):
+                        _reject(result, patch_key, item_id, f"invalid reveal transition {target.get('status')} -> {next_status}")
                         continue
                 target["status"] = next_status
 
