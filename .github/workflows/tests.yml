@@ -36,6 +36,18 @@ jobs:
         id: patch
         continue-on-error: true
         run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply_time_skip_patch.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    "- `proposed_updates` всегда содержит объекты/массивы по schema; пустые обновления не выдумывай.\\n",
+              "- `proposed_updates` всегда содержит объекты/массивы по schema; пустые обновления не выдумывай. Для `advanceTime` дополнительно обязателен `time_skip_result`.\\n",'''
+          new = '''    "- `proposed_updates` всегда содержит `scene_state_patch`, `continuity_patch`, `relationship_patches`, `knowledge_patches`, `npc_state_patches`, `director_bible_patches`, `new_or_updated_characters`;\\n",
+              "- `proposed_updates` всегда содержит `scene_state_patch`, `continuity_patch`, `relationship_patches`, `knowledge_patches`, `npc_state_patches`, `director_bible_patches`, `new_or_updated_characters`; для `advanceTime` дополнительно обязателен `time_skip_result`;\\n",'''
+          if old not in text:
+              raise SystemExit('temporary repair anchor not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           python scripts/apply_time_skip_patch.py > patch-output.txt 2>&1
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
