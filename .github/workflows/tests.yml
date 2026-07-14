@@ -46,19 +46,4 @@ jobs:
           python -m pip install pytest==8.3.4 httpx==0.28.1
 
       - name: Run tests
-        run: |
-          set +e
-          python -m pytest -q > pytest-output.txt 2>&1
-          status=$?
-          cat pytest-output.txt
-          echo "$status" > pytest-status.txt
-          exit 0
-
-      - name: Upload pytest output
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-output
-          path: |
-            pytest-output.txt
-            pytest-status.txt
-          retention-days: 1
+        run: python -m pytest -q
