@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from jsonschema import Draft202012Validator
 
@@ -17,9 +18,27 @@ def _load_schema(filename: str) -> dict:
     return json.loads((SCHEMAS_DIR / filename).read_text(encoding="utf-8"))
 
 
+def _array_paths_missing_items(node: Any, path: tuple[str, ...] = ()) -> list[str]:
+    missing: list[str] = []
+    if isinstance(node, dict):
+        if node.get("type") == "array" and "items" not in node:
+            missing.append("/".join(path) or "<root>")
+        for key, value in node.items():
+            missing.extend(_array_paths_missing_items(value, path + (str(key),)))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            missing.extend(_array_paths_missing_items(value, path + (str(index),)))
+    return missing
+
+
 def test_backend_json_schemas_are_valid_draft_2020_12():
     for filename in ("bootstrap_output.schema.json", "scene_response.schema.json"):
         Draft202012Validator.check_schema(_load_schema(filename))
+
+
+def test_every_array_schema_defines_items_for_gpt_actions_import():
+    contract = build_openapi_actions("https://example.invalid")
+    assert _array_paths_missing_items(contract) == []
 
 
 def test_bootstrap_contract_exposes_required_runtime_shape():
