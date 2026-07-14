@@ -88,6 +88,58 @@ def _load_component_schema(filename: str) -> dict[str, Any]:
     return schema
 
 
+def _rewrite_schema_refs(node: Any, replacements: dict[str, str]) -> None:
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref in replacements:
+            node["$ref"] = replacements[ref]
+        for value in node.values():
+            _rewrite_schema_refs(value, replacements)
+    elif isinstance(node, list):
+        for value in node:
+            _rewrite_schema_refs(value, replacements)
+
+
+def _component_name(definition_name: str) -> str:
+    if not definition_name:
+        raise ValueError("OpenAPI schema definition name cannot be empty")
+    return definition_name[:1].upper() + definition_name[1:]
+
+
+def _load_actions_component_schemas() -> dict[str, Any]:
+    loaded = {
+        "BootstrapPayload": _load_component_schema("bootstrap_output.schema.json"),
+        "SceneResponse": _load_component_schema("scene_response.schema.json"),
+    }
+    components: dict[str, Any] = {}
+
+    for root_name, root_schema in loaded.items():
+        definitions = root_schema.pop("$defs", {})
+        if definitions is None:
+            definitions = {}
+        if not isinstance(definitions, dict):
+            raise ValueError(f"{root_name}.$defs must be an object")
+
+        ref_replacements = {
+            f"#/$defs/{definition_name}": f"#/components/schemas/{_component_name(definition_name)}"
+            for definition_name in definitions
+        }
+        _rewrite_schema_refs(root_schema, ref_replacements)
+        components[root_name] = root_schema
+
+        for definition_name, definition in definitions.items():
+            component_name = _component_name(definition_name)
+            if not isinstance(definition, dict):
+                raise ValueError(f"OpenAPI component {component_name} must be an object schema")
+            if component_name in components or component_name in loaded:
+                raise ValueError(f"Duplicate OpenAPI component schema: {component_name}")
+            definition = deepcopy(definition)
+            _rewrite_schema_refs(definition, ref_replacements)
+            components[component_name] = definition
+
+    return components
+
+
 CREATE_SESSION_SCHEMA = _schema_obj(
     {
         "title": {"type": ["string", "null"]},
@@ -370,12 +422,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 }
             },
             "schemas": {
-                "BootstrapPayload": _load_component_schema(
-                    "bootstrap_output.schema.json"
-                ),
-                "SceneResponse": _load_component_schema(
-                    "scene_response.schema.json"
-                ),
+                **_load_actions_component_schemas(),
                 "CreateSessionRequest": CREATE_SESSION_SCHEMA,
                 "CreateSessionResponse": CREATE_SESSION_RESPONSE_SCHEMA,
                 "BootstrapPreviewRequest": BOOTSTRAP_PREVIEW_SCHEMA,

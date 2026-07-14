@@ -226,6 +226,25 @@ def test_openapi_actions_use_strict_components_and_api_key():
 
 
 
+def test_openapi_actions_hoist_json_schema_defs_into_object_components():
+    contract = build_openapi_actions("https://example.invalid")
+    schemas = contract["components"]["schemas"]
+
+    assert all(isinstance(component, dict) for component in schemas.values())
+    assert schemas["DirectorStatusPatch"]["type"] == "object"
+
+    serialized = json.dumps(schemas, ensure_ascii=False)
+    assert '"$defs"' not in serialized
+    assert "#/$defs/" not in serialized
+
+    director_patches = schemas["SceneResponse"]["properties"]["proposed_updates"]["properties"]["director_bible_patches"]["properties"]
+    for field in ("event_updates", "hook_updates", "reveal_updates", "conflict_updates"):
+        assert director_patches[field]["items"] == {
+            "$ref": "#/components/schemas/DirectorStatusPatch"
+        }
+
+
+
 def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
     instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
 
