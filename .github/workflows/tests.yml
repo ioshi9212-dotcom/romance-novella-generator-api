@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -31,17 +31,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Clean time skip branch
-        run: |
-          python scripts/cleanup_time_skip_branch.py
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
-            git add app gpt prompts
-            git commit -m "Clean and sync time skip contracts"
-            git push origin HEAD:agent/time-skip-event-flow
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
