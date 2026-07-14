@@ -14,8 +14,10 @@ SCHEMAS_DIR = ROOT_DIR / "schemas"
 INSTRUCTIONS_PATH = ROOT_DIR / "gpt" / "custom_gpt_instructions.md"
 
 
+
 def _load_schema(filename: str) -> dict:
     return json.loads((SCHEMAS_DIR / filename).read_text(encoding="utf-8"))
+
 
 
 def _array_paths_missing_items(node: Any, path: tuple[str, ...] = ()) -> list[str]:
@@ -31,14 +33,17 @@ def _array_paths_missing_items(node: Any, path: tuple[str, ...] = ()) -> list[st
     return missing
 
 
+
 def test_backend_json_schemas_are_valid_draft_2020_12():
     for filename in ("bootstrap_output.schema.json", "scene_response.schema.json"):
         Draft202012Validator.check_schema(_load_schema(filename))
 
 
+
 def test_every_array_schema_defines_items_for_gpt_actions_import():
     contract = build_openapi_actions("https://example.invalid")
     assert _array_paths_missing_items(contract) == []
+
 
 
 def test_bootstrap_contract_exposes_required_runtime_shape():
@@ -60,22 +65,46 @@ def test_bootstrap_contract_exposes_required_runtime_shape():
     protagonist_required = set(schema["properties"]["protagonist"]["required"])
     assert protagonist_required == {"id", "name", "role"}
 
-    character_required = set(
-        schema["properties"]["characters"]["additionalProperties"]["required"]
-    )
+    character_schema = schema["properties"]["characters"]["additionalProperties"]
+    character_required = set(character_schema["required"])
     assert {
         "id",
         "name",
         "role",
+        "cast_status",
         "appearance",
         "personality",
         "goal",
         "past_short",
         "habits",
-        "likes_in_people",
-        "dislikes_in_people",
-        "relationship_triggers",
+        "inner_logic",
+        "behavior",
+        "speech_profile",
+        "life_outside_player",
+        "social_triggers",
+        "show_in_preview",
+        "available_to_scene",
     } <= character_required
+    assert character_schema["properties"]["cast_status"]["enum"] == [
+        "player",
+        "known_core",
+        "known_support",
+        "hidden_core",
+        "background",
+    ]
+    assert set(character_schema["properties"]["behavior"]["required"]) == {
+        "conflict_style",
+        "care_style",
+        "closeness_style",
+        "touch_style",
+        "stress_response",
+        "rejection_response",
+        "change_inertia",
+        "inconvenient_pattern",
+    }
+    assert character_schema["properties"]["social_triggers"]["minItems"] == 2
+    assert "likes_in_people" in character_schema["properties"]
+    assert "relationship_triggers" in character_schema["properties"]
 
     story_plan = schema["properties"]["story_plan"]
     assert {
@@ -104,6 +133,7 @@ def test_bootstrap_contract_exposes_required_runtime_shape():
     assert "status" in current_state["required"]
     assert current_state["properties"]["turn_number"]["const"] == 0
     assert current_state["properties"]["last_player_input"]["maxLength"] == 0
+
 
 
 def test_scene_contract_requires_complete_visible_scene_and_safety():
@@ -152,6 +182,7 @@ def test_scene_contract_requires_complete_visible_scene_and_safety():
         assert safety["properties"][key]["const"] is True
 
 
+
 def test_openapi_actions_use_strict_components_and_api_key():
     contract = build_openapi_actions("https://example.invalid")
     schemas = contract["components"]["schemas"]
@@ -189,6 +220,7 @@ def test_openapi_actions_use_strict_components_and_api_key():
     assert "mode" not in preview_request["properties"]
 
 
+
 def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
     instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
 
@@ -206,5 +238,7 @@ def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
         "В POV не игрока",
         "mode разрешён только в createSession и processTurn",
         "createBootstrapPreview только с bootstrap_json, без mode",
+        "hidden_core",
+        "полной скрытой карточкой",
     ):
         assert marker in instructions

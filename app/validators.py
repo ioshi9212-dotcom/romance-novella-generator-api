@@ -4,6 +4,14 @@ import json
 import re
 from jsonschema import Draft202012Validator
 
+from app.character_profiles import (
+    SIGNIFICANT_CAST_STATUSES,
+    behavior_signature,
+    prepare_bootstrap_cast,
+)
+from app.id_utils import pair_id
+
+
 REQUIRED_BOOTSTRAP_KEYS = ["protagonist", "characters", "relationships", "knowledge", "story_plan", "current_state"]
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 BANNED_RUSSIAN_NAME_PARTS = {"ivan", "petr", "peter", "sergey", "sergei", "alexey", "aleksey", "dmitry", "dimitri", "oleg", "egor", "yegor", "vladimir", "mikhail", "nikolai", "andrei", "andrey", "anastasia", "nastya", "anna", "anya", "ekaterina", "katya", "maria", "masha", "marina", "svetlana", "olga", "tatiana", "tatyana", "irina", "ivanov", "ivanova", "petrov", "petrova", "sidorov", "sidorova", "morozov", "morozova", "volkov", "volkova", "sokolov", "sokolova", "kuznetsov", "kuznetsova", "orlov", "orlova"}
@@ -21,9 +29,27 @@ REQUIRED_TRUE_SAFETY_CHECKS = [
 ]
 FORBIDDEN_HEADER_MARKERS = ["POV", "Фокус", "В сцене", "active_character_ids", "active ids"]
 
+PROFILE_TEXT_FIELDS = {
+    "inner_logic": ["core_need", "main_fear", "blind_spot", "contradiction"],
+    "behavior": [
+        "conflict_style",
+        "care_style",
+        "closeness_style",
+        "touch_style",
+        "stress_response",
+        "rejection_response",
+        "change_inertia",
+        "inconvenient_pattern",
+    ],
+    "speech_profile": ["baseline", "under_pressure"],
+    "life_outside_player": ["current_obligation", "private_problem", "person_or_place_that_matters"],
+}
+
+
 
 def _schema_path(filename: str) -> Path:
     return Path(__file__).resolve().parent.parent / "schemas" / filename
+
 
 
 def _validate_with_schema(data: dict[str, Any], filename: str) -> list[str]:
@@ -34,6 +60,7 @@ def _validate_with_schema(data: dict[str, Any], filename: str) -> list[str]:
     validator = Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(data), key=lambda error: list(error.path))
     return [f"{filename}:{'.'.join(str(x) for x in error.path) or 'root'}: {error.message}" for error in errors]
+
 
 
 def _validate_display_name(name: Any, location: str) -> list[str]:
@@ -53,6 +80,7 @@ def _validate_display_name(name: Any, location: str) -> list[str]:
     return errors
 
 
+
 def _validate_character_names(characters: Any, prefix: str = "characters") -> list[str]:
     errors: list[str] = []
     if not isinstance(characters, dict):
@@ -63,15 +91,68 @@ def _validate_character_names(characters: Any, prefix: str = "characters") -> li
     return errors
 
 
+
+def _is_placeholder(value: Any) -> bool:
+    text = " ".join(str(value or "").strip().lower().split())
+    exact = {"", "—", "-", "не указано", "старт", "стартовая локация", "начало истории", "будет уточняться", "сеттинг будет уточняться"}
+    snippets = ("будет уточняться", "не указано", "placeholder", "живая, узнаваемая речь", "заметная привычка")
+    return text in exact or any(snippet in text for snippet in snippets)
+
+
+
 def _validate_not_placeholder(value: Any, location: str, errors: list[str]) -> None:
-    text = str(value or "").strip().lower()
-    placeholders = {"", "—", "-", "не указано", "старт", "стартовая локация", "начало истории", "будет уточняться", "сеттинг будет уточняться"}
-    if text in placeholders:
+    if _is_placeholder(value):
         errors.append(f"{location} must be filled with story-specific content, not placeholder: {value!r}")
+
+
+
+def _validate_character_profile(character_id: str, card: dict[str, Any], errors: list[str]) -> None:
+    cast_status = card.get("cast_status")
+    if cast_status not in SIGNIFICANT_CAST_STATUSES | {"background"}:
+        errors.append(f"characters.{character_id}.cast_status is invalid: {cast_status!r}")
+        return
+
+    expected_known = cast_status in {"player", "known_core", "known_support"}
+    if bool(card.get("known_to_player")) != expected_known:
+        errors.append(f"characters.{character_id}.known_to_player conflicts with cast_status={cast_status}")
+    if cast_status == "hidden_core":
+        if card.get("introduced") is not False or card.get("available_to_scene") is not False or card.get("show_in_preview") is not False:
+            errors.append(f"characters.{character_id} hidden_core must remain unavailable and hidden before reveal")
+    if cast_status in {"player", "known_core", "known_support"} and card.get("show_in_preview") is not True:
+        errors.append(f"characters.{character_id} visible starting cast must be shown in preview")
+
+    for object_key, field_names in PROFILE_TEXT_FIELDS.items():
+        block = card.get(object_key)
+        if not isinstance(block, dict):
+            errors.append(f"characters.{character_id}.{object_key} must be an object")
+            continue
+        for field_name in field_names:
+            _validate_not_placeholder(block.get(field_name), f"characters.{character_id}.{object_key}.{field_name}", errors)
+
+    speech_profile = card.get("speech_profile") or {}
+    for field_name in ("verbal_habits", "avoids"):
+        values = speech_profile.get(field_name)
+        if not isinstance(values, list) or not values:
+            errors.append(f"characters.{character_id}.speech_profile.{field_name} must contain at least one concrete item")
+        elif any(_is_placeholder(item) for item in values):
+            errors.append(f"characters.{character_id}.speech_profile.{field_name} contains a placeholder")
+
+    social_triggers = card.get("social_triggers")
+    if not isinstance(social_triggers, list) or len(social_triggers) < 2:
+        errors.append(f"characters.{character_id}.social_triggers must contain at least 2 behavior/interpretation/reaction entries")
+    else:
+        for index, trigger in enumerate(social_triggers):
+            if not isinstance(trigger, dict):
+                errors.append(f"characters.{character_id}.social_triggers[{index}] must be an object")
+                continue
+            for field_name in ("behavior", "interpretation", "usual_reaction"):
+                _validate_not_placeholder(trigger.get(field_name), f"characters.{character_id}.social_triggers[{index}].{field_name}", errors)
+
 
 
 def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    prepare_bootstrap_cast(data)
     errors.extend(_validate_with_schema(data, "bootstrap_output.schema.json"))
     for key in REQUIRED_BOOTSTRAP_KEYS:
         if key not in data:
@@ -82,21 +163,56 @@ def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
         errors.append("characters must be object keyed by generated character_id")
     errors.extend(_validate_character_names(characters))
 
+    protagonist = data.get("protagonist") or {}
+    protagonist_id = protagonist.get("id")
     if isinstance(characters, dict):
         if not characters:
             errors.append("characters must contain at least the player character")
+        player_ids: list[str] = []
+        signatures: dict[tuple[str, str, str, str], str] = {}
         for character_id, card in characters.items():
             if isinstance(card, dict) and card.get("id") not in {None, character_id}:
                 errors.append(f"characters.{character_id}.id must match its generated character_id key")
-            if isinstance(card, dict):
-                _validate_not_placeholder(card.get("goal"), f"characters.{character_id}.goal", errors)
-                _validate_not_placeholder(card.get("past_short"), f"characters.{character_id}.past_short", errors)
+            if not isinstance(card, dict):
+                continue
+            _validate_not_placeholder(card.get("goal"), f"characters.{character_id}.goal", errors)
+            _validate_not_placeholder(card.get("past_short"), f"characters.{character_id}.past_short", errors)
+            _validate_character_profile(character_id, card, errors)
+            if card.get("cast_status") == "player":
+                player_ids.append(character_id)
+            if card.get("cast_status") in SIGNIFICANT_CAST_STATUSES and character_id != protagonist_id:
+                signature = behavior_signature(card)
+                if signature in signatures:
+                    errors.append(
+                        f"characters.{character_id} duplicates the behavioral voice of characters.{signatures[signature]}; "
+                        "significant NPCs need distinct care/conflict/stress/speech patterns"
+                    )
+                else:
+                    signatures[signature] = character_id
 
-    protagonist = data.get("protagonist") or {}
+        if player_ids != [protagonist_id]:
+            errors.append(f"exactly protagonist.id must have cast_status=player; got {player_ids}")
+
     if protagonist and protagonist.get("id") not in (characters or {}):
         errors.append("protagonist.id must exist inside characters and use the generated character_id")
     if protagonist and "name" in protagonist:
         errors.extend(_validate_display_name(protagonist.get("name"), "protagonist"))
+
+    knowledge = data.get("knowledge") or {}
+    if isinstance(characters, dict) and isinstance(knowledge, dict):
+        for character_id in characters:
+            if character_id not in knowledge:
+                errors.append(f"knowledge must contain an entry for characters.{character_id}")
+
+    relationships = data.get("relationships") or {}
+    if isinstance(characters, dict) and isinstance(relationships, dict) and protagonist_id:
+        for character_id, card in characters.items():
+            if character_id == protagonist_id or not isinstance(card, dict):
+                continue
+            if card.get("cast_status") in {"known_core", "known_support"}:
+                pid = pair_id(str(protagonist_id), str(character_id))
+                if pid not in relationships:
+                    errors.append(f"relationships must contain starting pair {pid} for known cast")
 
     story_plan = data.get("story_plan") or {}
     required_story_keys = ["genre", "language", "tone", "setting_summary", "main_premise", "protagonist_start", "player_goal", "central_conflict", "central_question", "opening_scene_intent", "act_structure", "character_arcs", "relationship_focus", "open_threads", "forbidden_drift", "current_story_position", "status_slots"]
@@ -115,6 +231,16 @@ def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
     for key in ["time", "location", "weather", "scene_state", "outfit"]:
         _validate_not_placeholder(current_state.get(key), f"current_state.{key}", errors)
 
+    hidden_ids = {
+        character_id
+        for character_id, card in (characters or {}).items()
+        if isinstance(card, dict) and card.get("cast_status") == "hidden_core"
+    }
+    leaked_ids = hidden_ids & set(current_state.get("active_character_ids") or [])
+    leaked_ids |= hidden_ids & set(current_state.get("nearby_character_ids") or [])
+    if leaked_ids:
+        errors.append(f"hidden_core characters cannot be active/nearby before reveal: {sorted(leaked_ids)}")
+
     status = current_state.get("status") or {}
     for key in ["hunger", "fatigue", "injuries", "emotional_state", "skills", "custom"]:
         if key not in status:
@@ -124,11 +250,13 @@ def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+
 def _header_block(rendered_text: str) -> str:
     delimiter = "━━━━━━━━━━━━━━━━━━━━"
     if delimiter in rendered_text:
         return rendered_text.split(delimiter, 1)[0]
     return rendered_text[:600]
+
 
 
 def validate_scene_response(data: dict[str, Any]) -> list[str]:
@@ -181,8 +309,8 @@ def validate_scene_response(data: dict[str, Any]) -> list[str]:
         for key in ["pair_id", "change_type", "entry", "reason", "source_in_scene"]:
             if not patch.get(key):
                 errors.append(f"proposed_updates.relationship_patches[{index}].{key} is required")
-        pair_id = str(patch.get("pair_id") or "")
-        if "__" not in pair_id or len([part for part in pair_id.split("__") if part]) != 2:
+        patch_pair_id = str(patch.get("pair_id") or "")
+        if "__" not in patch_pair_id or len([part for part in patch_pair_id.split("__") if part]) != 2:
             errors.append(f"proposed_updates.relationship_patches[{index}].pair_id must look like a__b")
     for index, card in enumerate(updates.get("new_or_updated_characters") or []):
         if isinstance(card, dict) and "name" in card:
