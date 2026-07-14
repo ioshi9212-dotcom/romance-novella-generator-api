@@ -4,7 +4,8 @@ from typing import Any
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.character_profiles import prepare_bootstrap_cast, visible_character_ids
-
+from app.relationship_bootstrap import prepare_directed_relationships
+from app.relationship_state import normalize_relationship_entry
 
 
 def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
@@ -50,7 +51,12 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 ЗНАКОМЫЕ НА СТАРТЕ
 Для каждого known_core/known_support:
 - создай стартовую пару отношений с героиней;
-- добавь shared_history/open_threads и направленные предположения, если пользователь дал материал;
+- отношения НЕ симметричны: shared хранит общую историю/напряжение/open_threads; a_to_b и b_to_a — независимые стороны;
+- каждая сторона содержит scores: trust, attachment, attraction, resentment, respect, fear, jealousy, dependency, curiosity, protectiveness;
+- каждая сторона содержит summary, current_assumption, current_need, access_expectation, unresolved_grievance;
+- не копируй одну сторону во вторую. Давняя любовь одного не означает взаимное влечение; близость не означает одинаковое доверие или одинаковую обиду;
+- сторона героини должна опираться только на факты пользователя и стартовую биографию. Не навязывай ей чувства, которых пользователь не задавал;
+- добавь shared_history/open_threads и конкретные ошибочные ожидания обеих сторон;
 - создай knowledge: что знает, видел, предполагает, в чём ошибается, чего не знает, какие вопросы остались;
 - создай npc_state: current_goal, current_route, current_pressure, next_self_action_if_ignored.
 
@@ -82,7 +88,6 @@ CURRENT STATE
 """.strip()
 
 
-
 def _one_line(value: Any, fallback: str = "—") -> str:
     if value is None:
         return fallback
@@ -94,7 +99,6 @@ def _one_line(value: Any, fallback: str = "—") -> str:
     return text or fallback
 
 
-
 def _visible_name(card: dict[str, Any]) -> str:
     for key in ("display_name", "visible_name", "name_ru", "russian_name", "name"):
         value = card.get(key)
@@ -103,12 +107,10 @@ def _visible_name(card: dict[str, Any]) -> str:
     return "—"
 
 
-
 def _short_list(items: Any, limit: int = 5) -> list[str]:
     if not isinstance(items, list):
         return []
     return [str(item) for item in items[:limit] if str(item).strip()]
-
 
 
 def _profile_lines(card: dict[str, Any]) -> list[str]:
@@ -129,7 +131,6 @@ def _profile_lines(card: dict[str, Any]) -> list[str]:
     ]
 
 
-
 def _append_character(lines: list[str], card: dict[str, Any]) -> None:
     lines.append(f"- **{_visible_name(card)}** — {_one_line(card.get('role'))}, {_one_line(card.get('age'))}")
     lines.append(f"  - **Кто это:** {_one_line(card.get('past_short'))}")
@@ -138,10 +139,33 @@ def _append_character(lines: list[str], card: dict[str, Any]) -> None:
     lines.append(f"  - **Привычки:** {_one_line(card.get('habits'))}")
 
 
+def _direction_scores(direction: dict[str, Any]) -> str:
+    scores = direction.get("scores") if isinstance(direction.get("scores"), dict) else {}
+    labels = (
+        ("trust", "доверие"),
+        ("attachment", "привязанность"),
+        ("attraction", "влечение"),
+        ("resentment", "обида"),
+        ("jealousy", "ревность"),
+        ("protectiveness", "защита"),
+    )
+    return ", ".join(f"{label}: {scores.get(key, 0)}" for key, label in labels)
+
+
+def _append_direction(lines: list[str], source_name: str, target_name: str, direction: dict[str, Any]) -> None:
+    lines.append(f"  - **{source_name} → {target_name}:** {_direction_scores(direction)}")
+    lines.append(f"    - **Как воспринимает:** {_one_line(direction.get('summary'))}")
+    lines.append(f"    - **Чего сейчас хочет:** {_one_line(direction.get('current_need'))}")
+    lines.append(f"    - **Что считает допустимым:** {_one_line(direction.get('access_expectation'))}")
+    lines.append(f"    - **Незакрытая претензия:** {_one_line(direction.get('unresolved_grievance'))}")
+
 
 def build_setup_preview(bootstrap_json: dict[str, Any]) -> str:
     data = normalize_bootstrap_json(bootstrap_json)
     prepare_bootstrap_cast(data)
+    prepare_directed_relationships(data)
+    bootstrap_json["relationships"] = data.get("relationships", {})
+
     protagonist = data.get("protagonist") or {}
     characters = data.get("characters") or {}
     relationships = data.get("relationships") or {}
@@ -235,25 +259,29 @@ def build_setup_preview(bootstrap_json: dict[str, Any]) -> str:
     for relation in relationships.values():
         if not isinstance(relation, dict):
             continue
+        relation = normalize_relationship_entry(relation, characters, str(pc_id))
         a = relation.get("character_a")
         b = relation.get("character_b")
         if a in visible_ids and b in visible_ids:
             visible_relationships.append(relation)
     if visible_relationships:
-        lines.append("### Стартовые отношения")
+        lines.append("### Стартовые отношения — стороны не зеркальны")
         for relation in visible_relationships[:12]:
             a_card = characters.get(relation.get("character_a"), {})
             b_card = characters.get(relation.get("character_b"), {})
-            scores = relation.get("scores") or {}
-            score_line = ", ".join(f"{key}: {value}" for key, value in scores.items()) if scores else "уровни будут уточняться сценами"
-            lines.append(f"- **{_visible_name(a_card)} ↔ {_visible_name(b_card)}:** {_one_line(relation.get('status'))}. {score_line}")
-            open_threads = _short_list(relation.get("open_threads"), 3)
+            a_name = _visible_name(a_card)
+            b_name = _visible_name(b_card)
+            shared = relation.get("shared") if isinstance(relation.get("shared"), dict) else {}
+            lines.append(f"- **{a_name} ↔ {b_name}:** {_one_line(shared.get('status') or relation.get('status'))}")
+            _append_direction(lines, a_name, b_name, relation.get("a_to_b") or {})
+            _append_direction(lines, b_name, a_name, relation.get("b_to_a") or {})
+            open_threads = _short_list(shared.get("open_threads") or relation.get("open_threads"), 3)
             if open_threads:
-                lines.append("  - **Незакрыто:** " + "; ".join(open_threads))
+                lines.append("  - **Незакрыто между ними:** " + "; ".join(open_threads))
         lines.append("")
 
     lines.extend([
         "### Что дальше",
-        "Напиши `подтверждаю`, если всё подходит. Или укажи, что изменить: героиню, конкретного знакомого, его поведение, речь, отношения, сеттинг, стартовую сцену или план.",
+        "Напиши `подтверждаю`, если всё подходит. Или укажи, что изменить: героиню, конкретного знакомого, его поведение, речь, одну из сторон отношений, сеттинг, стартовую сцену или план.",
     ])
     return "\n".join(lines)
