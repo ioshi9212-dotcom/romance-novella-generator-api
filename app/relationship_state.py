@@ -176,6 +176,7 @@ def _direction_block(
     text_defaults: dict[str, str],
     source_id: str,
     target_id: str,
+    allow_legacy_scores: bool,
 ) -> dict[str, Any]:
     source = deepcopy(raw) if isinstance(raw, dict) else {}
     view = source.get("view") if isinstance(source.get("view"), dict) else {}
@@ -186,8 +187,10 @@ def _direction_block(
     for key in DIRECTION_SCORE_FIELDS:
         value = source_scores.get(key)
         if value is None and key == "attraction":
-            value = source_scores.get("romantic_interest", legacy_scores.get("romantic_interest"))
-        if value is None and key in legacy_scores:
+            value = source_scores.get("romantic_interest")
+            if value is None and allow_legacy_scores:
+                value = legacy_scores.get("romantic_interest")
+        if value is None and allow_legacy_scores and key in legacy_scores:
             value = legacy_scores.get(key)
         scores[key] = _score(value, defaults[key])
 
@@ -251,6 +254,7 @@ def normalize_relationship_entry(
         _view_defaults(character_a, character_b, card_a, card_b, source_is_player=character_a == protagonist_id),
         character_a,
         character_b,
+        character_a != protagonist_id,
     )
     b_to_a = _direction_block(
         source.get("b_to_a"),
@@ -260,17 +264,36 @@ def normalize_relationship_entry(
         _view_defaults(character_b, character_a, card_b, card_a, source_is_player=character_b == protagonist_id),
         character_b,
         character_a,
+        character_b != protagonist_id,
     )
 
-    compatibility_scores = {
-        "trust": round((a_to_b["scores"]["trust"] + b_to_a["scores"]["trust"]) / 2),
-        "tension": shared["scores"]["tension"],
-        "attachment": round((a_to_b["scores"]["attachment"] + b_to_a["scores"]["attachment"]) / 2),
-        "respect": round((a_to_b["scores"]["respect"] + b_to_a["scores"]["respect"]) / 2),
-        "fear": round((a_to_b["scores"]["fear"] + b_to_a["scores"]["fear"]) / 2),
-        "curiosity": round((a_to_b["scores"]["curiosity"] + b_to_a["scores"]["curiosity"]) / 2),
-        "romantic_interest": round((a_to_b["scores"]["attraction"] + b_to_a["scores"]["attraction"]) / 2),
-    }
+    if character_a == protagonist_id:
+        compatibility_direction = b_to_a
+    elif character_b == protagonist_id:
+        compatibility_direction = a_to_b
+    else:
+        compatibility_direction = None
+
+    if compatibility_direction is not None:
+        compatibility_scores = {
+            "trust": compatibility_direction["scores"]["trust"],
+            "tension": shared["scores"]["tension"],
+            "attachment": compatibility_direction["scores"]["attachment"],
+            "respect": compatibility_direction["scores"]["respect"],
+            "fear": compatibility_direction["scores"]["fear"],
+            "curiosity": compatibility_direction["scores"]["curiosity"],
+            "romantic_interest": compatibility_direction["scores"]["attraction"],
+        }
+    else:
+        compatibility_scores = {
+            "trust": round((a_to_b["scores"]["trust"] + b_to_a["scores"]["trust"]) / 2),
+            "tension": shared["scores"]["tension"],
+            "attachment": round((a_to_b["scores"]["attachment"] + b_to_a["scores"]["attachment"]) / 2),
+            "respect": round((a_to_b["scores"]["respect"] + b_to_a["scores"]["respect"]) / 2),
+            "fear": round((a_to_b["scores"]["fear"] + b_to_a["scores"]["fear"]) / 2),
+            "curiosity": round((a_to_b["scores"]["curiosity"] + b_to_a["scores"]["curiosity"]) / 2),
+            "romantic_interest": round((a_to_b["scores"]["attraction"] + b_to_a["scores"]["attraction"]) / 2),
+        }
 
     result = {
         **source,
