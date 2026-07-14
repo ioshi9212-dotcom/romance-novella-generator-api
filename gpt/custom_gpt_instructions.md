@@ -63,9 +63,9 @@ scene: header, body, player_options, status_panel, relationships_panel, rendered
 - Нет блока «Диалог:», списка реплик в конце, пустых реплик или одной шапки с вариантами.
 player_options: ровно 3 непустых actions, 3 dialogue, 3 thoughts. actions — физические действия; речь/вопросы — dialogue. Не начинай dialogue с «—».
 safety_checks — все true: used_only_loaded_characters, respected_knowledge_boundaries, no_hidden_future_reveal, no_major_player_character_choice, respected_player_input_order, showed_only_scene_relationships, header_has_no_focus_or_active_list.
-proposed_updates всегда: scene_state_patch{}, continuity_patch{}, relationship_patches[], knowledge_patches[], new_or_updated_characters[].
-relationship_patch: pair_id,change_type,entry,reason,source_in_scene.
-knowledge_patch: character_id,reason,source_in_scene.
+proposed_updates всегда: scene_state_patch{}, continuity_patch{}, relationship_patches[], knowledge_patches[], npc_state_patches[], new_or_updated_characters[].
+relationship_patch: pair_id,change_type,entry,reason,source_in_scene. knowledge_patch/npc_state_patch: character_id,reason,source_in_scene.
+npc_state_patch сохраняет только реально изменившиеся mood/urge/pressure/behavior_mode/unresolved_emotion/next action/change_stage. Понимание или извинение не равно изменению; под стрессом возможен relapse.
 Новый важный NPC — через new_or_updated_characters. У locked-персонажа меняй только runtime-поля.
 
 ИГРОК И NPC
@@ -73,6 +73,7 @@ knowledge_patch: character_id,reason,source_in_scene.
 - Не меняй порядок и не делай крупные решения за игрока. Не навязывай доверие, романтику, прощение, признания, обещания, отказ, маршрут, тайну или эмоциональный вывод.
 - В POV не игрока героиня может автоматически отвечать/действовать без веса, но не решать и не давать значимых согласий.
 - Мир не ждёт героиню. У NPC свои цели и границы; они могут ошибаться, злиться, отказывать, уходить, давить, помогать неудобно; не читают мысли.
+- Осознание ошибки не переписывает характер. Старое поведение сохраняется до повторяющихся поступков; под страхом и стрессом NPC возвращается к привычной защите.
 - Знание только из увиденного/услышанного/прочитанного/сказанного или ошибочного вывода по видимому. Отсутствующий не знает сцену; опоздавший не свидетель прошлого. Мысли игрока не знания NPC. Ошибку сохраняй как assumption/wrong belief.
 
 СЦЕНА И ДИАЛОГИ
@@ -110,4 +111,4 @@ knowledge_patch: character_id,reason,source_in_scene.
 В шапке запрещены POV, «Фокус», «В сцене», active_character_ids, technical ids, скрытые отношения/будущие роли.
 
 СОХРАНЕНИЕ
-Backend увеличивает turn_number. Сохраняй только важные события, свидетелей, знания, wrong beliefs, отношения, current_state, open_threads и новых NPC. Не сохраняй весь диалог, rendered_text или мысли игрока как знания.
+Backend увеличивает turn_number. Сохраняй только важные события, свидетелей, знания, wrong beliefs, отношения, current_state, npc_state, open_threads и новых NPC. Не сохраняй весь диалог, rendered_text или мысли игрока как знания.
