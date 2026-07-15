@@ -64,10 +64,109 @@ def _validate_item_id(section: str, item_id: str | None) -> str:
     value = (item_id or "").strip()
     if not value:
         raise BootstrapStageError(f"item_id is required for section {section}.")
-    pattern = PAIR_ID_RE if section == "relationships" else ID_RE
-    if not pattern.fullmatch(value):
+    if not ID_RE.fullmatch(value):
         raise BootstrapStageError(f"Invalid item_id for section {section}: {value}")
     return value
+
+
+def _valid_character_id(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text if ID_RE.fullmatch(text) else None
+
+
+def _valid_pair_id(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text if PAIR_ID_RE.fullmatch(text) else None
+
+
+def _normalize_relationship_entry(
+    item_id: str | None,
+    entry: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    supplied = str(item_id or "").strip()
+    embedded = _valid_pair_id(entry.get("pair_id"))
+    character_a = _valid_character_id(entry.get("character_a"))
+    character_b = _valid_character_id(entry.get("character_b"))
+    derived = f"{character_a}__{character_b}" if character_a and character_b else None
+    supplied_valid = _valid_pair_id(supplied)
+
+    candidates = {
+        source: candidate
+        for source, candidate in {
+            "item_id": supplied_valid,
+            "value.pair_id": embedded,
+            "value.character_a/value.character_b": derived,
+        }.items()
+        if candidate
+    }
+    unique_candidates = set(candidates.values())
+    if len(unique_candidates) > 1:
+        raise BootstrapStageError(
+            {
+                "code": "relationship_id_conflict",
+                "message": "Relationship identifiers disagree.",
+                "candidates": candidates,
+            }
+        )
+    if not unique_candidates:
+        raise BootstrapStageError(
+            {
+                "code": "invalid_relationship_item_id",
+                "received_item_id": supplied or None,
+                "expected": "<character_a>__<character_b>",
+                "recovery": "Provide value.pair_id or valid value.character_a and value.character_b.",
+            }
+        )
+
+    canonical = next(iter(unique_candidates))
+    canonical_a, canonical_b = canonical.split("__", 1)
+    if character_a and character_a != canonical_a:
+        raise BootstrapStageError(
+            {
+                "code": "relationship_id_conflict",
+                "message": "value.character_a does not match the canonical relationship id.",
+                "canonical_item_id": canonical,
+                "character_a": character_a,
+            }
+        )
+    if character_b and character_b != canonical_b:
+        raise BootstrapStageError(
+            {
+                "code": "relationship_id_conflict",
+                "message": "value.character_b does not match the canonical relationship id.",
+                "canonical_item_id": canonical,
+                "character_b": character_b,
+            }
+        )
+
+    normalized = dict(entry)
+    normalized["pair_id"] = canonical
+    normalized["character_a"] = canonical_a
+    normalized["character_b"] = canonical_b
+    return canonical, normalized
+
+
+def _normalize_relationship_bucket(entries: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for raw_item_id, raw_entry in entries.items():
+        if not isinstance(raw_entry, dict):
+            raise BootstrapStageError(
+                {
+                    "code": "invalid_relationship_entry",
+                    "item_id": str(raw_item_id),
+                    "message": "Each relationship entry must be an object.",
+                }
+            )
+        canonical, entry = _normalize_relationship_entry(str(raw_item_id), raw_entry)
+        if canonical in normalized and normalized[canonical] != entry:
+            raise BootstrapStageError(
+                {
+                    "code": "duplicate_relationship_id",
+                    "canonical_item_id": canonical,
+                }
+            )
+        normalized[canonical] = entry
+    return normalized
 
 
 def bootstrap_stage_progress(draft: dict[str, Any]) -> dict[str, Any]:
@@ -117,13 +216,17 @@ def save_bootstrap_part(
     stored_item_id: str | None = None
     if section in ENTRY_SECTIONS:
         if item_id in {None, ""}:
-            draft[section] = value
+            draft[section] = _normalize_relationship_bucket(value) if section == "relationships" else value
         else:
-            stored_item_id = _validate_item_id(section, item_id)
+            if section == "relationships":
+                stored_item_id, stored_value = _normalize_relationship_entry(item_id, value)
+            else:
+                stored_item_id = _validate_item_id(section, item_id)
+                stored_value = value
             bucket = draft.get(section)
             if not isinstance(bucket, dict):
                 bucket = {}
-            bucket[stored_item_id] = value
+            bucket[stored_item_id] = stored_value
             draft[section] = bucket
     else:
         if item_id not in {None, ""}:
