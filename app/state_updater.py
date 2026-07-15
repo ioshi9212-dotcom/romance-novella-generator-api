@@ -143,6 +143,12 @@ def _trim_continuity(continuity: dict[str, Any]) -> dict[str, Any]:
     continuity["maintenance_events"] = [
         item for item in (continuity.get("maintenance_events", []) or []) if isinstance(item, dict)
     ][-12:]
+    continuity["state_recovery_audits"] = [
+        item for item in (continuity.get("state_recovery_audits", []) or []) if isinstance(item, dict)
+    ][-6:]
+    continuity["state_compaction_reports"] = [
+        item for item in (continuity.get("state_compaction_reports", []) or []) if isinstance(item, dict)
+    ][-6:]
     return continuity
 
 
@@ -305,6 +311,14 @@ class StateUpdater:
             applied["maintenance"].append({"operation": "merge_continuity_patch", "turn": turn_number})
 
         for patch in updates.get("relationship_patches", []) or []:
+            uses_directional_fields = any(
+                key in patch
+                for key in ("direction_patch", "a_to_b", "b_to_a", "shared_patch", "from_character_id", "to_character_id")
+            )
+            if uses_directional_fields:
+                # The directional layer runs after the base updater. Applying the same
+                # patch here too would duplicate relationship history and recent_changes.
+                continue
             pid = patch.get("pair_id")
             if not pid:
                 rejected.append({"target": "relationships", "reason": "missing pair_id", "severity": "error"})
@@ -360,6 +374,13 @@ class StateUpdater:
             if not character_id:
                 rejected.append({"target": "knowledge", "reason": "missing character_id", "severity": "error"})
                 continue
+            card = characters.get(character_id)
+            if not isinstance(card, dict):
+                rejected.append({"target": f"knowledge.{character_id}", "reason": "unknown character_id", "severity": "error"})
+                continue
+            if card.get("available_to_scene") is False or card.get("introduced") is False:
+                rejected.append({"target": f"knowledge.{character_id}", "reason": "hidden or unavailable character cannot receive scene knowledge before reveal", "severity": "error"})
+                continue
             if not patch.get("source_in_scene") or not patch.get("reason"):
                 rejected.append({"target": f"knowledge.{character_id}", "reason": "knowledge patch requires reason and source_in_scene", "severity": "error"})
                 continue
@@ -392,7 +413,24 @@ class StateUpdater:
                         "certainty": patch.get("certainty", "medium"),
                     })
             if patch.get("add_known_facts"):
-                base["known_facts"] = _append_many(base.get("known_facts", []), patch["add_known_facts"])
+                known_facts = []
+                for item in patch["add_known_facts"]:
+                    if isinstance(item, dict):
+                        known_facts.append({
+                            **item,
+                            "turn": item.get("turn", turn_number),
+                            "source_type": item.get("source_type") or patch.get("source_type", "scene"),
+                            "source_in_scene": item.get("source_in_scene") or patch.get("source_in_scene"),
+                        })
+                    else:
+                        known_facts.append({
+                            "text": str(item),
+                            "turn": turn_number,
+                            "source_type": patch.get("source_type", "scene"),
+                            "source_in_scene": patch.get("source_in_scene"),
+                            "certainty": patch.get("certainty", "medium"),
+                        })
+                base["known_facts"] = _append_many(base.get("known_facts", []), known_facts)
             if patch.get("add_observations"):
                 observations = []
                 for item in patch["add_observations"]:
@@ -410,7 +448,23 @@ class StateUpdater:
                         assumptions.append({"text": str(item), "based_on": patch.get("source_in_scene"), "turn": turn_number, "may_be_wrong": True})
                 base["assumptions"] = _append_many(base.get("assumptions", []), assumptions)
             if patch.get("add_wrong_beliefs"):
-                base["wrong_beliefs"] = _append_many(base.get("wrong_beliefs", []), patch["add_wrong_beliefs"])
+                wrong_beliefs = []
+                for item in patch["add_wrong_beliefs"]:
+                    if isinstance(item, dict):
+                        wrong_beliefs.append({
+                            **item,
+                            "turn": item.get("turn", turn_number),
+                            "source_in_scene": item.get("source_in_scene") or patch.get("source_in_scene"),
+                            "may_be_wrong": True,
+                        })
+                    else:
+                        wrong_beliefs.append({
+                            "text": str(item),
+                            "turn": turn_number,
+                            "source_in_scene": patch.get("source_in_scene"),
+                            "may_be_wrong": True,
+                        })
+                base["wrong_beliefs"] = _append_many(base.get("wrong_beliefs", []), wrong_beliefs)
             if patch.get("add_recent_memories"):
                 base["recent_memories"] = _append_unique(base.get("recent_memories", []), patch["add_recent_memories"])[-10:]
             if patch.get("add_open_questions"):

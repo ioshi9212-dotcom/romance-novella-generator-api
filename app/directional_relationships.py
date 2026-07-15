@@ -186,6 +186,16 @@ def apply_directional_relationship_patches(
         if not uses_directional_fields:
             continue
         pid = str(patch.get("pair_id") or "")
+        if not pid:
+            result["rejected"].append({"target": "relationships", "reason": "missing pair_id", "severity": "error"})
+            continue
+        if not str(patch.get("reason") or "").strip() or not str(patch.get("source_in_scene") or "").strip():
+            result["rejected"].append({
+                "target": f"relationships.{pid}",
+                "reason": "directional relationship patch requires reason and source_in_scene",
+                "severity": "error",
+            })
+            continue
         base = relationships.get(pid)
         if not isinstance(base, dict):
             result["rejected"].append({"target": f"relationships.{pid}", "reason": "directional patch requires an existing pair", "severity": "error"})

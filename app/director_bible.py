@@ -537,6 +537,7 @@ def build_director_guidance(bundle: dict[str, Any]) -> dict[str, Any]:
             "queue_is_not_railroad": "события — вероятные давления; адаптируй их к действиям игрока, не заставляя героиню принимать решение",
             "no_spoilers": "hidden_lore, planned_reveals и функции hidden_core нельзя выводить в видимый текст до выполненного раскрытия",
             "no_boring_loop": "если в текущем кадре нет meaningful beat, двигай ближайшее допустимое событие или последствие",
+            "sarcasm_calibration": "сухая ирония или лёгкий сарказм — около 5–7% видимого текста: одна-две короткие ноты, не в каждом абзаце; не превращай всех персонажей в одинаково язвительных",
             "preserve_causality": "не создавай новый тайный ответ на ходу, если уже есть world_truth или hidden_lore",
             "patch_status_only": "после сцены обновляй статусы через director_bible_patches; не переписывай world_truth",
         },
