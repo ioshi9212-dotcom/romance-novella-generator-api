@@ -23,12 +23,16 @@ text = replace_once(
     "safe prompt chunk size",
 )
 
-text = replace_once(
-    text,
-    '''        "status": pending.get("turn_status") or "pending",\n        "scene": None,\n        "scene_prompt": first_chunk,\n        "scene_prompt_chunk": first_chunk,\n''',
-    '''        "status": pending.get("turn_status") or "pending",\n        "scene_prompt_chunk": first_chunk,\n''',
-    "remove duplicated first prompt chunk",
-)
+duplicated_prompt = '''        "status": pending.get("turn_status") or "pending",\n        "scene": None,\n        "scene_prompt": first_chunk,\n        "scene_prompt_chunk": first_chunk,\n'''
+chunk_only_prompt = '''        "status": pending.get("turn_status") or "pending",\n        "scene_prompt_chunk": first_chunk,\n'''
+prompt_only = '''        "status": pending.get("turn_status") or "pending",\n        "scene_prompt": first_chunk,\n'''
+if prompt_only not in text:
+    if duplicated_prompt in text:
+        text = text.replace(duplicated_prompt, prompt_only, 1)
+    elif chunk_only_prompt in text:
+        text = text.replace(chunk_only_prompt, prompt_only, 1)
+    else:
+        raise SystemExit("missing patch anchor: single prompt copy")
 
 repair_helper = '''\n\ndef _repair_pending_prompt_chunks(manager: SessionManager, session_id: str, pending: dict[str, Any]) -> dict[str, Any]:\n    chunks = pending.get("prompt_chunks")\n    if not isinstance(chunks, list) or not chunks or not all(isinstance(chunk, str) for chunk in chunks):\n        return pending\n    stored_size = int(pending.get("prompt_chunk_size") or 0)\n    needs_repair = stored_size != TURN_PROMPT_CHUNK_SIZE or any(len(chunk) > TURN_PROMPT_CHUNK_SIZE for chunk in chunks)\n    if not needs_repair:\n        return pending\n    full_prompt = "".join(chunks)\n    repaired_chunks = _split_prompt_chunks(full_prompt)\n    repaired = {\n        **pending,\n        "scene_prompt_sha256": _hash_text(full_prompt),\n        "prompt_chunk_count": len(repaired_chunks),\n        "prompt_chunk_size": TURN_PROMPT_CHUNK_SIZE,\n        "prompt_chunks": repaired_chunks,\n        "prompt_chunks_repaired_at": now_iso(),\n    }\n    manager.storage.write_json(session_id, "pending_turn.json", repaired)\n    return repaired\n'''
 
