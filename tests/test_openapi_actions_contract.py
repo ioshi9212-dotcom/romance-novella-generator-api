@@ -278,6 +278,6 @@ def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
         "finalizeBootstrapPreview",
         "mode — только createSession/processTurn",
         "hidden_core",
-        "полной скрытой карточкой",
+        "скрытая полная карточка",
     ):
         assert marker in instructions
