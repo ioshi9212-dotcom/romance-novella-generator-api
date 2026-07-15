@@ -116,12 +116,15 @@ def save_bootstrap_part(
     draft = _load_draft(manager, session_id)
     stored_item_id: str | None = None
     if section in ENTRY_SECTIONS:
-        stored_item_id = _validate_item_id(section, item_id)
-        bucket = draft.get(section)
-        if not isinstance(bucket, dict):
-            bucket = {}
-        bucket[stored_item_id] = value
-        draft[section] = bucket
+        if item_id in {None, ""}:
+            draft[section] = value
+        else:
+            stored_item_id = _validate_item_id(section, item_id)
+            bucket = draft.get(section)
+            if not isinstance(bucket, dict):
+                bucket = {}
+            bucket[stored_item_id] = value
+            draft[section] = bucket
     else:
         if item_id not in {None, ""}:
             raise BootstrapStageError(f"item_id is not allowed for section {section}.")
