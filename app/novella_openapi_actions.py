@@ -37,6 +37,14 @@ def _string_array() -> dict[str, Any]:
     return {"type": "array", "items": {"type": "string"}}
 
 
+def _bootstrap_compat(schema: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **schema,
+        "deprecated": True,
+        "description": "Compatibility recovery only. Canonical callers keep this field inside bootstrap_json.",
+    }
+
+
 def _json_response(description: str, schema: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "description": description,
@@ -164,7 +172,22 @@ CREATE_SESSION_SCHEMA = _schema_obj(
 
 BOOTSTRAP_PREVIEW_SCHEMA = _schema_obj(
     {
-        "bootstrap_json": {"$ref": "#/components/schemas/BootstrapPayload"},
+        "bootstrap_json": {
+            "$ref": "#/components/schemas/BootstrapPayload",
+            "description": "Canonical request field. It must contain the entire bootstrap object and all root fields.",
+        },
+        "protagonist": _bootstrap_compat(_loose_obj()),
+        "characters": _bootstrap_compat(_loose_obj()),
+        "relationships": _bootstrap_compat(_loose_obj()),
+        "knowledge": _bootstrap_compat(_loose_obj()),
+        "story_plan": _bootstrap_compat(_loose_obj()),
+        "director_bible": _bootstrap_compat(_loose_obj()),
+        "current_state": _bootstrap_compat(_loose_obj()),
+        "npc_state": _bootstrap_compat(_loose_obj()),
+        "future_locks": _bootstrap_compat(_loose_obj()),
+        "continuity": _bootstrap_compat(_loose_obj()),
+        "scene_history": _bootstrap_compat({"type": "array", "items": _loose_obj()}),
+        "turns": _bootstrap_compat({"type": "array", "items": _loose_obj()}),
     },
     required=["bootstrap_json"],
 )
