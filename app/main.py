@@ -112,7 +112,7 @@ def _new_turn_id() -> str:
     return "turn_" + uuid.uuid4().hex[:12]
 
 
-TURN_PROMPT_CHUNK_SIZE = 12000
+TURN_PROMPT_CHUNK_SIZE = 4500
 
 
 def _split_prompt_chunks(text: str, chunk_size: int = TURN_PROMPT_CHUNK_SIZE) -> list[str]:
@@ -187,9 +187,7 @@ def _pending_turn_response(pending: dict[str, Any], session_id: str) -> dict[str
     return {
         "session_id": pending.get("session_id") or session_id,
         "status": pending.get("turn_status") or "pending",
-        "scene": None,
         "scene_prompt": first_chunk,
-        "scene_prompt_chunk": first_chunk,
         "prompt_chunk_index": 0,
         "prompt_chunk_count": chunk_count,
         "has_more_prompt_chunks": has_more,
@@ -381,11 +379,35 @@ def _save_pending_turn(manager: SessionManager, session_id: str, player_input: s
     return pending
 
 
+
+
+def _repair_pending_prompt_chunks(manager: SessionManager, session_id: str, pending: dict[str, Any]) -> dict[str, Any]:
+    chunks = pending.get("prompt_chunks")
+    if not isinstance(chunks, list) or not chunks or not all(isinstance(chunk, str) for chunk in chunks):
+        return pending
+    stored_size = int(pending.get("prompt_chunk_size") or 0)
+    needs_repair = stored_size != TURN_PROMPT_CHUNK_SIZE or any(len(chunk) > TURN_PROMPT_CHUNK_SIZE for chunk in chunks)
+    if not needs_repair:
+        return pending
+    full_prompt = "".join(chunks)
+    repaired_chunks = _split_prompt_chunks(full_prompt)
+    repaired = {
+        **pending,
+        "scene_prompt_sha256": _hash_text(full_prompt),
+        "prompt_chunk_count": len(repaired_chunks),
+        "prompt_chunk_size": TURN_PROMPT_CHUNK_SIZE,
+        "prompt_chunks": repaired_chunks,
+        "prompt_chunks_repaired_at": now_iso(),
+    }
+    manager.storage.write_json(session_id, "pending_turn.json", repaired)
+    return repaired
+
+
 def _load_pending_turn(manager: SessionManager, session_id: str) -> dict[str, Any]:
     pending = manager.storage.read_json(session_id, "pending_turn.json", default={})
     if isinstance(pending, dict):
         pending.setdefault("session_id", session_id)
-        return pending
+        return _repair_pending_prompt_chunks(manager, session_id, pending)
     return {}
 
 
@@ -776,7 +798,7 @@ def get_scene_contract(session_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.post("/api/v1/sessions/{session_id}/turn", response_model=TurnResponse, dependencies=[Depends(require_api_key)], operation_id="processTurn")
+@app.post("/api/v1/sessions/{session_id}/turn", response_model=TurnResponse, response_model_exclude_none=True, dependencies=[Depends(require_api_key)], operation_id="processTurn")
 def process_turn(session_id: str, request: TurnRequest) -> dict:
     player_input = (request.player_input or "").strip()
     if not player_input:
@@ -792,7 +814,7 @@ def process_turn(session_id: str, request: TurnRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@app.post("/api/v1/sessions/{session_id}/advance-time", response_model=TurnResponse, dependencies=[Depends(require_api_key)], operation_id="advanceTime")
+@app.post("/api/v1/sessions/{session_id}/advance-time", response_model=TurnResponse, response_model_exclude_none=True, dependencies=[Depends(require_api_key)], operation_id="advanceTime")
 def advance_time(session_id: str, request: AdvanceTimeRequest) -> dict:
     player_input = (request.player_input or "").strip()
     if not player_input:
