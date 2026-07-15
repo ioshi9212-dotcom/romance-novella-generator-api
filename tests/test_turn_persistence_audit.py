@@ -223,7 +223,7 @@ def test_fifteen_turns_persist_only_durable_state_and_run_real_maintenance():
     assert all(item.get("source_in_scene") for item in coworker_knowledge["known_facts"] if isinstance(item, dict) and item.get("turn"))
 
     relationship = relationships[PAIR_ID]
-    assert relationship["b_to_a"]["current_view"] == "Рен учитывает результат хода 15"
+    assert relationship["a_to_b"]["current_view"] == "Рен учитывает результат хода 15"
     assert relationship["shared"]["last_major_event"] == "ход 15"
     assert len(relationship["history"]) == 15
     assert [item["turn"] for item in relationship["history"]] == list(range(1, 16))
@@ -300,7 +300,7 @@ def test_semantically_invalid_updates_are_rejected_and_not_persisted():
             "current_mood": "ЭТО НЕ ДОЛЖНО СОХРАНИТЬСЯ",
         }
     ]
-    response["proposed_updates"]["new_or_updated_characters"] = [{"id": "coworker_01", "age": 99}]
+    response["proposed_updates"]["new_or_updated_characters"] = [{"id": "coworker_01", "name": "Ren Ashford", "role": "coworker", "age": 99}]
     response["proposed_updates"]["relationship_patches"] = [
         {
             "pair_id": "ghost_a__ghost_b",
