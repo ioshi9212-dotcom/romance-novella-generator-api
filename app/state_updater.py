@@ -532,18 +532,20 @@ class StateUpdater:
         applied["turns"].append({"operation": "append_compact", "turn": turn_number})
 
         scene_history, turns, continuity, compacted = _auto_compact_runtime_history(scene_history, turns, continuity, turn_number)
+        previous_maintenance = current_state.get("maintenance") if isinstance(current_state.get("maintenance"), dict) else {}
         maintenance = {
+            **previous_maintenance,
             "last_saved_turn_number": turn_number,
             "state_recovery_audit_due": turn_number > 0 and turn_number % 10 == 0,
             "state_compaction_cleanup_due": turn_number > 0 and turn_number % 15 == 0,
             "continuity_check_required_next": turn_number > 0 and turn_number % 10 == 0,
             "memory_review_required_next": turn_number > 0 and turn_number % 15 == 0,
-            "backend_compacted_after_turn": turn_number if compacted else (current_state.get("maintenance") or {}).get("backend_compacted_after_turn"),
-            "last_compact_turn": turn_number if compacted else (current_state.get("maintenance") or {}).get("last_compact_turn"),
+            "backend_compacted_after_turn": turn_number if compacted else previous_maintenance.get("backend_compacted_after_turn"),
+            "last_compact_turn": turn_number if compacted else previous_maintenance.get("last_compact_turn"),
             "memory_chunk_count": len(continuity.get("memory_chunks", []) or []),
             "recent_scene_history_kept": len(scene_history),
             "recent_turns_kept": len(turns),
-            "notes": [],
+            "notes": [str(item) for item in (previous_maintenance.get("notes", []) or [])][-8:],
         }
         current_state["maintenance"] = maintenance
         applied["maintenance"].append({"operation": "update_flags", "turn": turn_number, "compacted": compacted})
