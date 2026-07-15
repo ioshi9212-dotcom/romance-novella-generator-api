@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -31,6 +31,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Apply full turn persistence audit
+        run: |
+          python scripts/apply_full_turn_persistence_audit.py
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+            git add app/main.py app/state_updater.py app/directional_relationships.py app/scene_contract_builder.py app/director_bible.py
+            git commit -m "Complete turn persistence audits and directing calibration"
+            git push origin HEAD:agent/full-turn-persistence-audit
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
