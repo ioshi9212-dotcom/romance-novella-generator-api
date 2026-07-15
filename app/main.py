@@ -187,7 +187,7 @@ def _pending_turn_response(pending: dict[str, Any], session_id: str) -> dict[str
     return {
         "session_id": pending.get("session_id") or session_id,
         "status": pending.get("turn_status") or "pending",
-        "scene_prompt_chunk": first_chunk,
+        "scene_prompt": first_chunk,
         "prompt_chunk_index": 0,
         "prompt_chunk_count": chunk_count,
         "has_more_prompt_chunks": has_more,
