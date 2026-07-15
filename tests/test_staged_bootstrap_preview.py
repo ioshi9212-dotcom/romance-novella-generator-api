@@ -54,6 +54,71 @@ def test_actions_schema_exposes_small_staged_bootstrap_calls():
     assert "bootstrap_json" not in request_schema["properties"]
 
 
+def test_relationship_item_id_recovers_from_character_fields():
+    client = TestClient(app)
+    session_id = _create_session(client)
+
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/bootstrap-part",
+        json={
+            "section": "relationships",
+            "item_id": "elena_voss_lucas_hale",
+            "value": {
+                "pair_id": "elena_voss_lucas_hale",
+                "character_a": "elena_voss",
+                "character_b": "lucas_hale",
+                "type": "colleagues",
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["stored"] is True
+    assert payload["item_id"] == "elena_voss__lucas_hale"
+    assert payload["progress"]["entry_counts"]["relationships"] == 1
+
+
+def test_relationship_item_id_conflict_is_rejected():
+    client = TestClient(app)
+    session_id = _create_session(client)
+
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/bootstrap-part",
+        json={
+            "section": "relationships",
+            "item_id": "elena_voss__lucas_hale",
+            "value": {
+                "pair_id": "elena_voss__marcus_hale",
+                "character_a": "elena_voss",
+                "character_b": "lucas_hale",
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "relationship_id_conflict"
+
+
+def test_relationship_item_id_without_recovery_fields_is_rejected():
+    client = TestClient(app)
+    session_id = _create_session(client)
+
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/bootstrap-part",
+        json={
+            "section": "relationships",
+            "item_id": "elena_voss_lucas_hale",
+            "value": {"type": "colleagues"},
+        },
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid_relationship_item_id"
+    assert detail["expected"] == "<character_a>__<character_b>"
+
+
 def test_finalize_rejects_incomplete_staged_bootstrap():
     client = TestClient(app)
     session_id = _create_session(client)
