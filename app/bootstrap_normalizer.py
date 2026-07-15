@@ -74,6 +74,57 @@ def _as_str(value: Any, fallback: str = "—") -> str:
     return str(value).strip() or fallback
 
 
+
+
+AGE_NUMBER_RE = re.compile(r"(?<!\d)(\d{1,3}(?:[.,]\d+)?)(?!\d)")
+AGE_UNKNOWN_VALUES = {
+    "", "—", "-", "не указано", "неизвестно", "неизвестен", "unknown", "n/a", "none", "null",
+}
+BOOTSTRAP_PLACEHOLDER_VALUES = {
+    "", "—", "-", "не указано", "старт", "стартовая локация", "начало истории",
+    "начать первую сцену", "открыть первую сцену", "будет уточняться",
+}
+
+
+def _normalize_age(value: Any) -> int | float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.strip().lower().split())
+    if text in AGE_UNKNOWN_VALUES:
+        return None
+    matches = AGE_NUMBER_RE.findall(text)
+    if len(matches) != 1:
+        return None
+    number = float(matches[0].replace(",", "."))
+    return int(number) if number.is_integer() else number
+
+
+def _is_bootstrap_placeholder(value: Any) -> bool:
+    text = " ".join(str(value or "").strip().lower().split())
+    return text in BOOTSTRAP_PLACEHOLDER_VALUES or any(
+        snippet in text for snippet in ("будет уточняться", "не указано", "placeholder")
+    )
+
+
+def _normalize_scene_state(current_state: dict[str, Any], story_plan: dict[str, Any]) -> str:
+    raw = _as_str(current_state.get("scene_state"), "")
+    if raw and not _is_bootstrap_placeholder(raw):
+        return raw
+    for candidate in (
+        current_state.get("scene_goal"),
+        story_plan.get("opening_scene_intent"),
+        story_plan.get("protagonist_start"),
+    ):
+        text = _as_str(candidate, "")
+        if text and not _is_bootstrap_placeholder(text):
+            return text
+    return raw or "начало истории"
+
+
 def _safe_id(value: Any, fallback: str) -> str:
     text = _latinize(_as_str(value, fallback), fallback).lower().strip()
     allowed: list[str] = []
@@ -231,7 +282,7 @@ def _normalize_character(card: Any, character_id: str, role_fallback: str = "npc
         "character_id": character_id,
         "name": technical_name,
         "role": role,
-        "age": card.get("age", "не указано"),
+        "age": _normalize_age(card.get("age")),
         "introduced": bool(card.get("introduced", True)),
         "known_to_player": bool(card.get("known_to_player", role == "player_character")),
         "locked": bool(card.get("locked", True)),
@@ -451,6 +502,7 @@ def _normalize_current_state(current_state: Any, story_plan: dict[str, Any], pro
     slots = story_plan.get("status_slots", [])
     custom_source = _as_list(status.get("custom"), [])
     custom = []
+    scene_state = _normalize_scene_state(current_state, story_plan)
     for index in range(2):
         slot = slots[index] if index < len(slots) and isinstance(slots[index], dict) else {}
         source = custom_source[index] if index < len(custom_source) else {}
@@ -470,7 +522,7 @@ def _normalize_current_state(current_state: Any, story_plan: dict[str, Any], pro
         "time": _as_str(current_state.get("time"), "время не задано"),
         "location": _as_str(current_state.get("location"), "стартовая локация"),
         "weather": _as_str(current_state.get("weather"), "атмосфера не задана"),
-        "scene_state": _as_str(current_state.get("scene_state"), "начало истории"),
+        "scene_state": scene_state,
         "player_character_id": _as_str(current_state.get("player_character_id") or current_state.get("protagonist_id"), protagonist_id),
         "active_character_ids": _as_list(current_state.get("active_character_ids"), [protagonist_id]),
         "nearby_character_ids": _as_list(current_state.get("nearby_character_ids"), []),
