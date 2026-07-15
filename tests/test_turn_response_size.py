@@ -65,9 +65,9 @@ def test_process_turn_returns_one_small_copy_of_first_chunk(monkeypatch):
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert "scene_prompt" not in payload
+    assert "scene_prompt_chunk" not in payload
     assert "scene" not in payload
-    assert len(payload["scene_prompt_chunk"]) <= TURN_PROMPT_CHUNK_SIZE
+    assert len(payload["scene_prompt"]) <= TURN_PROMPT_CHUNK_SIZE
     assert payload["prompt_chunk_count"] > 1
     assert len(response.content) < SAFE_ACTION_RESPONSE_BYTES
 
@@ -104,7 +104,7 @@ def test_retry_repairs_legacy_large_pending_chunks(monkeypatch):
         json={"player_input": PLAYER_INPUT, "mode": "gpt_actions"},
     )
     assert retried.status_code == 200, retried.text
-    assert len(retried.json()["scene_prompt_chunk"]) <= TURN_PROMPT_CHUNK_SIZE
+    assert len(retried.json()["scene_prompt"]) <= TURN_PROMPT_CHUNK_SIZE
     assert len(retried.content) < SAFE_ACTION_RESPONSE_BYTES
 
     repaired = manager.storage.read_json(session_id, "pending_turn.json")
