@@ -73,22 +73,29 @@ def _validate_item_id(section: str, item_id: str | None) -> str:
 def bootstrap_stage_progress(draft: dict[str, Any]) -> dict[str, Any]:
     missing: list[str] = []
     for section in sorted(SINGLE_SECTIONS):
-        if not isinstance(draft.get(section), dict) or not draft.get(section):
+        if section not in draft or not isinstance(draft.get(section), dict):
             missing.append(section)
     for section in sorted(ENTRY_SECTIONS):
-        if not isinstance(draft.get(section), dict) or not draft.get(section):
+        if section not in draft or not isinstance(draft.get(section), dict):
             missing.append(section)
+    if isinstance(draft.get("characters"), dict) and not draft.get("characters"):
+        if "characters" not in missing:
+            missing.append("characters")
+
     counts = {
         section: len(draft.get(section) or {}) if isinstance(draft.get(section), dict) else 0
         for section in sorted(ENTRY_SECTIONS)
     }
+    stored_sections = sorted(
+        section
+        for section in REQUIRED_SECTIONS
+        if section in draft and isinstance(draft.get(section), dict)
+    )
     return {
         "ready_to_finalize": not missing,
-        "missing_sections": missing,
+        "missing_sections": sorted(missing),
         "entry_counts": counts,
-        "stored_sections": sorted(
-            section for section in REQUIRED_SECTIONS if isinstance(draft.get(section), dict) and draft.get(section)
-        ),
+        "stored_sections": stored_sections,
     }
 
 
@@ -154,11 +161,7 @@ def assemble_staged_bootstrap(manager: Any, session_id: str) -> tuple[dict[str, 
             status_code=409,
         )
 
-    assembled = {
-        key: value
-        for key, value in draft.items()
-        if key != "_staging"
-    }
+    assembled = {key: value for key, value in draft.items() if key != "_staging"}
     assembled["scene_history"] = []
     assembled["turns"] = []
     return assembled, progress
