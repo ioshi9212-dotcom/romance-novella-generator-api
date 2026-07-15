@@ -35,10 +35,11 @@ jobs:
       - name: Apply full turn persistence audit
         run: |
           python scripts/apply_full_turn_persistence_audit.py
+          python scripts/fix_turn_audit_tests.py
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
-            git add app/main.py app/state_updater.py app/directional_relationships.py app/scene_contract_builder.py app/director_bible.py
+            git add app/main.py app/state_updater.py app/directional_relationships.py app/scene_contract_builder.py app/director_bible.py tests/test_turn_persistence_audit.py
             git commit -m "Complete turn persistence audits and directing calibration"
             git push origin HEAD:agent/full-turn-persistence-audit
           fi
