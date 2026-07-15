@@ -262,7 +262,7 @@ def test_openapi_actions_hoist_json_schema_defs_into_object_components():
 def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
     instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
 
-    assert len(instructions) <= 8000
+    assert len(instructions) <= 7200
     for marker in (
         "processTurn",
         "getTurnPromptChunk",
@@ -274,8 +274,9 @@ def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
         "no_major_player_character_choice",
         "new_or_updated_characters",
         "В POV не игрока",
-        "mode разрешён только в createSession и processTurn",
-        "createBootstrapPreview только с bootstrap_json, без mode",
+        "saveBootstrapPart",
+        "finalizeBootstrapPreview",
+        "mode — только createSession/processTurn",
         "hidden_core",
         "полной скрытой карточкой",
     ):
