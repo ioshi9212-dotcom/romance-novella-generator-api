@@ -9,11 +9,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.openapi.utils import get_openapi
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
+from app.bootstrap_staging import BootstrapStageError, assemble_staged_bootstrap, save_bootstrap_part as save_staged_bootstrap_part
 from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
 from app.director_bible import apply_director_bible_patches, prepare_director_bible, validate_director_bible
 from app.id_utils import now_iso
-from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
+from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, SaveBootstrapPartRequest, SaveBootstrapPartResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
@@ -611,6 +612,18 @@ def _advance_time_locked(manager: SessionManager, session_id: str, request: Adva
     return _pending_turn_response(pending, session_id)
 
 
+def _prepare_bootstrap_preview_payload(bootstrap_json: dict[str, Any]) -> dict[str, Any]:
+    normalized_bootstrap = normalize_bootstrap_json(bootstrap_json)
+    errors = validate_bootstrap_result(normalized_bootstrap)
+    prepare_directional_relationships(normalized_bootstrap)
+    prepare_director_bible(normalized_bootstrap)
+    errors.extend(validate_directional_relationships(normalized_bootstrap))
+    errors.extend(validate_director_bible(normalized_bootstrap))
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    return normalized_bootstrap
+
+
 @app.get("/health", operation_id="health")
 def health() -> dict:
     settings = get_settings()
@@ -675,14 +688,7 @@ def apply_bootstrap_result_disabled(session_id: str) -> dict:
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-preview", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)], operation_id="createBootstrapPreview")
 def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) -> dict:
-    normalized_bootstrap = normalize_bootstrap_json(request.bootstrap_json)
-    errors = validate_bootstrap_result(normalized_bootstrap)
-    prepare_directional_relationships(normalized_bootstrap)
-    prepare_director_bible(normalized_bootstrap)
-    errors.extend(validate_directional_relationships(normalized_bootstrap))
-    errors.extend(validate_director_bible(normalized_bootstrap))
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
+    normalized_bootstrap = _prepare_bootstrap_preview_payload(request.bootstrap_json)
     manager = SessionManager()
     try:
         with _session_request_context(manager, session_id):
@@ -691,6 +697,44 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.post("/api/v1/sessions/{session_id}/bootstrap-part", response_model=SaveBootstrapPartResponse, dependencies=[Depends(require_api_key)], operation_id="saveBootstrapPart")
+def save_bootstrap_part_action(session_id: str, request: SaveBootstrapPartRequest) -> dict:
+    manager = SessionManager()
+    try:
+        with _session_request_context(manager, session_id):
+            return save_staged_bootstrap_part(
+                manager,
+                session_id,
+                section=request.section,
+                item_id=request.item_id,
+                value=request.value,
+            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BootstrapStageError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/v1/sessions/{session_id}/bootstrap-preview-finalize", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)], operation_id="finalizeBootstrapPreview")
+def finalize_bootstrap_preview(session_id: str) -> dict:
+    manager = SessionManager()
+    try:
+        with _session_request_context(manager, session_id):
+            staged_bootstrap, progress = assemble_staged_bootstrap(manager, session_id)
+            normalized_bootstrap = _prepare_bootstrap_preview_payload(staged_bootstrap)
+            response = manager.save_bootstrap_preview(session_id, normalized_bootstrap)
+            diagnostics = dict(response.get("diagnostics") or {})
+            diagnostics.update({"staged_bootstrap": True, "staged_progress": progress})
+            response["diagnostics"] = diagnostics
+            return response
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BootstrapStageError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-confirm", response_model=BootstrapConfirmResponse, dependencies=[Depends(require_api_key)], operation_id="confirmBootstrapPreview")

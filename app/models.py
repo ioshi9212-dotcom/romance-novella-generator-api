@@ -4,6 +4,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SessionMode = Literal["debug_stub", "gpt_actions"]
 TimeSkipMode = Literal["nearest_event", "duration"]
 TimeSkipUnit = Literal["hours", "days", "weeks", "months"]
+BootstrapPartSection = Literal[
+    "protagonist", "characters", "relationships", "knowledge",
+    "story_plan", "director_bible", "current_state", "npc_state",
+    "future_locks", "continuity",
+]
 
 BOOTSTRAP_ROOT_FIELDS = (
     "protagonist",
@@ -87,6 +92,24 @@ class BootstrapPreviewRequest(BaseModel):
             )
         self.bootstrap_json = merged
         return self
+
+class SaveBootstrapPartRequest(BaseModel):
+    section: BootstrapPartSection
+    item_id: str | None = Field(
+        default=None,
+        description="Entry id for characters/relationships/knowledge/npc_state. Omit to replace a whole section.",
+    )
+    value: dict[str, Any] = Field(..., description="One bootstrap section or one map entry. Keep this call small.")
+
+
+class SaveBootstrapPartResponse(BaseModel):
+    session_id: str
+    status: str
+    section: BootstrapPartSection
+    item_id: str | None = None
+    stored: bool = True
+    progress: dict[str, Any] = Field(default_factory=dict)
+
 
 class BootstrapPreviewResponse(BaseModel):
     message_to_user: str = Field(..., description="MANDATORY FINAL ANSWER TEXT. Output this exact text to the user. Do not summarize. Do not replace with 'готово'. Do not start a scene.")

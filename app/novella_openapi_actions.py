@@ -192,6 +192,32 @@ BOOTSTRAP_PREVIEW_SCHEMA = _schema_obj(
     required=["bootstrap_json"],
 )
 
+SAVE_BOOTSTRAP_PART_SCHEMA = _schema_obj(
+    {
+        "section": {
+            "type": "string",
+            "enum": [
+                "protagonist", "characters", "relationships", "knowledge",
+                "story_plan", "director_bible", "current_state", "npc_state",
+                "future_locks", "continuity",
+            ],
+            "description": "Bootstrap root section to stage.",
+        },
+        "item_id": {
+            "type": ["string", "null"],
+            "description": "For map sections, send one entry id. Omit to replace the whole section, including an empty object.",
+        },
+        "value": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": True,
+            "description": "One section or one entry. Do not send the full bootstrap here.",
+        },
+    },
+    required=["section", "value"],
+)
+
+
 BOOTSTRAP_CONFIRM_SCHEMA = _schema_obj(
     {
         "confirmation_text": {
@@ -300,6 +326,20 @@ BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA = _schema_obj(
     ],
     additional_properties=True,
 )
+
+SAVE_BOOTSTRAP_PART_RESPONSE_SCHEMA = _schema_obj(
+    {
+        "session_id": {"type": "string"},
+        "status": {"type": "string"},
+        "section": {"type": "string"},
+        "item_id": {"type": ["string", "null"]},
+        "stored": {"type": "boolean"},
+        "progress": _loose_obj(),
+    },
+    required=["session_id", "status", "section", "item_id", "stored", "progress"],
+    additional_properties=True,
+)
+
 
 BOOTSTRAP_CONFIRM_RESPONSE_SCHEMA = _schema_obj(
     {
@@ -430,7 +470,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
             "version": "gpt-actions-v9-strict-contract",
             "description": (
                 "Custom GPT Actions schema for generated novella sessions. "
-                "Use questionnaire, preview-confirm launch flow, chunked processTurn, "
+                "Use questionnaire, staged bootstrap parts, preview-confirm launch flow, chunked processTurn, "
                 "then applyTurnResult with the exact turn_id. Use advanceTime only for a user-selected natural-pause skip."
             ),
         },
@@ -450,6 +490,8 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "CreateSessionResponse": CREATE_SESSION_RESPONSE_SCHEMA,
                 "BootstrapPreviewRequest": BOOTSTRAP_PREVIEW_SCHEMA,
                 "BootstrapPreviewResponse": BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA,
+                "SaveBootstrapPartRequest": SAVE_BOOTSTRAP_PART_SCHEMA,
+                "SaveBootstrapPartResponse": SAVE_BOOTSTRAP_PART_RESPONSE_SCHEMA,
                 "BootstrapConfirmRequest": BOOTSTRAP_CONFIRM_SCHEMA,
                 "BootstrapConfirmResponse": BOOTSTRAP_CONFIRM_RESPONSE_SCHEMA,
                 "TurnRequest": TURN_SCHEMA,
@@ -530,6 +572,31 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                         ),
                         "404": _json_response("Session not found", _loose_obj()),
                         "409": _json_response("Session not active", _loose_obj()),
+                    },
+                }
+            },
+            "/api/v1/sessions/{session_id}/bootstrap-part": {
+                "post": {
+                    "operationId": "saveBootstrapPart",
+                    "summary": "Stage one small bootstrap section or one map entry. Preferred over one huge bootstrap request.",
+                    "parameters": [_session_id_param()],
+                    "requestBody": _request_body({"$ref": "#/components/schemas/SaveBootstrapPartRequest"}),
+                    "responses": {
+                        "200": _json_response("Bootstrap part stored.", {"$ref": "#/components/schemas/SaveBootstrapPartResponse"}),
+                        "409": _json_response("Session cannot accept bootstrap parts.", _loose_obj()),
+                        "422": _json_response("Invalid bootstrap part.", _loose_obj()),
+                    },
+                }
+            },
+            "/api/v1/sessions/{session_id}/bootstrap-preview-finalize": {
+                "post": {
+                    "operationId": "finalizeBootstrapPreview",
+                    "summary": "Assemble staged parts, validate them and create the visible bootstrap preview.",
+                    "parameters": [_session_id_param()],
+                    "responses": {
+                        "200": _json_response("Bootstrap preview created from staged parts.", {"$ref": "#/components/schemas/BootstrapPreviewResponse"}),
+                        "409": _json_response("Staged bootstrap is incomplete or session status is wrong.", _loose_obj()),
+                        "422": _json_response("Assembled bootstrap is invalid.", _loose_obj()),
                     },
                 }
             },
