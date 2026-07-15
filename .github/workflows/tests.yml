@@ -57,4 +57,14 @@ jobs:
           python -m pip install pytest==8.3.4 httpx==0.28.1
 
       - name: Run tests
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q 2>&1 | tee pytest-output.txt
+
+      - name: Upload pytest output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: turn-response-pytest-output
+          path: pytest-output.txt
