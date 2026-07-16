@@ -33,32 +33,43 @@ jobs:
 
           validators = Path('app/validators.py')
           text = validators.read_text(encoding='utf-8')
-          old_import = 'from app.id_utils import pair_id\n'
-          new_import = 'from app.directional_relationships import prepare_directional_relationships\nfrom app.id_utils import pair_id\n'
-          if old_import not in text:
-              raise SystemExit('validators import anchor missing')
-          text = text.replace(old_import, new_import, 1)
+          import_line = 'from app.directional_relationships import prepare_directional_relationships\n'
+          if import_line not in text:
+              marker = 'from app.id_utils import pair_id'
+              pos = text.find(marker)
+              if pos < 0:
+                  raise SystemExit('pair_id import not found')
+              text = text[:pos] + import_line + text[pos:]
 
-          anchor = '\n\ndef validate_bootstrap_result(data: dict[str, Any]) -> list[str]:\n'
-          helper = '''\n\ndef _repair_string_relationship_directions(data: dict[str, Any]) -> None:\n    relationships = data.get("relationships") if isinstance(data.get("relationships"), dict) else {}\n    preserved_views: list[tuple[str, str, str]] = []\n    for pair_key, relationship in relationships.items():\n        if not isinstance(relationship, dict):\n            continue\n        for direction_key in ("a_to_b", "b_to_a"):\n            value = relationship.get(direction_key)\n            if isinstance(value, str) and value.strip():\n                preserved_views.append((str(pair_key), direction_key, value.strip()))\n\n    prepare_directional_relationships(data)\n\n    repaired = data.get("relationships") if isinstance(data.get("relationships"), dict) else {}\n    for pair_key, direction_key, view_text in preserved_views:\n        relationship = repaired.get(pair_key)\n        direction = relationship.get(direction_key) if isinstance(relationship, dict) else None\n        if isinstance(direction, dict):\n            direction["current_view"] = view_text\n\n\ndef validate_bootstrap_result(data: dict[str, Any]) -> list[str]:\n'''
-          if anchor not in text:
-              raise SystemExit('validate function anchor missing')
-          text = text.replace(anchor, helper, 1)
+          helper_name = 'def _repair_string_relationship_directions'
+          if helper_name not in text:
+              func_marker = 'def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:'
+              pos = text.find(func_marker)
+              if pos < 0:
+                  raise SystemExit('validate_bootstrap_result not found')
+              helper = '''def _repair_string_relationship_directions(data: dict[str, Any]) -> None:\n    relationships = data.get("relationships") if isinstance(data.get("relationships"), dict) else {}\n    preserved_views: list[tuple[str, str, str]] = []\n    for pair_key, relationship in relationships.items():\n        if not isinstance(relationship, dict):\n            continue\n        for direction_key in ("a_to_b", "b_to_a"):\n            value = relationship.get(direction_key)\n            if isinstance(value, str) and value.strip():\n                preserved_views.append((str(pair_key), direction_key, value.strip()))\n\n    prepare_directional_relationships(data)\n\n    repaired = data.get("relationships") if isinstance(data.get("relationships"), dict) else {}\n    for pair_key, direction_key, view_text in preserved_views:\n        relationship = repaired.get(pair_key)\n        direction = relationship.get(direction_key) if isinstance(relationship, dict) else None\n        if isinstance(direction, dict):\n            direction["current_view"] = view_text\n\n\n'''
+              text = text[:pos] + helper + text[pos:]
 
-          old_body = '    prepare_bootstrap_cast(data)\n    errors.extend(_validate_with_schema(data, "bootstrap_output.schema.json"))\n'
-          new_body = '    prepare_bootstrap_cast(data)\n    _repair_string_relationship_directions(data)\n    errors.extend(_validate_with_schema(data, "bootstrap_output.schema.json"))\n'
-          if old_body not in text:
-              raise SystemExit('validate body anchor missing')
-          text = text.replace(old_body, new_body, 1)
+          call_line = '    _repair_string_relationship_directions(data)\n'
+          if call_line not in text:
+              func_pos = text.find('def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:')
+              cast_pos = text.find('    prepare_bootstrap_cast(data)\n', func_pos)
+              if cast_pos < 0:
+                  raise SystemExit('prepare_bootstrap_cast call not found')
+              insert_at = cast_pos + len('    prepare_bootstrap_cast(data)\n')
+              text = text[:insert_at] + call_line + text[insert_at:]
           validators.write_text(text, encoding='utf-8')
 
           directions = Path('app/directional_relationships.py')
           text = directions.read_text(encoding='utf-8')
-          prompt_anchor = '- Каждое направление: scores, current_view, current_need, current_expectation, access_boundary, interpretation_bias, unresolved_emotion, unresolved_grievances, wrong_beliefs, care_risk.\n'
-          prompt_replacement = prompt_anchor + '- a_to_b и b_to_a всегда объекты, не строки; русский текст помещай внутрь current_view и других полей.\n'
-          if prompt_anchor not in text:
-              raise SystemExit('direction prompt anchor missing')
-          text = text.replace(prompt_anchor, prompt_replacement, 1)
+          rule = '- a_to_b и b_to_a всегда объекты, не строки; русский текст помещай внутрь current_view и других полей.\n'
+          if rule not in text:
+              marker = '- Каждое направление:'
+              start = text.find(marker)
+              if start < 0:
+                  raise SystemExit('direction rule marker not found')
+              end = text.find('\n', start)
+              text = text[:end + 1] + rule + text[end + 1:]
           directions.write_text(text, encoding='utf-8')
 
           test_path = Path('tests/test_string_relationship_direction_repair.py')
