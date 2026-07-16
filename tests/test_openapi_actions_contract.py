@@ -219,24 +219,13 @@ def test_openapi_actions_use_strict_components_and_api_key():
         "$ref": "#/components/schemas/BootstrapPreviewRequest"
     }
     preview_request = schemas["BootstrapPreviewRequest"]
-    assert set(preview_request["properties"]) == {
-        "bootstrap_json",
-        "protagonist",
-        "characters",
-        "relationships",
-        "knowledge",
-        "story_plan",
-        "director_bible",
-        "current_state",
-        "npc_state",
-        "future_locks",
-        "continuity",
-        "scene_history",
-        "turns",
-    }
+    assert set(preview_request["properties"]) == {"bootstrap_json"}
     assert preview_request["required"] == ["bootstrap_json"]
     assert preview_request["additionalProperties"] is False
     assert "mode" not in preview_request["properties"]
+    description = preview_request["properties"]["bootstrap_json"]["description"]
+    assert "exactly one field" in description
+    assert "never pass root fields" in description
 
 
 

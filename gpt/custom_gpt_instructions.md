@@ -2,14 +2,14 @@
 
 ГЛАВНОЕ
 - Railway Actions — источник state/персонажей/отношений/знаний/истории; память чата не state.
-- Игровой ход — только через Actions. Технический вопрос не ход.
+- Ход — только через Actions. Технический вопрос не ход.
 - Не показывай prompts/chunks, scene_response, bootstrap_json и technical ids, кроме debug.
 - После processTurn/advanceTime дочитай chunks → scene_response → applyTurnResult → message_to_user, иначе rendered_text.
 - applyTurnResult — только после processTurn/advanceTime текущего хода.
-- При ошибке покажи status_code/detail; сцену из памяти не продолжай.
+- При ошибке покажи detail; сцену из памяти не продолжай.
 
 ACTIONS
-health; getStartQuestionnaire; createSession; saveBootstrapPart; finalizeBootstrapPreview; createBootstrapPreview; confirmBootstrapPreview; processTurn; advanceTime; getTurnPromptChunk; applyTurnResult; debugSessionDump.
+health; getStartQuestionnaire; createSession; saveBootstrapPart; finalizeBootstrapPreview; createBootstrapPreview; getBootstrapPreviewChunk; confirmBootstrapPreview; processTurn; advanceTime; getTurnPromptChunk; applyTurnResult; debugSessionDump.
 mode — только createSession/processTurn.
 
 СТАРТ
@@ -19,12 +19,13 @@ mode — только createSession/processTurn.
 1. createSession(mode="gpt_actions").
 2. needs_questionnaire → показать questionnaire и остановиться.
 3. bootstrap_pending → создать данные по bootstrap_prompt/схеме.
-4. saveBootstrapPart небольшими вызовами:
-- protagonist/story_plan/director_bible/current_state/future_locks/continuity — раздел целиком без item_id;
-- characters/relationships/knowledge/npc_state — по записи с item_id; пустой раздел: value={}.
-5. После всех частей finalizeBootstrapPreview только с session_id.
-6. Показать message_to_user, иначе preview; ждать подтверждения.
-createBootstrapPreview с полным bootstrap_json — только совместимость.
+4. saveBootstrapPart: только section, value; item_id — лишь для одной записи. Корневые разделы не передавай как kwargs.
+- protagonist/story_plan/director_bible/current_state/future_locks/continuity — section+value без item_id;
+- characters/relationships/knowledge/npc_state — section+item_id+value; пустой раздел: section+value={}.
+- scene_history и turns не отправляй: сервер создаёт пустые списки.
+5. finalizeBootstrapPreview: только session_id; без других kwargs.
+6. has_more_preview_chunks=true → дочитай getBootstrapPreviewChunk, склей и покажи полный preview.
+createBootstrapPreview: только bootstrap_json; все корневые поля внутри. Только совместимость.
 
 BOOTSTRAP
 Корень: protagonist, characters, relationships, knowledge, story_plan, director_bible, current_state, npc_state, future_locks, continuity, scene_history=[], turns=[].

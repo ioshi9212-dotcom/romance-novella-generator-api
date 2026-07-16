@@ -12,13 +12,16 @@ PREVIEW_TRANSPORT_FILE = "pending_setup_preview_transport.json"
 
 BOOTSTRAP_STAGING_TRANSPORT_RULES = """
 ТРАНСПОРТ BOOTSTRAP ЧЕРЕЗ ACTIONS — ОБЯЗАТЕЛЬНО
-- Не отправляй полный мир одним большим createBootstrapPreview: даже корректный JSON может превысить лимит Action-запроса.
-- Сохраняй bootstrap через saveBootstrapPart небольшими вызовами.
-- protagonist, story_plan, director_bible, current_state, future_locks и continuity сохраняй отдельными секциями.
-- characters, relationships, knowledge и npc_state сохраняй по одному item_id за вызов.
-- После сохранения всех обязательных частей вызови finalizeBootstrapPreview.
-- Если finalizeBootstrapPreview сообщает has_more_preview_chunks=true, не показывай первый кусок отдельно. Получи остальные части через getBootstrapPreviewChunk по порядку, склей без изменений и только затем покажи пользователю полный preview.
-- Не подтверждай preview и не запускай сцену, пока пользователь не увидел весь склеенный текст и явно его не подтвердил.
+- Основной путь: saveBootstrapPart небольшими вызовами, затем finalizeBootstrapPreview.
+- В saveBootstrapPart передавай ровно section, value и item_id только для одной записи map-раздела.
+- protagonist, story_plan, director_bible, current_state, future_locks и continuity сохраняй как section+value без item_id.
+- characters, relationships, knowledge и npc_state сохраняй по одной записи: section+item_id+value; пустой раздел — section+value={}.
+- Не передавай protagonist, characters, relationships, knowledge, story_plan, director_bible, current_state, npc_state, future_locks или continuity как отдельные kwargs любого Action.
+- scene_history и turns не отправляй: staged backend сам создаёт оба пустых списка.
+- В finalizeBootstrapPreview передавай только session_id, без body и без дополнительных kwargs.
+- createBootstrapPreview — только запасная совместимость: единственное поле body — bootstrap_json, а все root fields находятся внутри него.
+- Если preview разбит на части, дочитай getBootstrapPreviewChunk по порядку, склей без изменений и только затем покажи пользователю.
+- Не подтверждай preview и не запускай сцену, пока пользователь не увидел полный склеенный текст и явно его не подтвердил.
 """.strip()
 
 
