@@ -6,6 +6,11 @@ on:
       - agent/repair-string-relationship-directions
     paths:
       - .github/workflows/apply-string-direction-repair.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-string-direction-repair.yml
 
 permissions:
   contents: write
@@ -78,5 +83,3 @@ jobs:
           git add app/validators.py app/directional_relationships.py tests/test_string_relationship_direction_repair.py .github/workflows/apply-string-direction-repair.yml
           git commit -m "Repair string relationship directions before validation"
           git push origin HEAD:agent/repair-string-relationship-directions
-
-# trigger
