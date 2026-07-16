@@ -23,15 +23,14 @@ BOOTSTRAP_ROOT_FIELDS = {
 }
 
 
-def test_actions_schema_declares_known_spilled_bootstrap_fields():
+def test_actions_schema_hides_spilled_bootstrap_fields_from_custom_gpt():
     contract = build_openapi_actions("https://example.invalid")
     schema = contract["components"]["schemas"]["BootstrapPreviewRequest"]
 
     assert schema["required"] == ["bootstrap_json"]
     assert schema["additionalProperties"] is False
-    assert BOOTSTRAP_ROOT_FIELDS <= set(schema["properties"])
-    for field_name in BOOTSTRAP_ROOT_FIELDS:
-        assert schema["properties"][field_name]["deprecated"] is True
+    assert set(schema["properties"]) == {"bootstrap_json"}
+    assert BOOTSTRAP_ROOT_FIELDS.isdisjoint(schema["properties"])
 
 
 def test_request_folds_spilled_fields_back_inside_bootstrap_json():
