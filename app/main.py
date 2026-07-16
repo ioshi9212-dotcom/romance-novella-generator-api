@@ -8,6 +8,7 @@ import uuid
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.openapi.utils import get_openapi
 
+from app.bootstrap_content_repair import repair_bootstrap_content
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.bootstrap_staging import BootstrapStageError, assemble_staged_bootstrap, save_bootstrap_part as save_staged_bootstrap_part
 from app.config import get_settings
@@ -637,6 +638,7 @@ def _advance_time_locked(manager: SessionManager, session_id: str, request: Adva
 
 def _prepare_bootstrap_preview_payload(bootstrap_json: dict[str, Any]) -> dict[str, Any]:
     normalized_bootstrap = normalize_bootstrap_json(bootstrap_json)
+    repair_bootstrap_content(normalized_bootstrap)
     errors = validate_bootstrap_result(normalized_bootstrap)
     prepare_directional_relationships(normalized_bootstrap)
     prepare_director_bible(normalized_bootstrap)
