@@ -19,13 +19,13 @@ mode — только createSession/processTurn.
 1. createSession(mode="gpt_actions").
 2. needs_questionnaire → показать questionnaire и остановиться.
 3. bootstrap_pending → создать данные по bootstrap_prompt/схеме.
-4. saveBootstrapPart: только section, value и item_id для одной записи; Корневые разделы не передавай как kwargs.
+4. saveBootstrapPart: только section, value; item_id — лишь для одной записи. Корневые разделы не передавай как kwargs.
 - protagonist/story_plan/director_bible/current_state/future_locks/continuity — section+value без item_id;
 - characters/relationships/knowledge/npc_state — section+item_id+value; пустой раздел: section+value={}.
 - scene_history и turns не отправляй: сервер создаёт пустые списки.
-5. finalizeBootstrapPreview: только session_id, без knowledge/npc_state/continuity и других kwargs.
-6. Если has_more_preview_chunks=true, дочитай getBootstrapPreviewChunk, склей все части, затем покажи preview и жди подтверждения.
-createBootstrapPreview: только bootstrap_json; все корневые поля строго внутри него. Это запасная совместимость, не основной путь.
+5. finalizeBootstrapPreview: только session_id; без других kwargs.
+6. has_more_preview_chunks=true → дочитай getBootstrapPreviewChunk, склей и покажи полный preview.
+createBootstrapPreview: только bootstrap_json; все корневые поля внутри. Только совместимость.
 
 BOOTSTRAP
 Корень: protagonist, characters, relationships, knowledge, story_plan, director_bible, current_state, npc_state, future_locks, continuity, scene_history=[], turns=[].
