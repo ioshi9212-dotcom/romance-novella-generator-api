@@ -89,4 +89,19 @@ def test_openapi_exposes_bootstrap_preview_chunk_endpoint():
     client = TestClient(app)
     response = client.get("/openapi-actions.json")
     assert response.status_code == 200
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview-chunk" in response.json()["paths"]
+    schema = response.json()
+    path = schema["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview-chunk"]["get"]
+    assert path["operationId"] == "getBootstrapPreviewChunk"
+    assert path["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/BootstrapPreviewChunkResponse"
+    }
+
+    preview_response = schema["components"]["schemas"]["BootstrapPreviewResponse"]
+    required = set(preview_response["required"])
+    assert {
+        "preview_id",
+        "preview_chunk",
+        "preview_chunk_count",
+        "has_more_preview_chunks",
+        "next_preview_chunk_index",
+    } <= required
