@@ -6,6 +6,7 @@ from typing import Any
 
 
 BOOTSTRAP_PREVIEW_CHUNK_SIZE = 7000
+BOOTSTRAP_PREVIEW_INLINE_LIMIT = 20000
 PREVIEW_TEXT_FILE = "pending_setup_preview.md"
 PREVIEW_TRANSPORT_FILE = "pending_setup_preview_transport.json"
 
@@ -73,7 +74,10 @@ def build_bootstrap_preview_response(
     *,
     diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    metadata, chunks = _transport_metadata(preview, BOOTSTRAP_PREVIEW_CHUNK_SIZE)
+    if len(preview) <= BOOTSTRAP_PREVIEW_INLINE_LIMIT:
+        metadata, chunks = _transport_metadata(preview, BOOTSTRAP_PREVIEW_INLINE_LIMIT)
+    else:
+        metadata, chunks = _transport_metadata(preview, BOOTSTRAP_PREVIEW_CHUNK_SIZE)
     storage.write_json(session_id, PREVIEW_TRANSPORT_FILE, metadata)
 
     chunk_count = len(chunks)
@@ -90,6 +94,7 @@ def build_bootstrap_preview_response(
     response_diagnostics["preview_transport"] = {
         **metadata,
         "chunked": has_more,
+        "inline_limit": BOOTSTRAP_PREVIEW_INLINE_LIMIT,
         "returned_chunk_index": 0,
         "next_chunk_index": 1 if has_more else None,
         "next_required_action": next_required_action,
