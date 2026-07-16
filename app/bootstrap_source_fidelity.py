@@ -37,7 +37,7 @@ _GENERIC_PLAYER_VALUES = {
 _KNOWN_ROLE_EXPECTATIONS = (
     {
         "key": "older_brother",
-        "source_markers": ("старший брат", "старшего брата"),
+        "source_markers": ("старший брат", "старшего брата", "старшим брат"),
         "card_markers": ("brother", "старший брат", "брат героини", "брат"),
         "label": "старший брат",
     },
