@@ -13,6 +13,7 @@ BOOTSTRAP_DIRECTION_RULES = """
 Для каждой стартовой пары known_core/known_support заполни shared, a_to_b и b_to_a.
 - shared: type, status, shared_history, unresolved_threads, recent_changes, last_major_event.
 - Каждое направление: scores, current_view, current_need, current_expectation, access_boundary, interpretation_bias, unresolved_emotion, unresolved_grievances, wrong_beliefs, care_risk.
+- a_to_b и b_to_a всегда объекты, не строки; русский текст помещай внутрь current_view и других полей.
 - Стороны не обязаны чувствовать одинаково. Любовь не равна доверию; привязанность может сочетаться с обидой, ревностью, страхом и разными ожиданиями доступа.
 - Для каждого known_core обязательны хотя бы одна претензия, одно ошибочное убеждение, одна несовпадающая граница близости и способ ухудшить ситуацию, пытаясь помочь.
 """.strip()
