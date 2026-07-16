@@ -326,13 +326,13 @@ class StateUpdater:
         rejected: list[dict[str, Any]] = []
 
         bundle = self.storage.read_session_bundle(session_id)
-        current_state = bundle.get("current_state", {})
+        current_state = self.storage.read_json(session_id, "current_state.json", default=bundle.get("current_state", {}))
         relationships = bundle.get("relationships", {})
         knowledge = bundle.get("knowledge", {})
         characters = bundle.get("characters", {})
-        scene_history = bundle.get("scene_history", []) or []
-        turns = bundle.get("turns", []) or []
-        continuity = bundle.get("continuity", {}) or {}
+        scene_history = self.storage.read_json(session_id, "scene_history.json", default=[]) or []
+        turns = self.storage.read_json(session_id, "turns.json", default=[]) or []
+        continuity = self.storage.read_json(session_id, "continuity.json", default={}) or {}
 
         updates = scene_response.get("proposed_updates", {})
         scene_state_patch = updates.get("scene_state_patch", {})

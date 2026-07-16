@@ -127,10 +127,14 @@ def run_persistence_audit(
         return result
 
     bundle = storage.read_session_bundle(session_id)
-    current_state = bundle.get("current_state") if isinstance(bundle.get("current_state"), dict) else {}
-    scene_history = bundle.get("scene_history") if isinstance(bundle.get("scene_history"), list) else []
-    turns = bundle.get("turns") if isinstance(bundle.get("turns"), list) else []
-    continuity = bundle.get("continuity") if isinstance(bundle.get("continuity"), dict) else {}
+    current_state = storage.read_json(session_id, "current_state.json", default={})
+    scene_history = storage.read_json(session_id, "scene_history.json", default=[])
+    turns = storage.read_json(session_id, "turns.json", default=[])
+    continuity = storage.read_json(session_id, "continuity.json", default={})
+    current_state = current_state if isinstance(current_state, dict) else {}
+    scene_history = scene_history if isinstance(scene_history, list) else []
+    turns = turns if isinstance(turns, list) else []
+    continuity = continuity if isinstance(continuity, dict) else {}
     memory_chunks = continuity.get("memory_chunks") if isinstance(continuity.get("memory_chunks"), list) else []
 
     current_scene = next(

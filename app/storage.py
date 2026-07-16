@@ -77,6 +77,14 @@ def _compact_memory_chunk(chunk: Any) -> dict[str, Any]:
     }
 
 
+
+def _select_long_term_and_recent_chunks(chunks: Any, limit: int = 6) -> list[dict[str, Any]]:
+    values = [item for item in (chunks or []) if isinstance(item, dict)]
+    if len(values) <= limit:
+        return values
+    return [values[0], *values[-(limit - 1):]]
+
+
 def _compact_continuity_for_actions(continuity: Any) -> dict[str, Any]:
     if not isinstance(continuity, dict):
         return {}
@@ -88,10 +96,10 @@ def _compact_continuity_for_actions(continuity: Any) -> dict[str, Any]:
         result[key] = _compact_list(continuity.get(key, []), 10, 240)
     result["memory_chunks"] = [
         _compact_memory_chunk(chunk)
-        for chunk in (continuity.get("memory_chunks", []) or [])[-6:]
-        if isinstance(chunk, dict)
+        for chunk in _select_long_term_and_recent_chunks(continuity.get("memory_chunks", []), 6)
     ]
     result["maintenance_events"] = _compact_list(continuity.get("maintenance_events", []), 6, 200)
+    result["persistence_audits"] = _compact_list(continuity.get("persistence_audits", [])[-2:], 2, 240)
     result["gpt_memory_compacts"] = _compact_list(continuity.get("gpt_memory_compacts", []), 4, 200)
     return result
 
