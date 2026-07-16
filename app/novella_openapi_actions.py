@@ -174,20 +174,12 @@ BOOTSTRAP_PREVIEW_SCHEMA = _schema_obj(
     {
         "bootstrap_json": {
             "$ref": "#/components/schemas/BootstrapPayload",
-            "description": "Canonical request field. It must contain the entire bootstrap object and all root fields.",
+            "description": (
+                "Compatibility-only complete bootstrap request. The JSON body must contain exactly one field: "
+                "bootstrap_json. Keep every bootstrap root field inside bootstrap_json; never pass root fields "
+                "such as knowledge, npc_state, continuity, scene_history or turns as Action kwargs."
+            ),
         },
-        "protagonist": _bootstrap_compat(_loose_obj()),
-        "characters": _bootstrap_compat(_loose_obj()),
-        "relationships": _bootstrap_compat(_loose_obj()),
-        "knowledge": _bootstrap_compat(_loose_obj()),
-        "story_plan": _bootstrap_compat(_loose_obj()),
-        "director_bible": _bootstrap_compat(_loose_obj()),
-        "current_state": _bootstrap_compat(_loose_obj()),
-        "npc_state": _bootstrap_compat(_loose_obj()),
-        "future_locks": _bootstrap_compat(_loose_obj()),
-        "continuity": _bootstrap_compat(_loose_obj()),
-        "scene_history": _bootstrap_compat({"type": "array", "items": _loose_obj()}),
-        "turns": _bootstrap_compat({"type": "array", "items": _loose_obj()}),
     },
     required=["bootstrap_json"],
 )
@@ -656,8 +648,8 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "post": {
                     "operationId": "createBootstrapPreview",
                     "summary": (
-                        "Validate and save pending bootstrap JSON as a visible "
-                        "preview. Do not start the scene."
+                        "Compatibility-only full preview call. Send exactly one body field named bootstrap_json; "
+                        "never pass bootstrap root fields as separate Action kwargs. Prefer saveBootstrapPart."
                     ),
                     "parameters": [_session_id_param()],
                     "requestBody": _request_body(
