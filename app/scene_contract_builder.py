@@ -214,6 +214,17 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
     nearby_ids = current_state.get("nearby_character_ids", []) or []
     player_id = current_state.get("player_character_id") or current_state.get("player_character_character_id") or "protagonist"
     turn_number = int(current_state.get("turn_number", 0) or 0)
+    maintenance_state = current_state.get("maintenance") if isinstance(current_state.get("maintenance"), dict) else {}
+    audit_due = (
+        turn_number > 0
+        and turn_number % 10 == 0
+        and int(maintenance_state.get("state_recovery_audit_completed_turn") or 0) != turn_number
+    )
+    compaction_due = (
+        turn_number > 0
+        and turn_number % 15 == 0
+        and int(maintenance_state.get("state_compaction_cleanup_completed_turn") or 0) != turn_number
+    )
 
     focus_ids: list[str] = []
     for character_id in [player_id, *active_ids, *nearby_ids]:
@@ -326,10 +337,16 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         },
         "continuity": _compact_continuity(continuity),
         "maintenance": {
-            "state_recovery_audit_due": turn_number > 0 and turn_number % 10 == 0,
-            "state_compaction_cleanup_due": turn_number > 0 and turn_number % 15 == 0,
-            "continuity_check_required": turn_number > 0 and turn_number % 10 == 0,
-            "memory_review_required": turn_number > 0 and turn_number % 15 == 0,
+            "state_recovery_audit_due": audit_due,
+            "state_compaction_cleanup_due": compaction_due,
+            "continuity_check_required": audit_due,
+            "memory_review_required": compaction_due,
+            "state_recovery_audit_completed_turn": maintenance_state.get("state_recovery_audit_completed_turn"),
+            "state_recovery_audit_status": maintenance_state.get("state_recovery_audit_status"),
+            "state_recovery_audit_issue_count": maintenance_state.get("state_recovery_audit_issue_count", 0),
+            "state_compaction_cleanup_completed_turn": maintenance_state.get("state_compaction_cleanup_completed_turn"),
+            "state_compaction_cleanup_status": maintenance_state.get("state_compaction_cleanup_status"),
+            "state_compaction_cleanup_issue_count": maintenance_state.get("state_compaction_cleanup_issue_count", 0),
             "memory_chunk_count": len(memory_chunks),
         },
         "player_input_rules": {

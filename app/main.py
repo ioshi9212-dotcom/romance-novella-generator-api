@@ -19,6 +19,7 @@ from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
+from app.turn_maintenance import finalize_due_turn_maintenance
 from app.turn_processor import process_time_skip_gpt_actions, process_turn_debug_stub, process_turn_gpt_actions
 from app.time_skip import assess_time_skip, record_time_skip_result, validate_time_skip_scene_response
 from app.validators import validate_bootstrap_result, validate_scene_response
@@ -918,6 +919,7 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
                 bundle,
                 result,
             )
+            result = finalize_due_turn_maintenance(manager.storage, session_id, result)
             _mark_pending_turn_applied(manager, session_id, pending)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
