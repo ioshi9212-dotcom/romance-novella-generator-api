@@ -1,0 +1,240 @@
+........FFF.F......................................F.........FFF...FF
+=================================== FAILURES ===================================
+_______ test_large_bootstrap_preview_is_returned_in_safe_ordered_chunks ________
+
+    def test_large_bootstrap_preview_is_returned_in_safe_ordered_chunks():
+        client = TestClient(app)
+        session_id = _create_pending_session(client)
+        bootstrap = _valid_bootstrap()
+        marker = "УНИКАЛЬНЫЙ_ФРАГМЕНТ_PREVIEW"
+        bootstrap["characters"]["pc_01"]["past_short"] = marker + " " + (
+            "Она помнит конкретный эпизод прошлого, который влияет на её решения сейчас. " * 900
+        )
+    
+        response = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-preview",
+            json={"bootstrap_json": bootstrap},
+        )
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_bootstrap_preview_chunks.py:47: AssertionError
+__________ test_preview_chunk_rejects_stale_id_and_out_of_range_index __________
+
+    def test_preview_chunk_rejects_stale_id_and_out_of_range_index():
+        client = TestClient(app)
+        session_id = _create_pending_session(client)
+        bootstrap = _valid_bootstrap()
+        bootstrap["characters"]["pc_01"]["past_short"] = "Большое прошлое. " * 900
+    
+        preview = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-preview",
+            json={"bootstrap_json": bootstrap},
+        ).json()
+>       assert preview["has_more_preview_chunks"] is True
+E       KeyError: 'has_more_preview_chunks'
+
+tests/test_bootstrap_preview_chunks.py:97: KeyError
+___________ test_small_preview_keeps_legacy_single_response_behavior ___________
+
+    def test_small_preview_keeps_legacy_single_response_behavior():
+        client = TestClient(app)
+        session_id = _create_pending_session(client)
+    
+        response = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-preview",
+            json={"bootstrap_json": _valid_bootstrap()},
+        )
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_bootstrap_preview_chunks.py:122: AssertionError
+_ test_bootstrap_preview_returns_user_visible_preview_instead_of_422_for_repairable_draft _
+
+    def test_bootstrap_preview_returns_user_visible_preview_instead_of_422_for_repairable_draft():
+        client = TestClient(app)
+        created = client.post("/api/v1/sessions", json={
+            "genre": "romance with urban mysticism",
+            "setting_request": "modern city and ordinary work",
+            "protagonist_request": "adult heroine with a difficult private life",
+            "mode": "gpt_actions",
+        })
+        assert created.status_code == 200
+        session_id = created.json()["session_id"]
+    
+        response = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-preview",
+            json={"bootstrap_json": _broken_but_repairable_bootstrap()},
+        )
+    
+>       assert response.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_bootstrap_preview_resilience.py:131: AssertionError
+_________ test_turn_maintenance_repeats_at_every_ten_and_fifteen_turns _________
+
+    def test_turn_maintenance_repeats_at_every_ten_and_fifteen_turns():
+        client = TestClient(app)
+>       session_id = _create_active_session(client)
+
+tests/test_recurring_turn_maintenance.py:38: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+client = <starlette.testclient.TestClient object at 0x7fcde5554390>
+
+    def _create_active_session(client: TestClient) -> str:
+        created = client.post(
+            "/api/v1/sessions",
+            json={
+                "genre": "urban mystery",
+                "setting_request": "rainy office",
+                "protagonist_request": "guarded adult heroine",
+                "romance_request": "slow burn",
+                "mode": "gpt_actions",
+            },
+        )
+        assert created.status_code == 200, created.text
+        session_id = created.json()["session_id"]
+        preview = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-preview",
+            json={"bootstrap_json": _valid_bootstrap()},
+        )
+>       assert preview.status_code == 200, preview.text
+E       AssertionError: {"detail":["source_fidelity.protagonist.profile: generic fallback template replaced the user's concrete character details (15 template fields detected)."]}
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_turn_persistence_audit.py:35: AssertionError
+___________________ test_v9_preview_confirm_turn_apply_flow ____________________
+
+    def test_v9_preview_confirm_turn_apply_flow():
+        client = TestClient(app)
+        created = client.post("/api/v1/sessions", json={
+            "genre": "melodrama with mysticism",
+            "setting_request": "late modern office",
+            "protagonist_request": "guarded adult heroine",
+            "mode": "gpt_actions",
+        })
+        assert created.status_code == 200
+        session_id = created.json()["session_id"]
+    
+        preview = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()})
+>       assert preview.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests/test_smoke.py:271: AssertionError
+_______________ test_apply_turn_result_requires_pending_turn_id ________________
+
+    def test_apply_turn_result_requires_pending_turn_id():
+        client = TestClient(app)
+        created = client.post("/api/v1/sessions", json={
+            "genre": "melodrama with mysticism",
+            "setting_request": "late modern office",
+            "protagonist_request": "guarded adult heroine",
+            "mode": "gpt_actions",
+        }).json()
+        session_id = created["session_id"]
+>       assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()}).status_code == 200
+E       AssertionError: assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+E        +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_d6111f9f/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+E        +      where post = <starlette.testclient.TestClient object at 0x7fcde55ac410>.post
+
+tests/test_smoke.py:326: AssertionError
+____ test_apply_turn_result_recovers_body_and_safety_from_dirty_gpt_payload ____
+
+    def test_apply_turn_result_recovers_body_and_safety_from_dirty_gpt_payload():
+        client = TestClient(app)
+        created = client.post("/api/v1/sessions", json={
+            "genre": "urban mysticism",
+            "setting_request": "foggy port archive",
+            "protagonist_request": "guarded adult heroine",
+            "mode": "gpt_actions",
+        })
+        assert created.status_code == 200
+        session_id = created.json()["session_id"]
+    
+>       assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()}).status_code == 200
+E       AssertionError: assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+E        +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_907c27d4/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+E        +      where post = <starlette.testclient.TestClient object at 0x7fcde55b5010>.post
+
+tests/test_smoke.py:347: AssertionError
+__________ test_process_turn_prompt_chunk_endpoint_for_large_context ___________
+
+    def test_process_turn_prompt_chunk_endpoint_for_large_context():
+        client = TestClient(app)
+        created = client.post("/api/v1/sessions", json={
+            "genre": "urban mysticism",
+            "setting_request": "oversized archive",
+            "protagonist_request": "guarded adult heroine",
+            "mode": "gpt_actions",
+        })
+        assert created.status_code == 200
+        session_id = created.json()["session_id"]
+        bootstrap = _valid_bootstrap()
+        # Inflate one loaded character enough that processTurn must chunk the prompt.
+        bootstrap["characters"]["pc_01"]["personality"] = {"summary": "очень длинно " * 2500}
+>       assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": bootstrap}).status_code == 200
+E       AssertionError: assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+E        +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_70b41120/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+E        +      where post = <starlette.testclient.TestClient object at 0x7fcde5458210>.post
+
+tests/test_smoke.py:559: AssertionError
+________ test_runtime_history_is_compacted_without_full_scene_response _________
+
+    def test_runtime_history_is_compacted_without_full_scene_response():
+        client = TestClient(app)
+        created = client.post("/api/v1/sessions", json={
+            "genre": "urban mysticism",
+            "setting_request": "compact memory test",
+            "protagonist_request": "guarded adult heroine",
+            "mode": "gpt_actions",
+        })
+        session_id = created.json()["session_id"]
+>       assert client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview", json={"bootstrap_json": _valid_bootstrap()}).status_code == 200
+E       AssertionError: assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+E        +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_0de8ad7b/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+E        +      where post = <starlette.testclient.TestClient object at 0x7fcde5769010>.post
+
+tests/test_smoke.py:587: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bootstrap_preview_chunks.py::test_large_bootstrap_preview_is_returned_in_safe_ordered_chunks - assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/test_bootstrap_preview_chunks.py::test_preview_chunk_rejects_stale_id_and_out_of_range_index - KeyError: 'has_more_preview_chunks'
+FAILED tests/test_bootstrap_preview_chunks.py::test_small_preview_keeps_legacy_single_response_behavior - assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/test_bootstrap_preview_resilience.py::test_bootstrap_preview_returns_user_visible_preview_instead_of_422_for_repairable_draft - assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/test_recurring_turn_maintenance.py::test_turn_maintenance_repeats_at_every_ten_and_fifteen_turns - AssertionError: {"detail":["source_fidelity.protagonist.profile: generic fallback template replaced the user's concrete character details (15 template fields detected)."]}
+assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/test_smoke.py::test_v9_preview_confirm_turn_apply_flow - assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+FAILED tests/test_smoke.py::test_apply_turn_result_requires_pending_turn_id - AssertionError: assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+ +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_d6111f9f/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+ +      where post = <starlette.testclient.TestClient object at 0x7fcde55ac410>.post
+FAILED tests/test_smoke.py::test_apply_turn_result_recovers_body_and_safety_from_dirty_gpt_payload - AssertionError: assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+ +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_907c27d4/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+ +      where post = <starlette.testclient.TestClient object at 0x7fcde55b5010>.post
+FAILED tests/test_smoke.py::test_process_turn_prompt_chunk_endpoint_for_large_context - AssertionError: assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+ +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_70b41120/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+ +      where post = <starlette.testclient.TestClient object at 0x7fcde5458210>.post
+FAILED tests/test_smoke.py::test_runtime_history_is_compacted_without_full_scene_response - AssertionError: assert 422 == 200
+ +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+ +    where <Response [422 Unprocessable Entity]> = post('/api/v1/sessions/session_20260716_133925_0de8ad7b/bootstrap-preview', json={'bootstrap_json': {'characters': {'coworker_01': {'age': 28, 'appearance': {'build': 'spare', 'eyes': 'gray', 'face':...not_reveal_yet': ['Do not reveal the full paranormal source in the first scene.'], 'hidden_character_seeds': []}, ...}})
+ +      where post = <starlette.testclient.TestClient object at 0x7fcde5769010>.post
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 10 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+10 failed, 59 passed in 2.04s
+
+PYTEST_EXIT_CODE=1
