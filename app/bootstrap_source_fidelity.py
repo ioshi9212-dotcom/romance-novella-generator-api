@@ -121,6 +121,27 @@ def _extract_card_age(value: Any) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def _source_detail_score(source: str) -> int:
+    score = 1 if _extract_requested_age(source) is not None else 0
+    appearance_groups = (
+        ("невысок",),
+        ("миниатюр", "женственн"),
+        ("кудряв", "русые волос"),
+        ("зелены", "янтар"),
+        ("веснуш",),
+        ("нежн", "удобн"),
+    )
+    score += sum(any(marker in source for marker in group) for group in appearance_groups)
+    score += sum(
+        any(marker in source for marker in expectation["source_markers"])
+        for expectation in _KNOWN_ROLE_EXPECTATIONS
+    )
+    score += sum(marker in source for marker in _HIDDEN_SOURCE_MARKERS)
+    if any(marker in source for marker in ("родител", "бабуш", "гиперзабот", "не умеет отказывать")):
+        score += 2
+    return score
+
+
 def _field_text(card: dict[str, Any], block: str, field: str) -> str:
     nested = card.get(block) if isinstance(card.get(block), dict) else {}
     return _normalise(nested.get(field))
@@ -152,6 +173,8 @@ def _validate_protagonist(
     data: dict[str, Any],
     source: str,
     errors: list[str],
+    *,
+    strict_source: bool,
 ) -> None:
     protagonist = data.get("protagonist") if isinstance(data.get("protagonist"), dict) else {}
     characters = data.get("characters") if isinstance(data.get("characters"), dict) else {}
@@ -173,13 +196,13 @@ def _validate_protagonist(
             )
 
     past_short = _normalise(card.get("past_short"))
-    if "уже жил(а) с обязанностью" in past_short and "текущая проблема" in past_short:
+    if strict_source and "уже жил(а) с обязанностью" in past_short and "текущая проблема" in past_short:
         errors.append(
             "source_fidelity.protagonist.past_short: generic repair prose replaced the user's concrete biography."
         )
 
     generic_matches = _generic_player_template_matches(card)
-    if generic_matches >= 4:
+    if strict_source and generic_matches >= 4:
         errors.append(
             "source_fidelity.protagonist.profile: generic fallback template replaced the user's concrete character details "
             f"({generic_matches} template fields detected)."
@@ -244,7 +267,9 @@ def _validate_cast(data: dict[str, Any], source: str, errors: list[str]) -> None
         )
 
 
-def _validate_story_plan(data: dict[str, Any], errors: list[str]) -> None:
+def _validate_story_plan(data: dict[str, Any], errors: list[str], *, strict_source: bool) -> None:
+    if not strict_source:
+        return
     story_plan = data.get("story_plan") if isinstance(data.get("story_plan"), dict) else {}
     acts = story_plan.get("act_structure") if isinstance(story_plan.get("act_structure"), list) else []
     generic_values = {"старт", "развитие", "выбор", "развить конфликт"}
@@ -288,8 +313,9 @@ def validate_bootstrap_source_fidelity(
     source = _flatten_text(user_request or {})
     if not source:
         return []
+    strict_source = len(source) >= 1200 or _source_detail_score(source) >= 3
     errors: list[str] = []
-    _validate_protagonist(data, source, errors)
+    _validate_protagonist(data, source, errors, strict_source=strict_source)
     _validate_cast(data, source, errors)
-    _validate_story_plan(data, errors)
+    _validate_story_plan(data, errors, strict_source=strict_source)
     return errors
