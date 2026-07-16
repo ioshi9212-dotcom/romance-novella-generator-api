@@ -18,6 +18,10 @@ permissions:
 jobs:
   debug:
     runs-on: ubuntu-latest
+    env:
+      DATA_DIR: /tmp/novella-data
+      PYTHONDONTWRITEBYTECODE: 1
+      PYTHONUNBUFFERED: 1
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,18 +34,18 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           python -m pip install pytest==8.3.4 httpx==0.28.1
-      - name: Capture focused test output
+      - name: Capture full test output
         run: |
           set +e
-          python -m pytest tests/test_bootstrap_source_fidelity.py -q --maxfail=5 > ci-bootstrap-source-fidelity.txt 2>&1
+          python -m pytest -q --maxfail=10 > ci-bootstrap-source-fidelity-full.txt 2>&1
           code=$?
-          echo "" >> ci-bootstrap-source-fidelity.txt
-          echo "PYTEST_EXIT_CODE=$code" >> ci-bootstrap-source-fidelity.txt
+          echo "" >> ci-bootstrap-source-fidelity-full.txt
+          echo "PYTEST_EXIT_CODE=$code" >> ci-bootstrap-source-fidelity-full.txt
           exit 0
       - name: Commit diagnostics
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ci-bootstrap-source-fidelity.txt
-          git commit -m "Capture bootstrap source fidelity failure"
+          git add ci-bootstrap-source-fidelity-full.txt
+          git commit -m "Capture full bootstrap fidelity failures"
           git push origin HEAD:agent/enforce-bootstrap-source-fidelity
