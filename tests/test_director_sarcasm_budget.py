@@ -22,8 +22,9 @@ def test_director_guidance_keeps_sarcasm_rare_and_character_specific():
 
 def test_scene_rules_compile_restrained_sarcasm_budget():
     compiled = compile_scene_rules()
+    lowered = compiled.lower()
 
     assert "5–7% видимого текста" in compiled
-    assert "Это не квота" in compiled
-    assert "иногда ни одной" in compiled
-    assert "не вставляй их в каждый абзац" in compiled
+    assert "это не квота" in lowered
+    assert "иногда ни одной" in lowered
+    assert "не вставляй их в каждый абзац" in lowered
