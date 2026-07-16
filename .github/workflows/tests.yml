@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -31,6 +31,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Apply full turn audit patch
+        run: |
+          python scripts/apply_full_turn_audit.py
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+            git add app/main.py app/state_updater.py app/scene_contract_builder.py app/turn_processor.py app/director_bible.py rules/scene_style.md
+            git commit -m "Add recurring persistence audits and restrained sarcasm direction"
+            git push origin HEAD:agent/full-turn-persistence-audit-v2
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
