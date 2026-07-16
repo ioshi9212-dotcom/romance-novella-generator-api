@@ -130,4 +130,20 @@ def test_small_preview_keeps_legacy_single_response_behavior():
     assert body["message_to_user"] == body["preview"] == body["user_visible_preview"]
 
     openapi = client.get("/openapi-actions.json").json()
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview-chunk" in openapi["paths"]
+    chunk_path = openapi["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview-chunk"]["get"]
+    assert chunk_path["operationId"] == "getBootstrapPreviewChunk"
+    assert chunk_path["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/BootstrapPreviewChunkResponse"
+    }
+
+    preview_schema = openapi["components"]["schemas"]["BootstrapPreviewResponse"]
+    for field in (
+        "preview_id",
+        "preview_chars",
+        "preview_chunk_index",
+        "preview_chunk_count",
+        "has_more_preview_chunks",
+        "next_preview_chunk_index",
+    ):
+        assert field in preview_schema["properties"]
+        assert field in preview_schema["required"]
