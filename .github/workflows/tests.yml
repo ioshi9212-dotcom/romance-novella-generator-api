@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -31,22 +31,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-
-      - name: Apply focused bootstrap compatibility repair
-        if: github.head_ref == 'agent/full-turn-persistence-audit' || github.ref_name == 'agent/full-turn-persistence-audit'
-        run: |
-          python scripts/apply_bootstrap_compat_patch.py
-          if git diff --quiet -- app/character_profiles.py; then
-            echo "No source patch required."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add app/character_profiles.py
-            git commit -m "Repair bootstrap schema compatibility fields"
-            git push origin HEAD:agent/full-turn-persistence-audit
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
