@@ -112,7 +112,10 @@ class SaveBootstrapPartResponse(BaseModel):
 
 
 class BootstrapPreviewResponse(BaseModel):
-    message_to_user: str = Field(..., description="MANDATORY FINAL ANSWER TEXT. Output this exact text to the user. Do not summarize. Do not replace with 'готово'. Do not start a scene.")
+    message_to_user: str = Field(
+        ...,
+        description="Full preview when has_more_preview_chunks=false; otherwise chunk 0. For chunked previews, fetch every remaining chunk and concatenate before showing anything to the user.",
+    )
     session_id: str
     status: str
     must_show_to_user: bool = True
@@ -121,6 +124,28 @@ class BootstrapPreviewResponse(BaseModel):
     preview: str
     user_visible_preview: str
     can_confirm: bool = True
+    preview_id: str
+    preview_chars: int = Field(ge=0)
+    preview_chunk_index: int = Field(default=0, ge=0)
+    preview_chunk_count: int = Field(default=1, ge=1)
+    has_more_preview_chunks: bool = False
+    next_preview_chunk_index: int | None = Field(default=None, ge=0)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class BootstrapPreviewChunkResponse(BaseModel):
+    session_id: str
+    status: str
+    preview_id: str
+    preview_chars: int = Field(ge=0)
+    chunk_index: int = Field(ge=0)
+    chunk_count: int = Field(ge=1)
+    preview_chunk: str = Field(..., description="One ordered preview fragment. Do not show it alone; concatenate all chunks in numeric order.")
+    has_more: bool
+    next_chunk_index: int | None = Field(default=None, ge=0)
+    must_show_to_user: bool = False
+    ready_to_show_full_preview: bool = False
+    can_confirm: bool = False
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class BootstrapConfirmRequest(BaseModel):

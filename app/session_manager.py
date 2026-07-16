@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
+from app.bootstrap_preview_transport import BOOTSTRAP_STAGING_TRANSPORT_RULES, build_bootstrap_preview_response, get_bootstrap_preview_chunk
 from app.bootstrap_setup import build_bootstrap_prompt, build_setup_preview
 from app.bootstrapper import BASE_FILES, debug_stub_bootstrap
 from app.character_profiles import prepare_bootstrap_cast
@@ -120,7 +121,13 @@ class SessionManager:
         (session_dir / "state" / "knowledge").mkdir(parents=True, exist_ok=True)
         (session_dir / "state" / "relationship_pairs").mkdir(parents=True, exist_ok=True)
 
-        prompt = build_bootstrap_prompt(user_request) + "\n\n" + BOOTSTRAP_DIRECTION_RULES
+        prompt = (
+            build_bootstrap_prompt(user_request)
+            + "\n\n"
+            + BOOTSTRAP_DIRECTION_RULES
+            + "\n\n"
+            + BOOTSTRAP_STAGING_TRANSPORT_RULES
+        )
         (session_dir / "pending_bootstrap_prompt.md").write_text(prompt, encoding="utf-8")
         return {
             "session_id": session_id,
@@ -205,17 +212,11 @@ class SessionManager:
         session["status"] = "bootstrap_review_pending"
         session["updated_at"] = now_iso()
         self.storage.write_json(session_id, "session.json", session)
-        return {
-            "message_to_user": preview,
-            "session_id": session_id,
-            "status": "bootstrap_review_pending",
-            "must_show_to_user": True,
-            "wait_for_confirmation": True,
-            "next_user_action": "Напиши `подтверждаю`, если всё подходит, или скажи, что изменить.",
-            "preview": preview,
-            "user_visible_preview": preview,
-            "can_confirm": True,
-            "diagnostics": {
+        return build_bootstrap_preview_response(
+            self.storage,
+            session_id,
+            preview,
+            diagnostics={
                 "character_count": len(bootstrap_json.get("characters", {}) or {}),
                 "relationship_count": len(bootstrap_json.get("relationships", {}) or {}),
                 "knowledge_count": len(bootstrap_json.get("knowledge", {}) or {}),
@@ -226,7 +227,21 @@ class SessionManager:
                 "director_bible_enabled": True,
                 "event_queue_count": len((bootstrap_json.get("director_bible") or {}).get("event_queue", [])),
             },
-        }
+        )
+
+    def get_bootstrap_preview_chunk(
+        self,
+        session_id: str,
+        chunk_index: int,
+        *,
+        preview_id: str | None = None,
+    ) -> dict[str, Any]:
+        return get_bootstrap_preview_chunk(
+            self.storage,
+            session_id,
+            chunk_index,
+            expected_preview_id=preview_id,
+        )
 
     def confirm_bootstrap_preview(self, session_id: str) -> dict[str, Any]:
         session = self.storage.read_json(session_id, "session.json")
