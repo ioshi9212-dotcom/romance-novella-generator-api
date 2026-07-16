@@ -166,8 +166,11 @@ def test_thirty_real_turns_preserve_durable_state_and_run_recurring_audits():
 
     manager = SessionManager()
     bundle = manager.get_memory(session_id)
+    raw_continuity = manager.storage.read_json(session_id, "continuity.json")
+    raw_scene_history = manager.storage.read_json(session_id, "scene_history.json")
+    raw_turns = manager.storage.read_json(session_id, "turns.json")
     current_state = bundle["current_state"]
-    continuity = bundle["continuity"]
+    action_continuity = bundle["continuity"]
     scene_history = bundle["scene_history"]
     turns = bundle["turns"]
     relationship = bundle["relationships"][PAIR_ID]
@@ -191,13 +194,15 @@ def test_thirty_real_turns_preserve_durable_state_and_run_recurring_audits():
 
     assert [item["turn"] for item in scene_history] == [25, 26, 27, 28, 29, 30]
     assert [item["turn"] for item in turns] == [23, 24, 25, 26, 27, 28, 29, 30]
-    assert len(continuity["memory_chunks"]) <= 12
-    archived_text = json.dumps(continuity["memory_chunks"], ensure_ascii=False)
+    assert raw_scene_history == scene_history
+    assert raw_turns == turns
+    assert len(raw_continuity["memory_chunks"]) <= 12
+    archived_text = json.dumps(raw_continuity["memory_chunks"], ensure_ascii=False)
     assert "Durable fact turn 1" in archived_text
     assert "Durable fact turn 24" in archived_text
 
     runtime_text = json.dumps(
-        {"scene_history": scene_history, "turns": turns, "continuity": continuity},
+        {"scene_history": raw_scene_history, "turns": raw_turns, "continuity": raw_continuity},
         ensure_ascii=False,
     )
     assert "rendered_text" not in runtime_text
@@ -206,13 +211,14 @@ def test_thirty_real_turns_preserve_durable_state_and_run_recurring_audits():
     assert "VISIBLE_ONLY_OPTION_1" not in runtime_text
     assert "MUST_NOT_SAVE_1" not in runtime_text
 
-    audits = continuity["persistence_audits"]
+    audits = raw_continuity["persistence_audits"]
     assert [item["turn"] for item in audits] == [10, 15, 20, 30]
     assert all(item["status"] == "passed" for item in audits)
     assert all(all(item["checks"].values()) for item in audits)
     assert audits[-1]["triggers"] == ["state_recovery_audit", "state_compaction_cleanup"]
+    assert [item["turn"] for item in action_continuity["persistence_audits"]] == [20, 30]
 
-    maintenance_types = [(item["turn"], item["type"]) for item in continuity["maintenance_events"]]
+    maintenance_types = [(item["turn"], item["type"]) for item in raw_continuity["maintenance_events"]]
     assert (10, "state_recovery_audit") in maintenance_types
     assert (15, "state_compaction_cleanup") in maintenance_types
     assert (20, "state_recovery_audit") in maintenance_types
