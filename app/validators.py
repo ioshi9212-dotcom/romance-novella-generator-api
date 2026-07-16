@@ -9,6 +9,7 @@ from app.character_profiles import (
     behavior_signature,
     prepare_bootstrap_cast,
 )
+from app.directional_relationships import prepare_directional_relationships
 from app.id_utils import pair_id
 
 
@@ -150,9 +151,31 @@ def _validate_character_profile(character_id: str, card: dict[str, Any], errors:
 
 
 
+def _repair_string_relationship_directions(data: dict[str, Any]) -> None:
+    relationships = data.get("relationships") if isinstance(data.get("relationships"), dict) else {}
+    preserved_views: list[tuple[str, str, str]] = []
+    for pair_key, relationship in relationships.items():
+        if not isinstance(relationship, dict):
+            continue
+        for direction_key in ("a_to_b", "b_to_a"):
+            value = relationship.get(direction_key)
+            if isinstance(value, str) and value.strip():
+                preserved_views.append((str(pair_key), direction_key, value.strip()))
+
+    prepare_directional_relationships(data)
+
+    repaired = data.get("relationships") if isinstance(data.get("relationships"), dict) else {}
+    for pair_key, direction_key, view_text in preserved_views:
+        relationship = repaired.get(pair_key)
+        direction = relationship.get(direction_key) if isinstance(relationship, dict) else None
+        if isinstance(direction, dict):
+            direction["current_view"] = view_text
+
+
 def validate_bootstrap_result(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     prepare_bootstrap_cast(data)
+    _repair_string_relationship_directions(data)
     errors.extend(_validate_with_schema(data, "bootstrap_output.schema.json"))
     for key in REQUIRED_BOOTSTRAP_KEYS:
         if key not in data:
