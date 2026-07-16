@@ -26,31 +26,104 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Repair source markers and empty-source behavior
+      - name: Scope strict fidelity to detailed source requests
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path('app/bootstrap_source_fidelity.py')
           text = path.read_text(encoding='utf-8')
 
-          old_marker = '"source_markers": ("старший брат", "старшего брата"),'
-          new_marker = '"source_markers": ("старший брат", "старшего брата", "старшим брат"),'
-          if old_marker in text:
-              text = text.replace(old_marker, new_marker, 1)
-          elif new_marker not in text:
-              raise SystemExit('brother marker anchor missing')
+          detail_anchor = '''def _extract_card_age(value: Any) -> int | None:
+              if isinstance(value, bool):
+                  return None
+              if isinstance(value, (int, float)):
+                  return int(value)
+              match = re.search(r"\\d{1,3}", str(value or ""))
+              return int(match.group(0)) if match else None
+          '''.replace('          ', '')
+          detail_block = detail_anchor + '''
 
-          source_anchor = '    source = _flatten_text(user_request or {})\n    errors: list[str] = []\n'
-          source_replacement = (
-              '    source = _flatten_text(user_request or {})\n'
-              '    if not source:\n'
-              '        return []\n'
-              '    errors: list[str] = []\n'
+          def _source_detail_score(source: str) -> int:
+              score = 1 if _extract_requested_age(source) is not None else 0
+              appearance_groups = (
+                  ("невысок",),
+                  ("миниатюр", "женственн"),
+                  ("кудряв", "русые волос"),
+                  ("зелены", "янтар"),
+                  ("веснуш",),
+                  ("нежн", "удобн"),
+              )
+              score += sum(any(marker in source for marker in group) for group in appearance_groups)
+              score += sum(
+                  any(marker in source for marker in expectation["source_markers"])
+                  for expectation in _KNOWN_ROLE_EXPECTATIONS
+              )
+              score += sum(marker in source for marker in _HIDDEN_SOURCE_MARKERS)
+              if any(marker in source for marker in ("родител", "бабуш", "гиперзабот", "не умеет отказывать")):
+                  score += 2
+              return score
+          '''.replace('          ', '')
+          if 'def _source_detail_score' not in text:
+              if detail_anchor not in text:
+                  raise SystemExit('detail score anchor missing')
+              text = text.replace(detail_anchor, detail_block, 1)
+
+          old_sig = '''def _validate_protagonist(
+              data: dict[str, Any],
+              source: str,
+              errors: list[str],
+          ) -> None:
+          '''.replace('          ', '')
+          new_sig = '''def _validate_protagonist(
+              data: dict[str, Any],
+              source: str,
+              errors: list[str],
+              *,
+              strict_source: bool,
+          ) -> None:
+          '''.replace('          ', '')
+          if old_sig in text:
+              text = text.replace(old_sig, new_sig, 1)
+          elif 'strict_source: bool' not in text:
+              raise SystemExit('protagonist signature anchor missing')
+
+          text = text.replace(
+              '    if "уже жил(а) с обязанностью" in past_short and "текущая проблема" in past_short:\n',
+              '    if strict_source and "уже жил(а) с обязанностью" in past_short and "текущая проблема" in past_short:\n',
+              1,
           )
-          if '    if not source:\n        return []\n' not in text:
-              if source_anchor not in text:
-                  raise SystemExit('empty source anchor missing')
-              text = text.replace(source_anchor, source_replacement, 1)
+          text = text.replace(
+              '    if generic_matches >= 4:\n',
+              '    if strict_source and generic_matches >= 4:\n',
+              1,
+          )
+
+          old_story_sig = 'def _validate_story_plan(data: dict[str, Any], errors: list[str]) -> None:\n'
+          new_story_sig = 'def _validate_story_plan(data: dict[str, Any], errors: list[str], *, strict_source: bool) -> None:\n'
+          if old_story_sig in text:
+              text = text.replace(old_story_sig, new_story_sig, 1)
+          elif new_story_sig not in text:
+              raise SystemExit('story signature anchor missing')
+          story_start = new_story_sig + '    story_plan = data.get("story_plan") if isinstance(data.get("story_plan"), dict) else {}\n'
+          story_start_new = new_story_sig + '    if not strict_source:\n        return\n    story_plan = data.get("story_plan") if isinstance(data.get("story_plan"), dict) else {}\n'
+          if story_start in text and 'def _validate_story_plan' in text:
+              text = text.replace(story_start, story_start_new, 1)
+
+          old_calls = '''    errors: list[str] = []
+              _validate_protagonist(data, source, errors)
+              _validate_cast(data, source, errors)
+              _validate_story_plan(data, errors)
+          '''.replace('          ', '')
+          new_calls = '''    strict_source = len(source) >= 1200 or _source_detail_score(source) >= 3
+              errors: list[str] = []
+              _validate_protagonist(data, source, errors, strict_source=strict_source)
+              _validate_cast(data, source, errors)
+              _validate_story_plan(data, errors, strict_source=strict_source)
+          '''.replace('          ', '')
+          if old_calls in text:
+              text = text.replace(old_calls, new_calls, 1)
+          elif 'strict_source = len(source) >= 1200' not in text:
+              raise SystemExit('validation calls anchor missing')
 
           path.write_text(text, encoding='utf-8')
           PY
@@ -60,10 +133,10 @@ jobs:
           python -m pip install pytest==8.3.4 httpx==0.28.1
       - name: Run fidelity tests
         run: python -m pytest tests/test_bootstrap_source_fidelity.py -q
-      - name: Commit source fidelity fixes
+      - name: Commit source fidelity scope
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/bootstrap_source_fidelity.py
-          git commit -m "Skip source fidelity checks without source text"
+          git commit -m "Scope strict fidelity checks to detailed requests"
           git push origin HEAD:agent/enforce-bootstrap-source-fidelity
