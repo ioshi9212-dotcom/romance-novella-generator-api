@@ -32,7 +32,7 @@ def test_bootstrap_transport_rules_forbid_root_fields_as_action_kwargs():
         "ровно section, value",
         "finalizeBootstrapPreview передавай только session_id",
         "scene_history и turns не отправляй",
-        "не передавай protagonist, characters, relationships, knowledge",
+        "Не передавай protagonist, characters, relationships, knowledge",
         "bootstrap_json",
     ):
         assert marker in rules
