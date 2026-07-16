@@ -1,0 +1,43 @@
+name: Debug bootstrap preview chunks
+
+on:
+  push:
+    branches:
+      - agent/chunk-bootstrap-preview-response
+    paths:
+      - .github/workflows/debug-bootstrap-preview-chunks.yml
+
+permissions:
+  contents: write
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    env:
+      DATA_DIR: /tmp/novella-data
+      PYTHONDONTWRITEBYTECODE: 1
+      PYTHONUNBUFFERED: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/chunk-bootstrap-preview-response
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Capture concise pytest output
+        run: |
+          set +e
+          pytest -q --maxfail=8 > ci-debug-bootstrap-preview-chunks.txt 2>&1
+          code=$?
+          echo "" >> ci-debug-bootstrap-preview-chunks.txt
+          echo "PYTEST_EXIT_CODE=$code" >> ci-debug-bootstrap-preview-chunks.txt
+          exit 0
+      - name: Commit diagnostics
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci-debug-bootstrap-preview-chunks.txt
+          git commit -m "Capture bootstrap preview chunk test failure"
+          git push origin HEAD:agent/chunk-bootstrap-preview-response
