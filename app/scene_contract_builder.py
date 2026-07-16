@@ -58,6 +58,19 @@ def _compact_history_entry(entry: Any) -> dict[str, Any]:
     }
 
 
+def _edge_sample(items: Any, limit: int = 4) -> list[Any]:
+    values = list(items or []) if isinstance(items, list) else []
+    if len(values) <= limit:
+        return values
+    edge = max(1, limit // 2)
+    sampled = [*values[:edge], *values[-edge:]]
+    result: list[Any] = []
+    for item in sampled:
+        if item not in result:
+            result.append(item)
+    return result[:limit]
+
+
 def _compact_memory_chunk(chunk: Any) -> dict[str, Any]:
     if not isinstance(chunk, dict):
         return {}
@@ -65,8 +78,8 @@ def _compact_memory_chunk(chunk: Any) -> dict[str, Any]:
         "type": chunk.get("type"),
         "turn_start": chunk.get("turn_start"),
         "turn_end": chunk.get("turn_end"),
-        "scene_summaries": _clip_list(chunk.get("scene_summaries", []), 4, 180),
-        "turn_summaries": _clip_list(chunk.get("turn_summaries", []), 4, 160),
+        "scene_summaries": _clip_list(_edge_sample(chunk.get("scene_summaries", []), 4), 4, 180),
+        "turn_summaries": _clip_list(_edge_sample(chunk.get("turn_summaries", []), 4), 4, 160),
     }
 
 
@@ -80,6 +93,7 @@ def _compact_continuity(continuity: Any) -> dict[str, Any]:
         "notes": _clip_list(continuity.get("notes", []), 6, 180),
         "warnings": _clip_list(continuity.get("warnings", []), 5, 180),
         "maintenance_events": _clip_list(continuity.get("maintenance_events", []), 4, 160),
+        "persistence_audits": _clip_list(continuity.get("persistence_audits", [])[-2:], 2, 220),
     }
 
 
@@ -260,11 +274,11 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
 
     status = _normalise_status(current_state, story_plan)
     status_slots = status.get("custom", [])
-    memory_chunks = [
-        _compact_memory_chunk(chunk)
-        for chunk in (continuity.get("memory_chunks", []) or [])[-4:]
-        if isinstance(chunk, dict)
+    all_memory_chunks = [
+        chunk for chunk in (continuity.get("memory_chunks", []) or []) if isinstance(chunk, dict)
     ]
+    selected_memory_chunks = all_memory_chunks if len(all_memory_chunks) <= 4 else [all_memory_chunks[0], *all_memory_chunks[-3:]]
+    memory_chunks = [_compact_memory_chunk(chunk) for chunk in selected_memory_chunks]
     recent_scene_history = [
         _compact_history_entry(item)
         for item in (scene_history[-4:] if isinstance(scene_history, list) else [])
@@ -330,7 +344,8 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "state_compaction_cleanup_due": turn_number > 0 and turn_number % 15 == 0,
             "continuity_check_required": turn_number > 0 and turn_number % 10 == 0,
             "memory_review_required": turn_number > 0 and turn_number % 15 == 0,
-            "memory_chunk_count": len(memory_chunks),
+            "memory_chunk_count": len(all_memory_chunks),
+            "last_persistence_audit": ((continuity.get("persistence_audits") or [])[-1] if continuity.get("persistence_audits") else None),
         },
         "player_input_rules": {
             "outside_parentheses": "spoken dialogue by the player character",
