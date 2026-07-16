@@ -81,6 +81,20 @@ replace_once(
     "maintenance audit summary in scene contract",
 )
 
+turn_processor = ROOT / "app" / "turn_processor.py"
+replace_once(
+    turn_processor,
+    '''def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:\n    compact = {\n''',
+    '''def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:\n    memory_source = [item for item in (contract.get("memory_chunks", []) or []) if isinstance(item, dict)]\n    selected_memory = memory_source if len(memory_source) <= 3 else [memory_source[0], *memory_source[-2:]]\n    compact = {\n''',
+    "select long-term memory in compact prompt",
+)
+replace_once(
+    turn_processor,
+    '''        "memory_chunks": [_compact_dict(i, 220) for i in (contract.get("memory_chunks", []) or [])[-3:] if isinstance(i, dict)],\n''',
+    '''        "memory_chunks": [_compact_dict(i, 220) for i in selected_memory],\n''',
+    "keep selected memory chunks",
+)
+
 director = ROOT / "app" / "director_bible.py"
 replace_once(
     director,
