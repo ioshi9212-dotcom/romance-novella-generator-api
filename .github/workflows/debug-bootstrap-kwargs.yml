@@ -1,0 +1,49 @@
+name: Debug bootstrap kwargs
+
+on:
+  push:
+    branches:
+      - agent/fix-bootstrap-action-kwargs
+    paths:
+      - .github/workflows/debug-bootstrap-kwargs.yml
+
+permissions:
+  contents: write
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    env:
+      DATA_DIR: /tmp/novella-data
+      PYTHONDONTWRITEBYTECODE: 1
+      PYTHONUNBUFFERED: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-bootstrap-action-kwargs
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest==8.3.4 httpx==0.28.1
+      - name: Capture concise pytest output
+        run: |
+          set +e
+          python -m pytest -q --maxfail=8 > ci-debug-bootstrap-kwargs.txt 2>&1
+          code=$?
+          echo "" >> ci-debug-bootstrap-kwargs.txt
+          echo "PYTEST_EXIT_CODE=$code" >> ci-debug-bootstrap-kwargs.txt
+          exit 0
+      - name: Commit diagnostics
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci-debug-bootstrap-kwargs.txt
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Capture bootstrap kwargs test failure"
+          git push origin HEAD:agent/fix-bootstrap-action-kwargs
