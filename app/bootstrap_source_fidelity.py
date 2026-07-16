@@ -286,6 +286,8 @@ def validate_bootstrap_source_fidelity(
         return ["source_fidelity.root: bootstrap must be an object."]
 
     source = _flatten_text(user_request or {})
+    if not source:
+        return []
     errors: list[str] = []
     _validate_protagonist(data, source, errors)
     _validate_cast(data, source, errors)
