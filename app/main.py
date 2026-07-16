@@ -10,12 +10,18 @@ from fastapi.openapi.utils import get_openapi
 
 from app.bootstrap_content_repair import repair_bootstrap_content
 from app.bootstrap_normalizer import normalize_bootstrap_json
+from app.bootstrap_preview_transport import (
+    BootstrapPreviewChunkError,
+    get_bootstrap_preview_chunk,
+    prepare_bootstrap_preview_transport,
+    require_complete_bootstrap_preview_delivery,
+)
 from app.bootstrap_staging import BootstrapStageError, assemble_staged_bootstrap, save_bootstrap_part as save_staged_bootstrap_part
 from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
 from app.director_bible import apply_director_bible_patches, prepare_director_bible, validate_director_bible
 from app.id_utils import now_iso
-from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, SaveBootstrapPartRequest, SaveBootstrapPartResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
+from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewChunkResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, SaveBootstrapPartRequest, SaveBootstrapPartResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
@@ -717,7 +723,8 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
     manager = SessionManager()
     try:
         with _session_request_context(manager, session_id):
-            return manager.save_bootstrap_preview(session_id, normalized_bootstrap)
+            response = manager.save_bootstrap_preview(session_id, normalized_bootstrap)
+            return prepare_bootstrap_preview_transport(manager, session_id, response)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -753,13 +760,34 @@ def finalize_bootstrap_preview(session_id: str) -> dict:
             diagnostics = dict(response.get("diagnostics") or {})
             diagnostics.update({"staged_bootstrap": True, "staged_progress": progress})
             response["diagnostics"] = diagnostics
-            return response
+            return prepare_bootstrap_preview_transport(manager, session_id, response)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BootstrapStageError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/sessions/{session_id}/bootstrap-preview-chunk", response_model=BootstrapPreviewChunkResponse, dependencies=[Depends(require_api_key)], operation_id="getBootstrapPreviewChunk")
+def get_bootstrap_preview_chunk_action(
+    session_id: str,
+    preview_id: str = Query(..., description="preview_id returned by createBootstrapPreview/finalizeBootstrapPreview"),
+    chunk_index: int = Query(..., ge=0, description="Zero-based preview chunk index."),
+) -> dict:
+    manager = SessionManager()
+    try:
+        with _session_request_context(manager, session_id):
+            return get_bootstrap_preview_chunk(
+                manager,
+                session_id,
+                preview_id=preview_id,
+                chunk_index=chunk_index,
+            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BootstrapPreviewChunkError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-confirm", response_model=BootstrapConfirmResponse, dependencies=[Depends(require_api_key)], operation_id="confirmBootstrapPreview")
@@ -769,9 +797,12 @@ def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest)
     manager = SessionManager()
     try:
         with _session_request_context(manager, session_id):
+            require_complete_bootstrap_preview_delivery(manager, session_id)
             return manager.confirm_bootstrap_preview(session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except BootstrapPreviewChunkError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
