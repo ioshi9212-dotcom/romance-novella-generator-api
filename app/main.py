@@ -12,6 +12,7 @@ from app.bootstrap_content_repair import repair_bootstrap_content
 from app.bootstrap_preview_transport import BootstrapPreviewTransportError
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.bootstrap_staging import BootstrapStageError, assemble_staged_bootstrap, save_bootstrap_part as save_staged_bootstrap_part
+from app.bootstrap_source_fidelity import validate_bootstrap_source_fidelity
 from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
 from app.director_bible import apply_director_bible_patches, prepare_director_bible, validate_director_bible
@@ -638,7 +639,11 @@ def _advance_time_locked(manager: SessionManager, session_id: str, request: Adva
     return _pending_turn_response(pending, session_id)
 
 
-def _prepare_bootstrap_preview_payload(bootstrap_json: dict[str, Any]) -> dict[str, Any]:
+def _prepare_bootstrap_preview_payload(
+    bootstrap_json: dict[str, Any],
+    *,
+    user_request: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     normalized_bootstrap = normalize_bootstrap_json(bootstrap_json)
     repair_bootstrap_content(normalized_bootstrap)
     errors = validate_bootstrap_result(normalized_bootstrap)
@@ -646,6 +651,7 @@ def _prepare_bootstrap_preview_payload(bootstrap_json: dict[str, Any]) -> dict[s
     prepare_director_bible(normalized_bootstrap)
     errors.extend(validate_directional_relationships(normalized_bootstrap))
     errors.extend(validate_director_bible(normalized_bootstrap))
+    errors.extend(validate_bootstrap_source_fidelity(normalized_bootstrap, user_request))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
     return normalized_bootstrap
@@ -715,10 +721,14 @@ def apply_bootstrap_result_disabled(session_id: str) -> dict:
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-preview", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)], operation_id="createBootstrapPreview")
 def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) -> dict:
-    normalized_bootstrap = _prepare_bootstrap_preview_payload(request.bootstrap_json)
     manager = SessionManager()
     try:
         with _session_request_context(manager, session_id):
+            user_request = manager.storage.read_json(session_id, "user_request.json", default={})
+            normalized_bootstrap = _prepare_bootstrap_preview_payload(
+                request.bootstrap_json,
+                user_request=user_request if isinstance(user_request, dict) else {},
+            )
             return manager.save_bootstrap_preview(session_id, normalized_bootstrap)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -775,7 +785,11 @@ def finalize_bootstrap_preview(session_id: str) -> dict:
     try:
         with _session_request_context(manager, session_id):
             staged_bootstrap, progress = assemble_staged_bootstrap(manager, session_id)
-            normalized_bootstrap = _prepare_bootstrap_preview_payload(staged_bootstrap)
+            user_request = manager.storage.read_json(session_id, "user_request.json", default={})
+            normalized_bootstrap = _prepare_bootstrap_preview_payload(
+                staged_bootstrap,
+                user_request=user_request if isinstance(user_request, dict) else {},
+            )
             response = manager.save_bootstrap_preview(session_id, normalized_bootstrap)
             diagnostics = dict(response.get("diagnostics") or {})
             diagnostics.update({"staged_bootstrap": True, "staged_progress": progress})
