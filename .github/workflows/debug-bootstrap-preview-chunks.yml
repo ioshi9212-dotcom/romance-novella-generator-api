@@ -25,11 +25,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
+      - name: Install test dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest==8.3.4 httpx==0.28.1
       - name: Capture concise pytest output
         run: |
           set +e
-          pytest -q --maxfail=8 > ci-debug-bootstrap-preview-chunks.txt 2>&1
+          python -m pytest -q --maxfail=8 > ci-debug-bootstrap-preview-chunks.txt 2>&1
           code=$?
           echo "" >> ci-debug-bootstrap-preview-chunks.txt
           echo "PYTEST_EXIT_CODE=$code" >> ci-debug-bootstrap-preview-chunks.txt
@@ -39,5 +42,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ci-debug-bootstrap-preview-chunks.txt
+          if git diff --cached --quiet; then
+            echo "Diagnostics unchanged"
+            exit 0
+          fi
           git commit -m "Capture bootstrap preview chunk test failure"
           git push origin HEAD:agent/chunk-bootstrap-preview-response
