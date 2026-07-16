@@ -288,7 +288,10 @@ class StateUpdater:
         characters = bundle.get("characters", {})
         scene_history = bundle.get("scene_history", []) or []
         turns = bundle.get("turns", []) or []
-        continuity = bundle.get("continuity", {}) or {}
+        # read_session_bundle intentionally compacts continuity for Action payloads;
+        # state writes must start from the complete persisted document or maintenance
+        # reports and older memory metadata disappear on the next ordinary turn.
+        continuity = self.storage.read_json(session_id, "continuity.json", default={}) or {}
 
         updates = scene_response.get("proposed_updates", {})
         scene_state_patch = updates.get("scene_state_patch", {})
