@@ -112,16 +112,41 @@ class SaveBootstrapPartResponse(BaseModel):
 
 
 class BootstrapPreviewResponse(BaseModel):
-    message_to_user: str = Field(..., description="MANDATORY FINAL ANSWER TEXT. Output this exact text to the user. Do not summarize. Do not replace with 'готово'. Do not start a scene.")
+    message_to_user: str = Field(
+        ...,
+        description=(
+            "First bounded preview chunk. If has_more_preview_chunks=true, do not answer the user yet: "
+            "load every remaining chunk with getBootstrapPreviewChunk, concatenate in index order, "
+            "then output the complete preview exactly once."
+        ),
+    )
     session_id: str
     status: str
     must_show_to_user: bool = True
     wait_for_confirmation: bool = True
     next_user_action: str = "Напиши `подтверждаю`, если всё подходит, или скажи, что изменить."
-    preview: str
-    user_visible_preview: str
+    preview: str = Field(..., description="Compatibility alias for the first bounded preview chunk.")
+    user_visible_preview: str = Field(..., description="Compatibility alias for the first bounded preview chunk.")
+    preview_id: str
+    preview_chunk: str
+    preview_chunk_index: int = 0
+    preview_chunk_count: int = 1
+    has_more_preview_chunks: bool = False
+    next_preview_chunk_index: int | None = None
     can_confirm: bool = True
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class BootstrapPreviewChunkResponse(BaseModel):
+    session_id: str
+    preview_id: str
+    chunk_index: int
+    chunk_count: int
+    preview_chunk: str
+    has_more: bool
+    next_chunk_index: int | None = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
 
 class BootstrapConfirmRequest(BaseModel):
     confirmation_text: str = Field(..., min_length=1, description="Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит / начинаем.")
