@@ -20,6 +20,10 @@ def test_create_bootstrap_preview_action_accepts_only_bootstrap_json_body_field(
     assert "exactly one" in description.lower()
     assert "root fields" in description.lower()
 
+    operation = contract["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview"]["post"]
+    assert "exactly one body field" in operation["summary"]
+    assert "separate Action kwargs" in operation["summary"]
+
 
 def test_bootstrap_transport_rules_forbid_root_fields_as_action_kwargs():
     rules = BOOTSTRAP_STAGING_TRANSPORT_RULES
