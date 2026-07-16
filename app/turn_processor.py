@@ -66,6 +66,8 @@ def _compact_character_card(card: dict[str, Any]) -> dict[str, Any]:
 
 
 def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    memory_source = [item for item in (contract.get("memory_chunks", []) or []) if isinstance(item, dict)]
+    selected_memory = memory_source if len(memory_source) <= 3 else [memory_source[0], *memory_source[-2:]]
     compact = {
         "contract_version": contract.get("contract_version"),
         "session_id": contract.get("session_id"),
@@ -83,7 +85,7 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
             "hidden_character_seeds": _clip_list((contract.get("future_locks") or {}).get("hidden_character_seeds", []), 5, 180),
         },
         "continuity": _compact_dict(contract.get("continuity", {}) if isinstance(contract.get("continuity"), dict) else {}, 260),
-        "memory_chunks": [_compact_dict(i, 220) for i in (contract.get("memory_chunks", []) or [])[-3:] if isinstance(i, dict)],
+        "memory_chunks": [_compact_dict(i, 220) for i in selected_memory],
     }
     compact["loaded_characters"] = [
         {

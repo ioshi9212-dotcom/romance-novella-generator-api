@@ -541,6 +541,12 @@ def build_director_guidance(bundle: dict[str, Any]) -> dict[str, Any]:
             "patch_status_only": "после сцены обновляй статусы через director_bible_patches; не переписывай world_truth",
         },
         "current_turn": current_turn,
+        "tone_control": {
+            "dry_sarcasm_target_share": "примерно 5–7% видимого текста, не квота и не обязанность",
+            "preferred_dose": "обычно одна короткая сухая реплика или наблюдение; иногда ноль",
+            "source": "только подходящий голос персонажа или редкая авторская деталь, не одинаковая язвительность всех NPC",
+            "avoid": "не ставить в каждый абзац, не перебивать горе, страх, интимность или серьёзное раскрытие",
+        },
         "world_truth": bible.get("world_truth", {}),
         "hidden_lore": [
             _compact_item(item, ("id", "truth", "status", "reveal_policy", "known_by", "related_character_ids", "evidence_chain"))

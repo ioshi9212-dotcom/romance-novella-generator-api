@@ -16,6 +16,7 @@ from app.director_bible import apply_director_bible_patches, prepare_director_bi
 from app.id_utils import now_iso
 from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, SaveBootstrapPartRequest, SaveBootstrapPartResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.npc_state_updates import apply_npc_state_patches
+from app.persistence_audit import run_persistence_audit
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
 from app.state_updater import StateUpdater
@@ -916,6 +917,12 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
                 pending,
                 normalized_scene_response,
                 bundle,
+                result,
+            )
+            result = run_persistence_audit(
+                manager.storage,
+                session_id,
+                normalized_scene_response,
                 result,
             )
             _mark_pending_turn_applied(manager, session_id, pending)

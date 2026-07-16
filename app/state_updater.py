@@ -6,6 +6,8 @@ from app.storage import JsonStorage
 MAX_RECENT_SCENE_HISTORY = 6
 MAX_RECENT_TURNS = 8
 MAX_MEMORY_CHUNKS = 12
+MAX_ARCHIVED_SCENE_SUMMARIES = 120
+MAX_ARCHIVED_TURN_SUMMARIES = 160
 
 
 def _append_unique(target: list[Any], items: list[Any]) -> list[Any]:
@@ -114,6 +116,48 @@ def _make_memory_chunk(kind: str, scenes: list[dict[str, Any]], turns: list[dict
     }
 
 
+
+def _dedupe_summary_items(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[Any, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = (item.get("turn"), str(item.get("summary") or item.get("player_input") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result[-limit:]
+
+
+def _merge_memory_chunks(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    scene_summaries = _dedupe_summary_items(
+        [*(left.get("scene_summaries") or []), *(right.get("scene_summaries") or [])],
+        MAX_ARCHIVED_SCENE_SUMMARIES,
+    )
+    turn_summaries = _dedupe_summary_items(
+        [*(left.get("turn_summaries") or []), *(right.get("turn_summaries") or [])],
+        MAX_ARCHIVED_TURN_SUMMARIES,
+    )
+    starts = [value for value in (left.get("turn_start"), right.get("turn_start")) if isinstance(value, int)]
+    ends = [value for value in (left.get("turn_end"), right.get("turn_end")) if isinstance(value, int)]
+    start = min(starts) if starts else None
+    end = max(ends) if ends else None
+    return {
+        "chunk_id": f"long_term_archive_{start or 'x'}_{end or 'x'}",
+        "type": "long_term_archive",
+        "turn_start": start,
+        "turn_end": end,
+        "created_at": now_iso(),
+        "scene_summaries": scene_summaries,
+        "turn_summaries": turn_summaries,
+        "merged_chunk_ids": [
+            item for item in [left.get("chunk_id"), right.get("chunk_id")] if item
+        ],
+    }
+
+
 def _append_memory_chunk(continuity: dict[str, Any], chunk: dict[str, Any] | None) -> bool:
     if not chunk:
         return False
@@ -121,7 +165,10 @@ def _append_memory_chunk(continuity: dict[str, Any], chunk: dict[str, Any] | Non
     existing_ids = {item.get("chunk_id") for item in continuity["memory_chunks"] if isinstance(item, dict)}
     if chunk.get("chunk_id") not in existing_ids:
         continuity["memory_chunks"].append(chunk)
-    continuity["memory_chunks"] = continuity.get("memory_chunks", [])[-MAX_MEMORY_CHUNKS:]
+    chunks = [item for item in continuity.get("memory_chunks", []) if isinstance(item, dict)]
+    while len(chunks) > MAX_MEMORY_CHUNKS:
+        chunks = [_merge_memory_chunks(chunks[0], chunks[1]), *chunks[2:]]
+    continuity["memory_chunks"] = chunks
     return True
 
 
@@ -142,6 +189,9 @@ def _trim_continuity(continuity: dict[str, Any]) -> dict[str, Any]:
     ][-6:]
     continuity["maintenance_events"] = [
         item for item in (continuity.get("maintenance_events", []) or []) if isinstance(item, dict)
+    ][-12:]
+    continuity["persistence_audits"] = [
+        item for item in (continuity.get("persistence_audits", []) or []) if isinstance(item, dict)
     ][-12:]
     return continuity
 
