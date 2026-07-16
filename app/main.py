@@ -9,13 +9,14 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.openapi.utils import get_openapi
 
 from app.bootstrap_content_repair import repair_bootstrap_content
+from app.bootstrap_preview_transport import BootstrapPreviewTransportError
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.bootstrap_staging import BootstrapStageError, assemble_staged_bootstrap, save_bootstrap_part as save_staged_bootstrap_part
 from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
 from app.director_bible import apply_director_bible_patches, prepare_director_bible, validate_director_bible
 from app.id_utils import now_iso
-from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, SaveBootstrapPartRequest, SaveBootstrapPartResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
+from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewChunkResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, SaveBootstrapPartRequest, SaveBootstrapPartResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
 from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
@@ -309,6 +310,7 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
             "mode": "gpt_actions",
             "api_key_required": bool(settings.api_key),
             "chunk_endpoint": "getTurnPromptChunk",
+            "bootstrap_preview_chunk_endpoint": "getBootstrapPreviewChunk",
             "debug_endpoint": "debugSessionDump",
         },
         "session": _debug_clip_dict(session, 700),
@@ -722,6 +724,31 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/bootstrap-preview-chunk",
+    response_model=BootstrapPreviewChunkResponse,
+    dependencies=[Depends(require_api_key)],
+    operation_id="getBootstrapPreviewChunk",
+)
+def get_bootstrap_preview_chunk_action(
+    session_id: str,
+    chunk_index: int = Query(..., ge=0),
+    preview_id: str | None = Query(default=None, min_length=1),
+) -> dict:
+    manager = SessionManager()
+    try:
+        with _session_request_context(manager, session_id):
+            return manager.get_bootstrap_preview_chunk(
+                session_id,
+                chunk_index,
+                preview_id=preview_id,
+            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BootstrapPreviewTransportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-part", response_model=SaveBootstrapPartResponse, dependencies=[Depends(require_api_key)], operation_id="saveBootstrapPart")
