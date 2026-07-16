@@ -192,10 +192,20 @@ def test_thirty_real_turns_preserve_durable_state_and_run_recurring_audits():
     assert npc_state["last_updated_turn"] == 30
     assert npc_state["current_mood"] == "controlled concern turn 30"
 
-    assert [item["turn"] for item in scene_history] == [25, 26, 27, 28, 29, 30]
-    assert [item["turn"] for item in turns] == [23, 24, 25, 26, 27, 28, 29, 30]
-    assert raw_scene_history == scene_history
-    assert raw_turns == turns
+    expected_scene_turns = [25, 26, 27, 28, 29, 30]
+    expected_turn_turns = [23, 24, 25, 26, 27, 28, 29, 30]
+    assert [item["turn"] for item in scene_history] == expected_scene_turns
+    assert [item["turn"] for item in raw_scene_history] == expected_scene_turns
+    assert [item["turn"] for item in turns] == expected_turn_turns
+    assert [item["turn"] for item in raw_turns] == expected_turn_turns
+    for raw_entry, action_entry in zip(raw_scene_history, scene_history):
+        assert action_entry["summary"] == raw_entry["summary"]
+        assert action_entry["important_facts"] == raw_entry["important_facts"]
+        assert len(action_entry["body_excerpt"]) <= len(raw_entry["body_excerpt"])
+    for raw_entry, action_entry in zip(raw_turns, turns):
+        assert action_entry["player_input"] == raw_entry["player_input"]
+        assert action_entry["summary"] == raw_entry["summary"]
+
     assert len(raw_continuity["memory_chunks"]) <= 12
     archived_text = json.dumps(raw_continuity["memory_chunks"], ensure_ascii=False)
     assert "Durable fact turn 1" in archived_text
