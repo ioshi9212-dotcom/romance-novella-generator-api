@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -32,18 +32,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Apply full turn audit patch
-        run: |
-          python scripts/apply_full_turn_audit.py
-          python scripts/apply_raw_continuity_fix.py
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
-            git add app/main.py app/state_updater.py app/scene_contract_builder.py app/turn_processor.py app/director_bible.py app/persistence_audit.py app/storage.py rules/scene_style.md
-            git commit -m "Preserve raw continuity and recurring persistence audits"
-            git push origin HEAD:agent/full-turn-persistence-audit-v2
-          fi
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -58,14 +46,4 @@ jobs:
           python -m pip install pytest==8.3.4 httpx==0.28.1
 
       - name: Run tests
-        shell: bash
-        run: |
-          set -o pipefail
-          python -m pytest -q 2>&1 | tee pytest-output.txt
-
-      - name: Upload pytest output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-turn-audit-pytest-output
-          path: pytest-output.txt
+        run: python -m pytest -q
