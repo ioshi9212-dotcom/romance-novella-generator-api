@@ -1,5 +1,5 @@
-.......F.F.............................................................. [ 75%]
-F.......................                                                 [100%]
+.......F................................................................ [ 75%]
+........................                                                 [100%]
 =================================== FAILURES ===================================
 ___________ test_small_preview_keeps_legacy_single_response_behavior ___________
 
@@ -14,82 +14,20 @@ ___________ test_small_preview_keeps_legacy_single_response_behavior ___________
         assert response.status_code == 200
         body = response.json()
     
->       assert body["has_more_preview_chunks"] is False
-E       assert True is False
+        assert body["has_more_preview_chunks"] is False
+        assert body["preview_chunk_count"] == 1
+        assert body["next_preview_chunk_index"] is None
+        assert body["must_show_to_user"] is True
+        assert body["can_confirm"] is True
+        assert body["message_to_user"] == body["preview"] == body["user_visible_preview"]
+    
+        openapi = client.get("/openapi-actions.json").json()
+>       assert "/api/v1/sessions/{session_id}/bootstrap-preview-chunk" in openapi["paths"]
+E       AssertionError: assert '/api/v1/sessions/{session_id}/bootstrap-preview-chunk' in {'/api/v1/sessions': {'post': {'operationId': 'createSession', 'requestBody': {'content': {'application/json': {'schem...tched turn_id'}, '422': {'content': {'application/json': {...}}, 'description': 'Invalid scene_response'}}, ...}}, ...}
 
-tests/test_bootstrap_preview_chunks.py:125: AssertionError
-_ test_bootstrap_preview_returns_user_visible_preview_instead_of_422_for_repairable_draft _
-
-    def test_bootstrap_preview_returns_user_visible_preview_instead_of_422_for_repairable_draft():
-        client = TestClient(app)
-        created = client.post("/api/v1/sessions", json={
-            "genre": "romance with urban mysticism",
-            "setting_request": "modern city and ordinary work",
-            "protagonist_request": "adult heroine with a difficult private life",
-            "mode": "gpt_actions",
-        })
-        assert created.status_code == 200
-        session_id = created.json()["session_id"]
-    
-        response = client.post(
-            f"/api/v1/sessions/{session_id}/bootstrap-preview",
-            json={"bootstrap_json": _broken_but_repairable_bootstrap()},
-        )
-    
-        assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "bootstrap_review_pending"
->       assert body["must_show_to_user"] is True
-E       assert False is True
-
-tests/test_bootstrap_preview_resilience.py:134: AssertionError
-___________ test_staged_bootstrap_end_to_end_creates_visible_preview ___________
-
-    def test_staged_bootstrap_end_to_end_creates_visible_preview():
-        client = TestClient(app)
-        session_id = _create_session(client)
-        bootstrap = _valid_bootstrap()
-        bootstrap.setdefault("director_bible", {})
-    
-        for section in SINGLE_SECTIONS:
-            response = client.post(
-                f"/api/v1/sessions/{session_id}/bootstrap-part",
-                json={"section": section, "value": bootstrap[section]},
-            )
-            assert response.status_code == 200, response.text
-    
-        for section in ENTRY_SECTIONS:
-            entries = bootstrap[section]
-            if not entries:
-                response = client.post(
-                    f"/api/v1/sessions/{session_id}/bootstrap-part",
-                    json={"section": section, "value": {}},
-                )
-                assert response.status_code == 200, response.text
-                continue
-            for item_id, value in entries.items():
-                response = client.post(
-                    f"/api/v1/sessions/{session_id}/bootstrap-part",
-                    json={"section": section, "item_id": item_id, "value": value},
-                )
-                assert response.status_code == 200, response.text
-    
-        progress = response.json()["progress"]
-        assert progress["ready_to_finalize"] is True
-        assert progress["entry_counts"]["characters"] == len(bootstrap["characters"])
-    
-        final = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview-finalize")
-        assert final.status_code == 200, final.text
-        payload = final.json()
-        assert payload["status"] == "bootstrap_review_pending"
->       assert payload["must_show_to_user"] is True
-E       assert False is True
-
-tests/test_staged_bootstrap_preview.py:177: AssertionError
+tests/test_bootstrap_preview_chunks.py:133: AssertionError
 =========================== short test summary info ============================
-FAILED tests/test_bootstrap_preview_chunks.py::test_small_preview_keeps_legacy_single_response_behavior - assert True is False
-FAILED tests/test_bootstrap_preview_resilience.py::test_bootstrap_preview_returns_user_visible_preview_instead_of_422_for_repairable_draft - assert False is True
-FAILED tests/test_staged_bootstrap_preview.py::test_staged_bootstrap_end_to_end_creates_visible_preview - assert False is True
-3 failed, 93 passed in 8.72s
+FAILED tests/test_bootstrap_preview_chunks.py::test_small_preview_keeps_legacy_single_response_behavior - AssertionError: assert '/api/v1/sessions/{session_id}/bootstrap-preview-chunk' in {'/api/v1/sessions': {'post': {'operationId': 'createSession', 'requestBody': {'content': {'application/json': {'schem...tched turn_id'}, '422': {'content': {'application/json': {...}}, 'description': 'Invalid scene_response'}}, ...}}, ...}
+1 failed, 95 passed in 8.85s
 
 PYTEST_EXIT_CODE=1
