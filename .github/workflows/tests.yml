@@ -46,13 +46,4 @@ jobs:
           python -m pip install pytest==8.3.4 httpx==0.28.1
 
       - name: Run tests
-        run: python -m pytest -q > pytest-output.txt 2>&1
-
-      - name: Upload pytest failure output
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-failure-output
-          path: pytest-output.txt
-          if-no-files-found: error
-          retention-days: 1
+        run: python -m pytest -q
