@@ -744,8 +744,25 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
     if not isinstance(updates, dict):
         updates = {}
         result["proposed_updates"] = updates
-    if not isinstance(updates.setdefault("scene_state_patch", {}), dict):
-        updates["scene_state_patch"] = {}
+    for key in ("scene_state_patch", "continuity_patch", "director_bible_patches"):
+        # GPT occasionally emits [] for an empty patch. Empty means no change;
+        # normalize it before strict schema validation instead of rejecting an
+        # otherwise valid, already-written scene.
+        if not isinstance(updates.get(key), dict):
+            updates[key] = {}
+    for key in (
+        "relationship_patches",
+        "knowledge_patches",
+        "npc_state_patches",
+        "new_or_updated_characters",
+    ):
+        value = updates.get(key)
+        if isinstance(value, list):
+            updates[key] = value
+        elif isinstance(value, dict) and value:
+            updates[key] = [value]
+        else:
+            updates[key] = []
 
     status_bundle = _preview_bundle_with_scene_status_patch(bundle, updates)
     _normalize_header(scene, status_bundle)
@@ -765,7 +782,6 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
 
     _normalize_knowledge_patches(updates, bundle, scene)
     _normalize_relationship_patches(updates)
-    updates["new_or_updated_characters"] = _as_list(updates.get("new_or_updated_characters"))
     _normalize_relationships_panel(scene, status_bundle, updates)
 
     scene["rendered_text"] = _build_rendered_text(scene)

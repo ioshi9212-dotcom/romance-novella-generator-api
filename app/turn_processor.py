@@ -13,7 +13,7 @@ SCENE_WRITER_TOOL_FLOW = """
 
 Если processTurn вернул несколько чанков, сначала прочитай все через getTurnPromptChunk и склей их по порядку. RUNTIME_SCENE_RULES — канонический контракт; SCENE_CONTRACT_JSON — state текущего хода.
 
-Создай строго scene_response JSON без комментариев и markdown-обёртки. Не показывай JSON пользователю. Сразу вызови applyTurnResult и после успеха покажи только response.message_to_user.
+Создай поля scene_response без комментариев и markdown-обёртки. В applyTurnResult передай их ПЛОСКО рядом с turn_id: без обёртки scene_response и без rendered_text. Railway сам соберёт и сохранит видимый текст из scene.body/header/options/status. После успеха покажи только response.message_to_user. Если ответ Action потерялся, вызови getLastScene; новый processTurn не создавай.
 """.strip()
 
 # Backward-compatible public name. The value is compiled from repository rule files,
@@ -135,7 +135,9 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
         for i in (contract.get("recent_scene_history", []) or [])[-2:]
         if isinstance(i, dict)
     ]
-    compact["output_requirements"] = {"tool_flow": "generate scene_response, call applyTurnResult, then show response.message_to_user"}
+    compact["output_requirements"] = {
+        "tool_flow": "send turn_id plus flat scene fields to applyTurnResult; omit rendered_text; show response.message_to_user"
+    }
     return compact
 
 
@@ -229,7 +231,7 @@ def process_turn_gpt_actions(bundle: dict[str, Any], player_input: str) -> dict[
             "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
             "compact_prompt_chars": len(prompt),
             "scene_rules": rules_diagnostics,
-            "next_required_action": "generate scene_response internally, call applyTurnResult, then show response.message_to_user",
+            "next_required_action": "call flat applyTurnResult without rendered_text, then show response.message_to_user",
         },
     }
 
@@ -271,7 +273,7 @@ def process_time_skip_gpt_actions(
             "target_event_id": (assessment.get("target_event") or {}).get("id"),
             "compact_prompt_chars": len(prompt),
             "scene_rules": scene_rules_diagnostics(),
-            "next_required_action": "generate time-skip scene_response, call applyTurnResult, then show response.message_to_user",
+            "next_required_action": "call flat applyTurnResult without rendered_text, then show response.message_to_user",
         },
     }
 

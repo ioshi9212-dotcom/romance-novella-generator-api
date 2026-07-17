@@ -25,11 +25,10 @@ BOOTSTRAP_ROOT_FIELDS = {
 
 def test_actions_schema_hides_spilled_bootstrap_fields_from_custom_gpt():
     contract = build_openapi_actions("https://example.invalid")
-    schema = contract["components"]["schemas"]["BootstrapPreviewRequest"]
-
-    assert schema["required"] == ["bootstrap_json"]
-    assert schema["additionalProperties"] is False
-    assert set(schema["properties"]) == {"bootstrap_json"}
+    assert "BootstrapPreviewRequest" not in contract["components"]["schemas"]
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in contract["paths"]
+    schema = contract["components"]["schemas"]["SaveBootstrapPartRequest"]
+    assert set(schema["required"]) == {"section", "value"}
     assert BOOTSTRAP_ROOT_FIELDS.isdisjoint(schema["properties"])
 
 

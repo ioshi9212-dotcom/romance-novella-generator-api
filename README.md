@@ -13,7 +13,7 @@ GitHub = код, правила, схемы и промпты
 ## Что изменилось в v9
 
 - Добавлен обязательный launch-flow с preview перед первой сценой.
-- Канонический старт собирается малыми вызовами `saveBootstrapPart` и завершается через `finalizeBootstrapPreview`; legacy `createBootstrapPreview` оставлен для совместимости.
+- Канонический старт собирается малыми вызовами `saveBootstrapPart` и завершается через `finalizeBootstrapPreview`; legacy endpoint `createBootstrapPreview` работает для старых клиентов, но больше не публикуется в Custom GPT Actions.
 - `confirmBootstrapPreview` после явного подтверждения пользователя раскладывает персонажей/знания/отношения по state-файлам и активирует сессию.
 - Первая сцена пишется только после подтверждения preview.
 - `story_plan.json` усилен: цель новеллы, цель героини, центральный конфликт, центральный вопрос, opening intent, character_arcs, relationship_focus, open_threads.
@@ -69,7 +69,11 @@ GPT calls POST /api/v1/sessions/{session_id}/turn with player_input="(начат
 ↓
 API returns current state, active/nearby cards and only eligible event-driven entrance candidates
 ↓
-GPT writes scene_response, calls apply-turn-result, shows message_to_user
+GPT sends flat scene fields without rendered_text to apply-turn-result
+↓
+Railway renders, atomically saves and retains the visible scene
+↓
+GPT shows message_to_user; if delivery was lost, getLastScene returns it without a new turn
 ```
 
 ## Session state layout
@@ -89,6 +93,7 @@ DATA_DIR/
       continuity.json
       scene_history.json
       turns.json
+      last_scene_output.json
       characters_index.json
       characters/
         <character_id>.json

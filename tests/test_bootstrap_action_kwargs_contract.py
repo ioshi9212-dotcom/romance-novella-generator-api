@@ -8,22 +8,12 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 INSTRUCTIONS_PATH = ROOT_DIR / "gpt" / "custom_gpt_instructions.md"
 
 
-def test_create_bootstrap_preview_action_accepts_only_bootstrap_json_body_field():
+def test_legacy_full_bootstrap_preview_is_not_exposed_to_custom_gpt_actions():
     contract = build_openapi_actions("https://example.invalid")
-    schema = contract["components"]["schemas"]["BootstrapPreviewRequest"]
-
-    assert schema["required"] == ["bootstrap_json"]
-    assert set(schema["properties"]) == {"bootstrap_json"}
-    assert schema["additionalProperties"] is False
-
-    description = schema["properties"]["bootstrap_json"]["description"]
-    assert "exactly one" in description.lower()
-    assert "root fields" in description.lower()
-
-    operation = contract["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview"]["post"]
-    assert operation["deprecated"] is True
-    assert "exactly one body field" in operation["summary"]
-    assert "separate Action kwargs" in operation["summary"]
+    assert "BootstrapPreviewRequest" not in contract["components"]["schemas"]
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in contract["paths"]
+    assert "/api/v1/sessions/{session_id}/bootstrap-part" in contract["paths"]
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview-finalize" in contract["paths"]
 
 
 def test_create_session_action_keeps_the_questionnaire_in_one_string_field():

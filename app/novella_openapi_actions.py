@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
-import json
 import os
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 
 
 DEFAULT_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
-SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
 
 
 def _schema_obj(
@@ -35,14 +32,6 @@ def _loose_obj(properties: dict[str, Any] | None = None) -> dict[str, Any]:
 
 def _string_array() -> dict[str, Any]:
     return {"type": "array", "items": {"type": "string"}}
-
-
-def _bootstrap_compat(schema: dict[str, Any]) -> dict[str, Any]:
-    return {
-        **schema,
-        "deprecated": True,
-        "description": "Compatibility recovery only. Canonical callers keep this field inside bootstrap_json.",
-    }
 
 
 def _json_response(description: str, schema: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -88,64 +77,12 @@ def _public_base_url(request: Request | None = None) -> str:
     return DEFAULT_PUBLIC_URL
 
 
-def _load_component_schema(filename: str) -> dict[str, Any]:
-    schema = json.loads((SCHEMAS_DIR / filename).read_text(encoding="utf-8"))
-    schema = deepcopy(schema)
-    schema.pop("$schema", None)
-    schema.pop("$id", None)
-    return schema
-
-
-def _rewrite_schema_refs(node: Any, replacements: dict[str, str]) -> None:
-    if isinstance(node, dict):
-        ref = node.get("$ref")
-        if isinstance(ref, str) and ref in replacements:
-            node["$ref"] = replacements[ref]
-        for value in node.values():
-            _rewrite_schema_refs(value, replacements)
-    elif isinstance(node, list):
-        for value in node:
-            _rewrite_schema_refs(value, replacements)
-
-
-def _component_name(definition_name: str) -> str:
-    if not definition_name:
-        raise ValueError("OpenAPI schema definition name cannot be empty")
-    return definition_name[:1].upper() + definition_name[1:]
-
-
 def _load_actions_component_schemas() -> dict[str, Any]:
-    loaded = {
-        "BootstrapPayload": _load_component_schema("bootstrap_output.schema.json"),
-        "SceneResponse": _load_component_schema("scene_response.schema.json"),
-    }
-    components: dict[str, Any] = {}
-
-    for root_name, root_schema in loaded.items():
-        definitions = root_schema.pop("$defs", {})
-        if definitions is None:
-            definitions = {}
-        if not isinstance(definitions, dict):
-            raise ValueError(f"{root_name}.$defs must be an object")
-
-        ref_replacements = {
-            f"#/$defs/{definition_name}": f"#/components/schemas/{_component_name(definition_name)}"
-            for definition_name in definitions
-        }
-        _rewrite_schema_refs(root_schema, ref_replacements)
-        components[root_name] = root_schema
-
-        for definition_name, definition in definitions.items():
-            component_name = _component_name(definition_name)
-            if not isinstance(definition, dict):
-                raise ValueError(f"OpenAPI component {component_name} must be an object schema")
-            if component_name in components or component_name in loaded:
-                raise ValueError(f"Duplicate OpenAPI component schema: {component_name}")
-            definition = deepcopy(definition)
-            _rewrite_schema_refs(definition, ref_replacements)
-            components[component_name] = definition
-
-    return components
+    # The strict repository schemas remain the backend validator. Custom GPT
+    # only needs a small authoring contract; embedding the complete bootstrap
+    # and every patch subtype made the imported Action nearly 100 KB and caused
+    # malformed/flattened kwargs before requests reached Railway.
+    return {"SceneResponse": deepcopy(ACTION_SCENE_RESPONSE_SCHEMA)}
 
 
 CREATE_SESSION_SCHEMA = _schema_obj(
@@ -167,20 +104,6 @@ CREATE_SESSION_SCHEMA = _schema_obj(
     },
     required=["raw_start_text"],
     additional_properties=False,
-)
-
-BOOTSTRAP_PREVIEW_SCHEMA = _schema_obj(
-    {
-        "bootstrap_json": {
-            "$ref": "#/components/schemas/BootstrapPayload",
-            "description": (
-                "Compatibility-only complete bootstrap request. The JSON body must contain exactly one field: "
-                "bootstrap_json. Keep every bootstrap root field inside bootstrap_json; never pass root fields "
-                "such as knowledge, npc_state, continuity, scene_history or turns as Action kwargs."
-            ),
-        },
-    },
-    required=["bootstrap_json"],
 )
 
 SAVE_BOOTSTRAP_PART_SCHEMA = _schema_obj(
@@ -261,6 +184,174 @@ ADVANCE_TIME_SCHEMA = _schema_obj(
     required=["player_input"],
 )
 
+SCENE_HEADER_INPUT_SCHEMA = _schema_obj(
+    {
+        key: {"type": "string", "minLength": 1}
+        for key in (
+            "story_title",
+            "date",
+            "time",
+            "location",
+            "weather",
+            "scene_state",
+            "player_name",
+            "visible_state",
+            "outfit",
+            "inventory",
+        )
+    },
+    required=[
+        "story_title",
+        "date",
+        "time",
+        "location",
+        "weather",
+        "scene_state",
+        "player_name",
+        "visible_state",
+        "outfit",
+        "inventory",
+    ],
+)
+
+SCENE_OPTIONS_INPUT_SCHEMA = _schema_obj(
+    {
+        key: {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {"type": "string", "minLength": 1},
+        }
+        for key in ("actions", "dialogue", "thoughts")
+    },
+    required=["actions", "dialogue", "thoughts"],
+)
+
+SCENE_STATUS_INPUT_SCHEMA = _schema_obj(
+    {
+        "hunger": {"type": "string"},
+        "fatigue": {"type": "string"},
+        "injuries": {"type": "string"},
+        "emotional_state": {"type": "string"},
+        "skills": {"type": "string"},
+        "custom": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": _schema_obj(
+                {
+                    "id": {"type": "string", "enum": ["story_slot_1", "story_slot_2"]},
+                    "label": {"type": "string"},
+                    "value": {"type": "string"},
+                },
+                required=["id", "label", "value"],
+            ),
+        },
+    },
+    required=["hunger", "fatigue", "injuries", "emotional_state", "skills", "custom"],
+)
+
+SCENE_INPUT_SCHEMA = _schema_obj(
+    {
+        "header": SCENE_HEADER_INPUT_SCHEMA,
+        "body": {
+            "type": "string",
+            "minLength": 500,
+            "description": "Complete prose and dialogue. Railway builds the visible rendered scene from this body; do not send rendered_text.",
+        },
+        "player_options": SCENE_OPTIONS_INPUT_SCHEMA,
+        "status_panel": SCENE_STATUS_INPUT_SCHEMA,
+        "relationships_panel": {
+            "type": "array",
+            "items": _schema_obj(
+                {
+                    "pair_id": {"type": ["string", "null"]},
+                    "label": {"type": "string"},
+                    "value": {"type": "string"},
+                },
+                required=["label", "value"],
+            ),
+        },
+    },
+    required=["header", "body", "player_options", "status_panel", "relationships_panel"],
+)
+
+PROPOSED_UPDATES_INPUT_SCHEMA = _schema_obj(
+    {
+        "scene_state_patch": _loose_obj(),
+        "continuity_patch": _loose_obj(),
+        "relationship_patches": {"type": "array", "items": _loose_obj()},
+        "knowledge_patches": {"type": "array", "items": _loose_obj()},
+        "npc_state_patches": {"type": "array", "items": _loose_obj()},
+        "director_bible_patches": {
+            "oneOf": [
+                _loose_obj(),
+                {"type": "array", "maxItems": 0, "items": _loose_obj()},
+            ],
+            "description": "Use an object; use {} when there are no director updates. Legacy empty [] is tolerated.",
+        },
+        "new_or_updated_characters": {"type": "array", "items": _loose_obj()},
+    },
+    required=[
+        "scene_state_patch",
+        "continuity_patch",
+        "relationship_patches",
+        "knowledge_patches",
+        "npc_state_patches",
+        "director_bible_patches",
+        "new_or_updated_characters",
+    ],
+)
+
+SAFETY_CHECKS_INPUT_SCHEMA = _schema_obj(
+    {
+        key: {"const": True}
+        for key in (
+            "used_only_loaded_characters",
+            "respected_knowledge_boundaries",
+            "no_hidden_future_reveal",
+            "no_major_player_character_choice",
+            "respected_player_input_order",
+            "showed_only_scene_relationships",
+            "header_has_no_focus_or_active_list",
+        )
+    }
+    | {"notes": {"type": "array", "items": {"type": "string"}}},
+    required=[
+        "used_only_loaded_characters",
+        "respected_knowledge_boundaries",
+        "no_hidden_future_reveal",
+        "no_major_player_character_choice",
+        "respected_player_input_order",
+        "showed_only_scene_relationships",
+        "header_has_no_focus_or_active_list",
+    ],
+)
+
+ACTION_SCENE_RESPONSE_SCHEMA = _schema_obj(
+    {
+        "response_version": {"const": "novella.scene_response.v1"},
+        "player_input": {"type": "string", "minLength": 1},
+        "scene": SCENE_INPUT_SCHEMA,
+        "summary": {"type": "string", "minLength": 1},
+        "important_facts": {"type": "array", "items": {"type": "string"}},
+        "witnesses": {"type": "array", "items": {"oneOf": [{"type": "string"}, _loose_obj()]}},
+        "proposed_updates": PROPOSED_UPDATES_INPUT_SCHEMA,
+        "safety_checks": SAFETY_CHECKS_INPUT_SCHEMA,
+        "time_skip_result": _loose_obj(),
+    },
+    required=[
+        "response_version",
+        "player_input",
+        "scene",
+        "summary",
+        "important_facts",
+        "witnesses",
+        "proposed_updates",
+        "safety_checks",
+    ],
+)
+
 APPLY_TURN_RESULT_SCHEMA = _schema_obj(
     {
         "turn_id": {
@@ -268,18 +359,9 @@ APPLY_TURN_RESULT_SCHEMA = _schema_obj(
             "minLength": 1,
             "description": "Exact turn_id returned by processTurn.",
         },
-        "scene_response": {"$ref": "#/components/schemas/SceneResponse"},
-        "rendered_text": {
-            "type": ["string", "null"],
-            "description": "Compatibility fallback for older imported Actions.",
-        },
-        "proposed_updates": _loose_obj(),
-        "safety_checks": _loose_obj(),
-        "metadata": _loose_obj({"turn_id": {"type": ["string", "null"]}}),
-        "diagnostics": _loose_obj(),
+        **deepcopy(ACTION_SCENE_RESPONSE_SCHEMA["properties"]),
     },
-    required=["turn_id", "scene_response"],
-    additional_properties=True,
+    required=["turn_id", *ACTION_SCENE_RESPONSE_SCHEMA["required"]],
 )
 
 CREATE_SESSION_RESPONSE_SCHEMA = _schema_obj(
@@ -503,9 +585,11 @@ APPLY_TURN_RESULT_RESPONSE_SCHEMA = _schema_obj(
     {
         "session_id": {"type": "string"},
         "status": {"type": "string"},
+        "turn_id": {"type": "string"},
         "message_to_user": {"type": "string"},
-        "rendered_text": {"type": "string"},
         "must_show_to_user": {"type": "boolean"},
+        "replayed": {"type": "boolean"},
+        "saved_turn_number": {"type": "integer", "minimum": 0},
         "applied": _loose_obj(),
         "rejected": {"type": "array", "items": _loose_obj()},
         "next_builder_hints": _loose_obj(),
@@ -513,14 +597,37 @@ APPLY_TURN_RESULT_RESPONSE_SCHEMA = _schema_obj(
     required=[
         "session_id",
         "status",
+        "turn_id",
         "message_to_user",
-        "rendered_text",
         "must_show_to_user",
+        "replayed",
+        "saved_turn_number",
         "applied",
         "rejected",
         "next_builder_hints",
     ],
     additional_properties=True,
+)
+
+LAST_SCENE_RESPONSE_SCHEMA = _schema_obj(
+    {
+        "session_id": {"type": "string"},
+        "available": {"type": "boolean"},
+        "turn_id": {"type": ["string", "null"]},
+        "saved_turn_number": {"type": ["integer", "null"], "minimum": 0},
+        "message_to_user": {"type": "string"},
+        "must_show_to_user": {"type": "boolean"},
+        "recovered_from": {"type": "string"},
+        "summary": {"type": ["string", "null"]},
+        "body_excerpt": {"type": ["string", "null"]},
+    },
+    required=[
+        "session_id",
+        "available",
+        "message_to_user",
+        "must_show_to_user",
+        "recovered_from",
+    ],
 )
 
 
@@ -531,11 +638,12 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
         "openapi": "3.1.0",
         "info": {
             "title": "Romance Novella Generator API",
-            "version": "gpt-actions-v9-strict-contract",
+            "version": "gpt-actions-v9.1-resilient-turn-delivery",
             "description": (
                 "Custom GPT Actions schema for generated novella sessions. "
                 "Use questionnaire, staged bootstrap parts, chunked preview-confirm launch flow, chunked processTurn, "
-                "then applyTurnResult with the exact turn_id. Use advanceTime only for a user-selected natural-pause skip."
+                "then flat applyTurnResult with the exact turn_id. Railway renders and retains the visible scene; "
+                "getLastScene recovers a lost Action response without creating a new turn."
             ),
         },
         "servers": [{"url": url}],
@@ -552,7 +660,6 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 **_load_actions_component_schemas(),
                 "CreateSessionRequest": CREATE_SESSION_SCHEMA,
                 "CreateSessionResponse": CREATE_SESSION_RESPONSE_SCHEMA,
-                "BootstrapPreviewRequest": BOOTSTRAP_PREVIEW_SCHEMA,
                 "BootstrapPreviewResponse": BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA,
                 "BootstrapPreviewChunkResponse": BOOTSTRAP_PREVIEW_CHUNK_RESPONSE_SCHEMA,
                 "SaveBootstrapPartRequest": SAVE_BOOTSTRAP_PART_SCHEMA,
@@ -566,6 +673,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "DebugSessionDumpResponse": DEBUG_SESSION_DUMP_RESPONSE_SCHEMA,
                 "ApplyTurnResultRequest": APPLY_TURN_RESULT_SCHEMA,
                 "ApplyTurnResultResponse": APPLY_TURN_RESULT_RESPONSE_SCHEMA,
+                "LastSceneResponse": LAST_SCENE_RESPONSE_SCHEMA,
             },
         },
         "paths": {
@@ -666,28 +774,6 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                         "200": _json_response("Bootstrap preview created from staged parts.", {"$ref": "#/components/schemas/BootstrapPreviewResponse"}),
                         "409": _json_response("Staged bootstrap is incomplete or session status is wrong.", _loose_obj()),
                         "422": _json_response("Assembled bootstrap is invalid.", _loose_obj()),
-                    },
-                }
-            },
-            "/api/v1/sessions/{session_id}/bootstrap-preview": {
-                "post": {
-                    "operationId": "createBootstrapPreview",
-                    "deprecated": True,
-                    "summary": (
-                        "Compatibility-only full preview call. Send exactly one body field named bootstrap_json; "
-                        "never pass bootstrap root fields as separate Action kwargs. Prefer saveBootstrapPart. "
-                        "If status=bootstrap_repair_required, silently apply repair_plan and retry."
-                    ),
-                    "parameters": [_session_id_param()],
-                    "requestBody": _request_body(
-                        {"$ref": "#/components/schemas/BootstrapPreviewRequest"}
-                    ),
-                    "responses": {
-                        "200": _json_response(
-                            "Bootstrap preview created.",
-                            {"$ref": "#/components/schemas/BootstrapPreviewResponse"},
-                        ),
-                        "422": _json_response("Invalid bootstrap JSON", _loose_obj()),
                     },
                 }
             },
@@ -823,8 +909,8 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "post": {
                     "operationId": "applyTurnResult",
                     "summary": (
-                        "Validate and atomically save scene_response. Final "
-                        "assistant answer must be response.message_to_user only."
+                        "Validate and atomically save flat scene fields. Do not send rendered_text: Railway builds it. "
+                        "Repeating the same turn_id safely replays the saved response; final assistant answer is message_to_user."
                     ),
                     "parameters": [_session_id_param()],
                     "requestBody": _request_body(
@@ -840,6 +926,24 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                             _loose_obj(),
                         ),
                         "422": _json_response("Invalid scene_response", _loose_obj()),
+                    },
+                }
+            },
+            "/api/v1/sessions/{session_id}/last-scene": {
+                "get": {
+                    "operationId": "getLastScene",
+                    "summary": (
+                        "Recover the most recently saved visible scene after a missing/oversized Action response. "
+                        "This never creates a turn or changes state. Show message_to_user only when available=true."
+                    ),
+                    "parameters": [_session_id_param()],
+                    "responses": {
+                        "200": _json_response(
+                            "Last saved visible scene or compact legacy recovery information.",
+                            {"$ref": "#/components/schemas/LastSceneResponse"},
+                        ),
+                        "404": _json_response("Session not found", _loose_obj()),
+                        "409": _json_response("Session is not active", _loose_obj()),
                     },
                 }
             },

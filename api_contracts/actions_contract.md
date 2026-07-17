@@ -24,7 +24,10 @@ Custom GPT is the writer. Railway stores memory, validates JSON, builds scene pr
 - Do not call `processTurn` before `confirmBootstrapPreview` succeeds.
 - Do not show raw bootstrap JSON to the user unless they explicitly ask.
 - Show only the preview during setup review.
-- After normal turns, show only `scene.rendered_text`.
+- Send `turn_id` and scene fields flat to `applyTurnResult`; do not wrap them in `scene_response` and do not send `rendered_text`.
+- Railway builds and retains the visible scene. After normal turns, show only `message_to_user`.
+- A repeated `applyTurnResult` for the same applied `turn_id` is idempotent and replays the saved response.
+- If the Action response is lost, call `getLastScene`; never create a replacement turn.
 
 ## State layout after confirm
 

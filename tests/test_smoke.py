@@ -239,11 +239,14 @@ def test_openapi_actions_exposes_full_v9_flow():
     paths = response.json()["paths"]
     assert "/api/v1/start-questionnaire" in paths
     assert "/api/v1/sessions" in paths
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview" in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-part" in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview-finalize" in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in paths
     assert "/api/v1/sessions/{session_id}/bootstrap-confirm" in paths
     assert "/api/v1/sessions/{session_id}/turn" in paths
     assert "/api/v1/sessions/{session_id}/turn-prompt-chunk" in paths
     assert "/api/v1/sessions/{session_id}/apply-turn-result" in paths
+    assert "/api/v1/sessions/{session_id}/last-scene" in paths
 
 
 def test_empty_start_returns_questionnaire():
@@ -298,7 +301,9 @@ def test_v9_preview_confirm_turn_apply_flow():
         f"/api/v1/sessions/{session_id}/apply-turn-result",
         json={"turn_id": turn_body["turn_id"], "scene_response": scene_response},
     )
-    assert duplicate.status_code == 409
+    assert duplicate.status_code == 200
+    assert duplicate.json()["replayed"] is True
+    assert duplicate.json()["message_to_user"] == applied.json()["message_to_user"]
 
     # Backward compatibility: an old imported Action may expose only scene_response
     # and reject a top-level turn_id. Backend should bind to the single pending turn

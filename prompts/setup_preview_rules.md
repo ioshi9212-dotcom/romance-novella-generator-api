@@ -7,7 +7,7 @@
 1. Пользователь заполняет стартовую анкету одним сообщением.
 2. GPT сохраняет малыми вызовами полные карточки characters, story_plan, current_state и авторский director_bible; пропущенное пользователем придумывает сам.
 3. GPT НЕ сохраняет черновик как активную игру.
-4. GPT вызывает `finalizeBootstrapPreview`; `createBootstrapPreview` остаётся только legacy-совместимостью.
+4. GPT вызывает `finalizeBootstrapPreview`; backend legacy `createBootstrapPreview` не публикуется в Action-схеме.
 5. Пользователю показывается preview: героиня, знакомые, работа/роль, стартовая локация, отношения, story_plan.
 6. Только после явного подтверждения GPT вызывает `confirmBootstrapPreview`.
 7. Только после подтверждения можно писать первую сцену.

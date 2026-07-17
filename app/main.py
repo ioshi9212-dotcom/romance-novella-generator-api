@@ -27,7 +27,25 @@ from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
 from app.director_bible import apply_director_bible_patches, prepare_director_bible, validate_director_bible
 from app.id_utils import now_iso
-from app.models import AdvanceTimeRequest, ApplyTurnResultRequest, ApplyTurnResultResponse, BootstrapPreviewChunkResponse, BootstrapPreviewRequest, BootstrapPreviewResponse, BootstrapConfirmRequest, BootstrapConfirmResponse, CreateSessionRequest, CreateSessionResponse, DebugSessionDumpResponse, SaveBootstrapPartRequest, SaveBootstrapPartResponse, TurnPromptChunkResponse, TurnRequest, TurnResponse
+from app.models import (
+    AdvanceTimeRequest,
+    ApplyTurnResultRequest,
+    ApplyTurnResultResponse,
+    BootstrapConfirmRequest,
+    BootstrapConfirmResponse,
+    BootstrapPreviewChunkResponse,
+    BootstrapPreviewRequest,
+    BootstrapPreviewResponse,
+    CreateSessionRequest,
+    CreateSessionResponse,
+    DebugSessionDumpResponse,
+    LastSceneResponse,
+    SaveBootstrapPartRequest,
+    SaveBootstrapPartResponse,
+    TurnPromptChunkResponse,
+    TurnRequest,
+    TurnResponse,
+)
 from app.npc_state_updates import apply_npc_state_patches
 from app.scene_response_normalizer import normalize_scene_response
 from app.session_manager import SessionManager
@@ -38,6 +56,7 @@ from app.time_skip import assess_time_skip, record_time_skip_result, validate_ti
 from app.validators import validate_bootstrap_result, validate_scene_response, validate_scene_state_invariants
 
 RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
+LAST_SCENE_OUTPUT_FILE = "last_scene_output.json"
 app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v9", servers=[{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}])
 
 
@@ -204,9 +223,9 @@ def _pending_turn_response(pending: dict[str, Any], session_id: str) -> dict[str
     chunk_count = int(pending.get("prompt_chunk_count") or len(chunks))
     has_more = chunk_count > 1
     next_required_action = (
-        "Read all prompt chunks using getTurnPromptChunk, concatenate them in order, then generate scene_response and call applyTurnResult with this turn_id."
+        "Read all prompt chunks using getTurnPromptChunk, concatenate them in order, then call flat applyTurnResult with this turn_id and no rendered_text."
         if has_more
-        else "Generate scene_response, then call applyTurnResult with this turn_id."
+        else "Call flat applyTurnResult with this turn_id and no rendered_text."
     )
     diagnostics = dict(pending.get("turn_diagnostics") or {})
     diagnostics.update({
@@ -320,6 +339,10 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
     continuity = bundle.get("continuity", {}) if isinstance(bundle.get("continuity"), dict) else {}
     memory_chunks = continuity.get("memory_chunks", []) if isinstance(continuity.get("memory_chunks"), list) else []
     pending = _load_pending_turn(manager, session_id)
+    last_scene_output = _load_last_scene_output(manager, session_id)
+    characters = bundle.get("characters") if isinstance(bundle.get("characters"), dict) else {}
+    knowledge = bundle.get("knowledge") if isinstance(bundle.get("knowledge"), dict) else {}
+    relationships = bundle.get("relationships") if isinstance(bundle.get("relationships"), dict) else {}
 
     pending_safe = {}
     if isinstance(pending, dict) and pending:
@@ -335,8 +358,58 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
             "prompt_chunk_size": pending.get("prompt_chunk_size"),
             "scene_prompt_sha256": pending.get("scene_prompt_sha256"),
         }
+    pending_safe["last_scene_available"] = bool(last_scene_output.get("message_to_user"))
+    pending_safe["last_scene_turn_id"] = last_scene_output.get("turn_id")
+    pending_safe["recovery_action"] = "getLastScene" if last_scene_output.get("message_to_user") else None
 
     maintenance = current_state.get("maintenance") if isinstance(current_state.get("maintenance"), dict) else {}
+    cast_status_counts: dict[str, int] = {}
+    for card in characters.values():
+        if isinstance(card, dict):
+            status = str(card.get("cast_status") or "unknown")
+            cast_status_counts[status] = cast_status_counts.get(status, 0) + 1
+    relationship_debug: dict[str, Any] = {
+        "count": len(relationships),
+        "pair_ids": list(relationships)[:24],
+    }
+    for pair_id in list(relationships)[:24]:
+        pair = relationships.get(pair_id)
+        if not isinstance(pair, dict):
+            continue
+        relationship_debug[str(pair_id)] = {
+            "character_a": pair.get("character_a"),
+            "character_b": pair.get("character_b"),
+            "status": pair.get("status"),
+            "scores": _debug_clip_dict(pair.get("scores"), 80, 16),
+        }
+    recent_scenes = [
+        {
+            "turn": item.get("turn"),
+            "summary": _debug_clip_text(item.get("summary"), 420),
+            "important_facts": _debug_clip_list(item.get("important_facts", []), 4, 180),
+            "witnesses": _debug_clip_list(item.get("witnesses", []), 8, 80),
+        }
+        for item in (bundle.get("scene_history", []) or [])[-3:]
+        if isinstance(item, dict)
+    ]
+    recent_turns = [
+        {
+            "turn": item.get("turn"),
+            "player_input": _debug_clip_text(item.get("player_input"), 280),
+            "summary": _debug_clip_text(item.get("summary"), 360),
+        }
+        for item in (bundle.get("turns", []) or [])[-3:]
+        if isinstance(item, dict)
+    ]
+    bootstrap_compact = {
+        "draft_present": bootstrap_debug.get("draft_present"),
+        "progress": _debug_clip_dict(bootstrap_debug.get("progress"), 220, 12),
+        "staged_character_ids": list(bootstrap_debug.get("staged_character_ids") or [])[:20],
+        "pending_bootstrap_present": bootstrap_debug.get("pending_bootstrap_present"),
+        "pending_character_ids": list(bootstrap_debug.get("pending_character_ids") or [])[:20],
+        "pending_preview_present": bootstrap_debug.get("pending_preview_present"),
+        "last_error": _debug_clip_dict(bootstrap_debug.get("last_error"), 320, 8),
+    }
     return {
         "session_id": session_id,
         "status": session.get("status", "unknown"),
@@ -350,8 +423,27 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
             "bootstrap_preview_chunk_endpoint": "getBootstrapPreviewChunk",
             "debug_endpoint": "debugSessionDump",
         },
-        "session": _debug_clip_dict(session, 700),
-        "current_state": _debug_clip_dict(current_state, 700),
+        "session": {
+            **{
+                key: _debug_clip_text(session.get(key), 500)
+                for key in ("session_id", "title", "status", "mode", "created_at", "updated_at")
+                if key in session
+            },
+            "last_error": _debug_clip_dict(session.get("last_error"), 320, 8),
+        },
+        "current_state": {
+            "turn_number": current_state.get("turn_number"),
+            "date": current_state.get("date"),
+            "time": current_state.get("time"),
+            "location": current_state.get("location"),
+            "scene_state": _debug_clip_text(current_state.get("scene_state"), 420),
+            "player_character_id": current_state.get("player_character_id"),
+            "active_character_ids": list(current_state.get("active_character_ids") or [])[:12],
+            "nearby_character_ids": list(current_state.get("nearby_character_ids") or [])[:12],
+            "last_player_input": _debug_clip_text(current_state.get("last_player_input"), 420),
+            "status": _debug_clip_dict(current_state.get("status"), 220, 12),
+            "maintenance": _debug_clip_dict(maintenance, 220, 12),
+        },
         "story_plan": {
             "genre": story_plan.get("genre"),
             "tone": story_plan.get("tone"),
@@ -366,12 +458,16 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
                 "hidden_character_seeds": len((bundle.get("future_locks", {}) or {}).get("hidden_character_seeds", []) or []),
             },
         },
-        "characters": {cid: _debug_clip_dict(card, 700) for cid, card in (bundle.get("characters") or {}).items()},
-        "knowledge": {cid: _debug_clip_dict(entry, 700) for cid, entry in (bundle.get("knowledge") or {}).items()},
-        "relationships": {pid: _debug_clip_dict(entry, 700) for pid, entry in (bundle.get("relationships") or {}).items()},
+        "characters": {
+            "count": len(characters),
+            "ids": list(characters)[:24],
+            "cast_status_counts": cast_status_counts,
+        },
+        "knowledge": {"count": len(knowledge), "character_ids": list(knowledge)[:24]},
+        "relationships": relationship_debug,
         "history": {
-            "recent_scene_history": bundle.get("scene_history", [])[-6:] if isinstance(bundle.get("scene_history"), list) else [],
-            "recent_turns": bundle.get("turns", [])[-8:] if isinstance(bundle.get("turns"), list) else [],
+            "recent_scene_history": recent_scenes,
+            "recent_turns": recent_turns,
             "memory_chunk_count": len(memory_chunks),
             "memory_chunk_ranges": [
                 {"chunk_id": chunk.get("chunk_id"), "type": chunk.get("type"), "turn_start": chunk.get("turn_start"), "turn_end": chunk.get("turn_end")}
@@ -391,7 +487,7 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
         },
         "pending_turn": pending_safe,
         "diagnostics": {
-            "bootstrap": bootstrap_debug,
+            "bootstrap": bootstrap_compact,
             "turn_number": current_state.get("turn_number"),
             "state_recovery_audit_due": maintenance.get("state_recovery_audit_due") or maintenance.get("continuity_check_required_next"),
             "state_compaction_cleanup_due": maintenance.get("state_compaction_cleanup_due") or maintenance.get("memory_review_required_next"),
@@ -482,16 +578,29 @@ def _extract_turn_id_from_scene_response(scene_response: dict[str, Any]) -> str 
 
 
 def _coerce_scene_response_payload(request: ApplyTurnResultRequest) -> dict[str, Any]:
-    """Move known top-level compatibility fields into scene_response.
+    """Merge the new flat Action payload with the legacy wrapper.
 
-    Custom GPT may retry after an Action-schema error by sending fields such as
-    rendered_text, proposed_updates or safety_checks next to scene_response. The
-    canonical backend contract keeps them inside scene_response, but accepting
-    and relocating them here prevents false 422/UnrecognizedKwargs failures.
+    Flat fields are canonical because GPT Actions otherwise tends to spill only
+    some scene_response members into top-level kwargs. Already-imported Actions
+    may still send the wrapper, so both shapes remain accepted.
     """
     raw = dict(request.scene_response or {})
 
-    for key in ("rendered_text", "proposed_updates", "safety_checks", "metadata", "diagnostics"):
+    scene_fields = (
+        "response_version",
+        "player_input",
+        "scene",
+        "summary",
+        "important_facts",
+        "witnesses",
+        "rendered_text",
+        "proposed_updates",
+        "safety_checks",
+        "time_skip_result",
+        "metadata",
+        "diagnostics",
+    )
+    for key in scene_fields:
         value = getattr(request, key, None)
         if value is not None and key not in raw:
             raw[key] = value
@@ -499,12 +608,135 @@ def _coerce_scene_response_payload(request: ApplyTurnResultRequest) -> dict[str,
     # Pydantic extra fields, if any, are also folded in conservatively.
     extras = getattr(request, "model_extra", None) or {}
     if isinstance(extras, dict):
-        for key in ("rendered_text", "proposed_updates", "safety_checks", "metadata", "diagnostics"):
+        for key in scene_fields:
             value = extras.get(key)
             if value is not None and key not in raw:
                 raw[key] = value
 
     return raw
+
+
+def _compact_apply_details(result: dict[str, Any]) -> dict[str, Any]:
+    applied = result.get("applied") if isinstance(result.get("applied"), dict) else {}
+    counts: dict[str, int] = {}
+    for key, value in applied.items():
+        if isinstance(value, (list, dict)):
+            counts[str(key)] = len(value)
+        elif value is not None:
+            counts[str(key)] = 1
+    return {"saved": True, "change_counts": counts}
+
+
+def _compact_next_hints(result: dict[str, Any]) -> dict[str, Any]:
+    hints = result.get("next_builder_hints") if isinstance(result.get("next_builder_hints"), dict) else {}
+    maintenance = hints.get("maintenance") if isinstance(hints.get("maintenance"), dict) else {}
+    return {
+        "active_character_ids": list(hints.get("active_character_ids") or [])[:12],
+        "location": hints.get("location"),
+        "repair_required": bool(hints.get("repair_required")),
+        "maintenance": {
+            key: maintenance.get(key)
+            for key in (
+                "last_saved_turn_number",
+                "state_recovery_audit_due",
+                "state_compaction_cleanup_due",
+            )
+            if key in maintenance
+        },
+    }
+
+
+def _build_apply_turn_response(
+    session_id: str,
+    turn_id: str,
+    rendered_text: str,
+    result: dict[str, Any],
+    *,
+    replayed: bool,
+) -> dict[str, Any]:
+    hints = result.get("next_builder_hints") if isinstance(result.get("next_builder_hints"), dict) else {}
+    maintenance = hints.get("maintenance") if isinstance(hints.get("maintenance"), dict) else {}
+    saved_turn_number = int(maintenance.get("last_saved_turn_number") or 0)
+    return {
+        "session_id": session_id,
+        "status": str(result.get("status") or "applied"),
+        "turn_id": turn_id,
+        # Keep the full visible scene exactly once. Returning rendered_text as a
+        # duplicate was enough to overflow some GPT Action responses.
+        "message_to_user": rendered_text,
+        "must_show_to_user": True,
+        "replayed": replayed,
+        "saved_turn_number": saved_turn_number,
+        "applied": _compact_apply_details(result),
+        "rejected": list(result.get("rejected") or [])[:20],
+        "next_builder_hints": _compact_next_hints(result),
+    }
+
+
+def _store_last_scene_output(
+    manager: SessionManager,
+    session_id: str,
+    response: dict[str, Any],
+    *,
+    player_input: str,
+) -> None:
+    manager.storage.write_json(
+        session_id,
+        LAST_SCENE_OUTPUT_FILE,
+        {
+            **response,
+            "available": True,
+            "recovered_from": "last_scene_output",
+            "player_input_sha256": _hash_text(player_input),
+            "stored_at": now_iso(),
+        },
+    )
+
+
+def _load_last_scene_output(manager: SessionManager, session_id: str) -> dict[str, Any]:
+    output = manager.storage.read_json(session_id, LAST_SCENE_OUTPUT_FILE, default={})
+    return output if isinstance(output, dict) else {}
+
+
+def _replay_applied_turn(
+    manager: SessionManager,
+    session_id: str,
+    pending: dict[str, Any],
+    request_turn_id: str | None,
+) -> dict[str, Any]:
+    pending_turn_id = str(pending.get("turn_id") or "").strip()
+    request_turn_id = str(request_turn_id or pending_turn_id).strip()
+    if not pending_turn_id or request_turn_id != pending_turn_id:
+        raise HTTPException(status_code=409, detail="Stale or mismatched applied turn_id.")
+    output = _load_last_scene_output(manager, session_id)
+    if output.get("turn_id") != pending_turn_id or not output.get("message_to_user"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "APPLIED_TURN_OUTPUT_NOT_RETAINED",
+                "turn_id": pending_turn_id,
+                "message": "This turn belongs to the legacy transport and its full visible output was not retained.",
+                "recovery_action": "getLastScene",
+            },
+        )
+    response = {
+        key: value
+        for key, value in output.items()
+        if key
+        in {
+            "session_id",
+            "status",
+            "turn_id",
+            "message_to_user",
+            "must_show_to_user",
+            "saved_turn_number",
+            "applied",
+            "rejected",
+            "next_builder_hints",
+        }
+    }
+    response["replayed"] = True
+    return response
 
 
 def _require_pending_turn_match(manager: SessionManager, session_id: str, request_turn_id: str | None, normalized_scene_response: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
@@ -538,7 +770,16 @@ def _require_pending_turn_match(manager: SessionManager, session_id: str, reques
 
 
 def _mark_pending_turn_applied(manager: SessionManager, session_id: str, pending: dict[str, Any]) -> None:
-    manager.storage.write_json(session_id, "pending_turn.json", {**pending, "status": "applied", "applied_at": now_iso()})
+    manager.storage.write_json(
+        session_id,
+        "pending_turn.json",
+        {
+            **pending,
+            "status": "applied",
+            "applied_at": now_iso(),
+            "last_scene_output_file": LAST_SCENE_OUTPUT_FILE,
+        },
+    )
 
 
 def _process_turn_locked(manager: SessionManager, session_id: str, request: TurnRequest, player_input: str, bundle: dict[str, Any]) -> dict:
@@ -847,7 +1088,65 @@ def get_session(session_id: str) -> dict:
     manager = SessionManager()
     try:
         with _session_request_context(manager, session_id):
-            return manager.get_memory(session_id)["session"]
+            session = dict(manager.get_memory(session_id)["session"])
+            pending = _load_pending_turn(manager, session_id)
+            last_scene = _load_last_scene_output(manager, session_id)
+            session["turn_delivery"] = {
+                "turn_id": pending.get("turn_id"),
+                "turn_status": pending.get("status"),
+                "last_scene_available": bool(last_scene.get("message_to_user")),
+                "last_scene_turn_id": last_scene.get("turn_id"),
+                "recovery_action": "getLastScene" if last_scene.get("message_to_user") else None,
+            }
+            return session
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/last-scene",
+    response_model=LastSceneResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_api_key)],
+    operation_id="getLastScene",
+)
+def get_last_scene(session_id: str) -> dict[str, Any]:
+    """Return the last saved visible scene without creating or applying a turn."""
+    manager = SessionManager()
+    try:
+        with _session_request_context(manager, session_id):
+            bundle = manager.get_memory(session_id)
+            _require_active_session(bundle, "recovering the last visible scene")
+            output = _load_last_scene_output(manager, session_id)
+            if output.get("message_to_user"):
+                return {
+                    "session_id": session_id,
+                    "available": True,
+                    "turn_id": output.get("turn_id"),
+                    "saved_turn_number": output.get("saved_turn_number"),
+                    "message_to_user": output.get("message_to_user"),
+                    "must_show_to_user": True,
+                    "recovered_from": "last_scene_output",
+                }
+
+            # Sessions applied by the previous transport deliberately retained
+            # only compact history. Expose that fact and the safe excerpt instead
+            # of inventing a replacement scene or advancing the game.
+            raw_history = manager.storage.read_json(session_id, "scene_history.json", default=[])
+            latest = raw_history[-1] if isinstance(raw_history, list) and raw_history and isinstance(raw_history[-1], dict) else {}
+            current_state = bundle.get("current_state") if isinstance(bundle.get("current_state"), dict) else {}
+            pending = _load_pending_turn(manager, session_id)
+            return {
+                "session_id": session_id,
+                "available": False,
+                "turn_id": pending.get("turn_id") if pending.get("status") == "applied" else None,
+                "saved_turn_number": current_state.get("turn_number"),
+                "message_to_user": "",
+                "must_show_to_user": False,
+                "recovered_from": "legacy_compact_history",
+                "summary": _debug_clip_text(latest.get("summary"), 600),
+                "body_excerpt": _debug_clip_text(latest.get("body_excerpt"), 900),
+            }
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -1151,6 +1450,14 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
             _require_active_session(bundle, "applying a turn result")
             raw_scene_response = _coerce_scene_response_payload(request)
             compatible_turn_id = request.turn_id or _extract_turn_id_from_scene_response(raw_scene_response)
+            existing_pending = _load_pending_turn(manager, session_id)
+            if existing_pending.get("status") == "applied":
+                return _replay_applied_turn(
+                    manager,
+                    session_id,
+                    existing_pending,
+                    compatible_turn_id,
+                )
             normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
             pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)
             errors = validate_scene_response(normalized_scene_response)
@@ -1189,21 +1496,25 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
                 result,
             )
             result = finalize_due_turn_maintenance(manager.storage, session_id, result)
+            rendered_text = normalized_scene_response["scene"]["rendered_text"]
+            response = _build_apply_turn_response(
+                session_id,
+                str(pending["turn_id"]),
+                rendered_text,
+                result,
+                replayed=False,
+            )
+            _store_last_scene_output(
+                manager,
+                session_id,
+                response,
+                player_input=str(normalized_scene_response.get("player_input") or ""),
+            )
             _mark_pending_turn_applied(manager, session_id, pending)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
-    rendered_text = normalized_scene_response["scene"]["rendered_text"]
-    return {
-        "session_id": session_id,
-        "status": result["status"],
-        "message_to_user": rendered_text,
-        "rendered_text": rendered_text,
-        "must_show_to_user": True,
-        "applied": result["applied"],
-        "rejected": result["rejected"],
-        "next_builder_hints": result["next_builder_hints"],
-    }
+    return response
 
 
 from app.novella_openapi_actions import install_openapi_actions

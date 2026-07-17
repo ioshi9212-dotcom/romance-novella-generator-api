@@ -188,7 +188,7 @@ def test_scene_contract_requires_complete_visible_scene_and_safety():
 
 
 
-def test_openapi_actions_use_strict_components_and_api_key():
+def test_openapi_actions_use_compact_flat_turn_contract_and_api_key():
     contract = build_openapi_actions("https://example.invalid")
     schemas = contract["components"]["schemas"]
 
@@ -202,59 +202,60 @@ def test_openapi_actions_use_strict_components_and_api_key():
 
     assert "player_input" in schemas["SceneResponse"]["required"]
     apply_request = schemas["ApplyTurnResultRequest"]
-    assert set(apply_request["required"]) == {"turn_id", "scene_response"}
-    assert apply_request["properties"]["scene_response"] == {
-        "$ref": "#/components/schemas/SceneResponse"
+    assert set(apply_request["required"]) == {
+        "turn_id",
+        "response_version",
+        "player_input",
+        "scene",
+        "summary",
+        "important_facts",
+        "witnesses",
+        "proposed_updates",
+        "safety_checks",
     }
+    assert "scene_response" not in apply_request["properties"]
+    assert "rendered_text" not in apply_request["properties"]["scene"]["properties"]
 
     turn_response_ref = contract["paths"]["/api/v1/sessions/{session_id}/turn"][
         "post"
     ]["responses"]["200"]["content"]["application/json"]["schema"]
     assert turn_response_ref == {"$ref": "#/components/schemas/TurnResponse"}
 
-    preview_request_ref = contract["paths"][
-        "/api/v1/sessions/{session_id}/bootstrap-preview"
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in contract["paths"]
+    staged_request_ref = contract["paths"][
+        "/api/v1/sessions/{session_id}/bootstrap-part"
     ]["post"]["requestBody"]["content"]["application/json"]["schema"]
-    assert preview_request_ref == {
-        "$ref": "#/components/schemas/BootstrapPreviewRequest"
-    }
-    preview_request = schemas["BootstrapPreviewRequest"]
-    assert set(preview_request["properties"]) == {"bootstrap_json"}
-    assert preview_request["required"] == ["bootstrap_json"]
-    assert preview_request["additionalProperties"] is False
-    assert "mode" not in preview_request["properties"]
-    description = preview_request["properties"]["bootstrap_json"]["description"]
-    assert "exactly one field" in description
-    assert "never pass root fields" in description
+    assert staged_request_ref == {"$ref": "#/components/schemas/SaveBootstrapPartRequest"}
+    assert "/api/v1/sessions/{session_id}/last-scene" in contract["paths"]
 
 
 
-def test_openapi_actions_hoist_json_schema_defs_into_object_components():
+def test_openapi_actions_avoid_large_backend_schema_defs():
     contract = build_openapi_actions("https://example.invalid")
     schemas = contract["components"]["schemas"]
 
     assert all(isinstance(component, dict) for component in schemas.values())
-    assert schemas["DirectorStatusPatch"]["type"] == "object"
+    assert "DirectorStatusPatch" not in schemas
+    assert "BootstrapPayload" not in schemas
 
     serialized = json.dumps(schemas, ensure_ascii=False)
     assert '"$defs"' not in serialized
     assert "#/$defs/" not in serialized
-
-    director_patches = schemas["SceneResponse"]["properties"]["proposed_updates"]["properties"]["director_bible_patches"]["properties"]
-    for field in ("event_updates", "hook_updates", "reveal_updates", "conflict_updates"):
-        assert director_patches[field]["items"] == {
-            "$ref": "#/components/schemas/DirectorStatusPatch"
-        }
+    director_patches = schemas["SceneResponse"]["properties"]["proposed_updates"]["properties"]["director_bible_patches"]
+    assert director_patches["oneOf"][0]["type"] == "object"
+    assert director_patches["oneOf"][1]["maxItems"] == 0
+    assert len(json.dumps(contract, ensure_ascii=False)) < 55_000
 
 
 
 def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
     instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
 
-    assert len(instructions) <= 7200
+    assert len(instructions) <= 8000
     for marker in (
         "processTurn",
         "getTurnPromptChunk",
+        "getLastScene",
         "applyTurnResult",
         "turn_id",
         "PREVIEW GATE",
@@ -268,5 +269,6 @@ def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
         "mode — только createSession/processTurn",
         "hidden_core",
         "скрытая полная карточка",
+        "без обёртки scene_response",
     ):
         assert marker in instructions

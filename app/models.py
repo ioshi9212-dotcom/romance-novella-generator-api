@@ -230,25 +230,46 @@ class DebugSessionDumpResponse(BaseModel):
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class ApplyTurnResultRequest(BaseModel):
-    # Compatibility: keep this model permissive because old/imported Custom GPT
-    # Actions may try to pass rendered_text/proposed_updates/safety_checks at the
-    # top level while the canonical contract keeps them inside scene_response.
+    # Canonical v9.1 Actions send the scene fields flat beside turn_id. Keep the
+    # old scene_response wrapper optional so already-imported GPTs can recover
+    # without losing their pending turn.
     model_config = ConfigDict(extra="allow")
 
     turn_id: str | None = Field(default=None, description="turn_id returned by processTurn. Required for normal gpt_actions flow.")
-    scene_response: dict[str, Any]
+    scene_response: dict[str, Any] | None = Field(default=None, description="Legacy wrapper; new Actions send scene fields flat.")
+    response_version: str | None = None
+    player_input: str | None = None
+    scene: dict[str, Any] | None = None
+    summary: str | None = None
+    important_facts: list[Any] | None = None
+    witnesses: list[Any] | None = None
     rendered_text: str | None = None
     proposed_updates: dict[str, Any] | None = None
     safety_checks: dict[str, Any] | None = None
+    time_skip_result: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     diagnostics: dict[str, Any] | None = None
 
 class ApplyTurnResultResponse(BaseModel):
     session_id: str
     status: str
+    turn_id: str
     message_to_user: str = Field(..., description="MANDATORY FINAL ANSWER TEXT after saving a turn. Output this exact text to the user.")
-    rendered_text: str = Field(..., description="Same as message_to_user. Full visible scene with header, body, ending choices, status and relationships.")
     must_show_to_user: bool = True
+    replayed: bool = False
+    saved_turn_number: int
     applied: dict[str, Any]
     rejected: list[dict[str, Any]]
     next_builder_hints: dict[str, Any]
+
+
+class LastSceneResponse(BaseModel):
+    session_id: str
+    available: bool
+    turn_id: str | None = None
+    saved_turn_number: int | None = None
+    message_to_user: str = ""
+    must_show_to_user: bool = False
+    recovered_from: str
+    summary: str | None = None
+    body_excerpt: str | None = None
