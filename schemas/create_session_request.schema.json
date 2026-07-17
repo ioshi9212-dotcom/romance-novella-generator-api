@@ -3,19 +3,14 @@
   "$id": "schemas/create_session_request.schema.json",
   "title": "Create Session Request",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
+  "required": ["raw_start_text"],
   "properties": {
-    "title": {"type": ["string", "null"]},
-    "genre": {"type": "string", "default": ""},
-    "language": {"type": "string", "default": "ru"},
-    "tone": {"type": ["string", "null"]},
-    "setting_request": {"type": "string", "default": ""},
-    "protagonist_request": {"type": "string", "default": ""},
-    "romance_request": {"type": ["string", "null"]},
-    "rating": {"type": ["string", "null"]},
-    "avoid": {"type": "array", "items": {"type": "string"}},
-    "extra": {"type": "object"},
-    "raw_start_text": {"type": ["string", "null"]},
+    "raw_start_text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact complete questionnaire answer in one string. Partial answers are valid; unspecified details are generated."
+    },
     "mode": {"enum": ["gpt_actions", "debug_stub"], "default": "gpt_actions"}
   }
 }

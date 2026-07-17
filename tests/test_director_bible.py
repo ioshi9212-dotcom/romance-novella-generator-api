@@ -14,6 +14,7 @@ from app.director_bible import (
 )
 from app.models import CreateSessionRequest
 from app.scene_contract_builder import build_scene_contract
+from app.turn_processor import build_scene_prompt
 from app.session_manager import SessionManager
 from app.storage import JsonStorage
 
@@ -151,6 +152,117 @@ def test_scene_contract_gets_author_only_guidance_but_not_hidden_character_card(
     assert guidance["hidden_lore"]
     assert all(item["character_id"] != "hidden_01" for item in contract["loaded_characters"])
     assert guidance["rules"]["queue_is_not_railroad"]
+
+
+def test_due_hidden_character_is_loaded_only_as_an_optional_scene_candidate():
+    data = _prepared_bootstrap()
+    data["director_bible"]["planned_reveals"] = [
+        {
+            "id": "reveal_ren_entry",
+            "reveal": "Мира впервые встречает Рена.",
+            "status": "available",
+            "earliest_turn": 1,
+            "latest_turn": 0,
+            "prerequisites": ["Рен физически входит в офис"],
+            "forbidden_before": "не считать его свидетелем до входа",
+            "related_character_ids": ["hidden_01"],
+        }
+    ]
+    data["director_bible"]["event_queue"][0].update({
+        "id": "event_ren_entry",
+        "status": "ready",
+        "priority": 100,
+        "earliest_turn": 1,
+        "participants": ["hidden_01"],
+    })
+
+    contract = build_scene_contract(data, player_input="(посмотреть на дверь)")
+    loaded = {item["character_id"]: item for item in contract["loaded_characters"]}
+
+    assert "hidden_01" in loaded
+    assert loaded["hidden_01"]["scene_presence"] == "candidate_not_present_yet"
+    assert loaded["hidden_01"]["candidate"]["reveal_id"] == "reveal_ren_entry"
+    assert loaded["hidden_01"]["candidate"]["hidden_before_scene"] is True
+    assert contract["scene_candidates"]["characters"] == [loaded["hidden_01"]["candidate"]]
+    assert "hidden_01" not in contract["current_frame"]["active_character_ids"]
+    assert "hidden_01" not in contract["current_frame"]["nearby_character_ids"]
+
+    prompt = build_scene_prompt(contract)
+    assert "candidate_not_present_yet" in prompt
+    assert "Ren Kurose" in prompt
+    assert "не слышит и не видит сцену до фактического появления" in prompt
+
+
+def test_hidden_character_card_stays_unloaded_before_its_reveal_turn():
+    data = _prepared_bootstrap()
+    data["director_bible"]["planned_reveals"] = [
+        {
+            "id": "reveal_ren_later",
+            "reveal": "Мира впервые встречает Рена.",
+            "status": "locked",
+            "earliest_turn": 3,
+            "related_character_ids": ["hidden_01"],
+        }
+    ]
+    data["director_bible"]["event_queue"][0].update({
+        "status": "ready",
+        "priority": 100,
+        "earliest_turn": 1,
+        "participants": ["hidden_01"],
+    })
+
+    contract = build_scene_contract(data)
+
+    assert all(item["character_id"] != "hidden_01" for item in contract["loaded_characters"])
+    assert contract["scene_candidates"]["characters"] == []
+
+
+def test_locked_reveal_does_not_load_hidden_card_even_after_earliest_turn():
+    data = _prepared_bootstrap()
+    data["director_bible"]["planned_reveals"] = [
+        {
+            "id": "reveal_ren_locked",
+            "reveal": "Мира впервые встречает Рена.",
+            "status": "locked",
+            "earliest_turn": 1,
+            "related_character_ids": ["hidden_01"],
+        }
+    ]
+    data["director_bible"]["event_queue"][0].update({
+        "status": "ready",
+        "priority": 100,
+        "earliest_turn": 1,
+        "participants": ["hidden_01"],
+    })
+
+    contract = build_scene_contract(data)
+
+    assert all(item["character_id"] != "hidden_01" for item in contract["loaded_characters"])
+
+
+def test_future_event_can_be_foreshadowed_without_loading_its_character_card():
+    data = _prepared_bootstrap()
+    data["director_bible"]["planned_reveals"] = [
+        {
+            "id": "reveal_ren_available",
+            "reveal": "Мира впервые встречает Рена.",
+            "status": "available",
+            "earliest_turn": 1,
+            "related_character_ids": ["hidden_01"],
+        }
+    ]
+    for index, event in enumerate(data["director_bible"]["event_queue"], start=5):
+        event.update({
+            "status": "planned",
+            "priority": 100 - index,
+            "earliest_turn": index,
+            "participants": ["hidden_01"],
+        })
+
+    contract = build_scene_contract(data)
+
+    assert contract["director_guidance"]["due_or_next_events"]
+    assert all(item["character_id"] != "hidden_01" for item in contract["loaded_characters"])
 
 
 def test_director_event_patch_persists_without_rewriting_world_truth(tmp_path: Path):

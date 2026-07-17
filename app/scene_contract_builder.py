@@ -179,13 +179,20 @@ def _focused_npc_runtime(
     npc_state: dict[str, Any],
     focus_ids: list[str],
     player_id: str,
+    *,
+    candidate_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     focused: dict[str, Any] = {}
+    candidate_ids = candidate_ids or set()
     for character_id in focus_ids:
         if character_id == player_id:
             continue
         card = _get_character(characters, character_id)
-        if not card or card.get("available_to_scene") is False or card.get("introduced") is False:
+        if not card:
+            continue
+        if character_id not in candidate_ids and (
+            card.get("available_to_scene") is False or card.get("introduced") is False
+        ):
             continue
         runtime = compact_npc_runtime_entry(npc_state.get(character_id))
         if runtime:
@@ -200,6 +207,85 @@ def _focused_npc_runtime(
         },
         "characters": focused,
     }
+
+
+def _scene_candidates(
+    characters: dict[str, Any],
+    director_guidance: dict[str, Any],
+    focus_ids: list[str],
+    *,
+    turn_number: int,
+) -> list[dict[str, Any]]:
+    """Select a small author-only cast pool for possible entrances this turn."""
+    capacity = max(0, 4 - len(focus_ids))
+    limit = min(1 if turn_number == 0 else 2, capacity)
+    if limit <= 0:
+        return []
+
+    next_turn = turn_number + 1
+    focus = set(focus_ids)
+    reveal_by_character: dict[str, dict[str, Any]] = {}
+    for reveal in director_guidance.get("planned_reveals") or []:
+        # A locked reveal can be described to the scene writer as author-only
+        # direction, but its full character card must stay inaccessible until a
+        # previous turn (or bootstrap) explicitly makes the reveal available.
+        if not isinstance(reveal, dict) or reveal.get("status") != "available":
+            continue
+        try:
+            earliest_turn = int(reveal.get("earliest_turn", 0) or 0)
+        except (TypeError, ValueError):
+            earliest_turn = 0
+        if earliest_turn > next_turn:
+            continue
+        for character_id in reveal.get("related_character_ids") or []:
+            reveal_by_character.setdefault(str(character_id), reveal)
+
+    selected: list[dict[str, Any]] = []
+    for event in director_guidance.get("due_or_next_events") or []:
+        if not isinstance(event, dict):
+            continue
+        if event.get("status") not in {"planned", "ready", "triggered"}:
+            continue
+        try:
+            event_earliest_turn = int(event.get("earliest_turn", 0) or 0)
+        except (TypeError, ValueError):
+            event_earliest_turn = 0
+        if event_earliest_turn > next_turn:
+            # build_director_guidance may expose the next future event when none
+            # is due so the writer can foreshadow it. That is not permission to
+            # load or introduce its participant yet.
+            continue
+        event_selected = False
+        for raw_character_id in event.get("participants") or []:
+            character_id = str(raw_character_id)
+            if character_id in focus or any(item["character_id"] == character_id for item in selected):
+                continue
+            card = _get_character(characters, character_id)
+            if not card or card.get("cast_status") == "background":
+                continue
+            hidden = (
+                card.get("cast_status") == "hidden_core"
+                or card.get("introduced") is False
+                or card.get("available_to_scene") is False
+            )
+            reveal = reveal_by_character.get(character_id) if hidden else None
+            if hidden and not reveal:
+                continue
+            selected.append({
+                "character_id": character_id,
+                "event_id": event.get("id"),
+                "event_title": event.get("title"),
+                "hidden_before_scene": hidden,
+                "reveal_id": reveal.get("id") if reveal else None,
+                "load_reason": "eligible_planned_entrance",
+            })
+            event_selected = True
+            if len(selected) >= limit:
+                return selected
+        # One coherent event pressure per scene; do not mix several future casts.
+        if event_selected:
+            break
+    return selected
 
 
 def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None) -> dict[str, Any]:
@@ -227,6 +313,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         and turn_number % 15 == 0
         and int(maintenance_state.get("state_compaction_cleanup_completed_turn") or 0) != turn_number
     )
+    director_guidance = build_director_guidance(bundle)
 
     focus_ids: list[str] = []
     for character_id in [player_id, *active_ids, *nearby_ids]:
@@ -237,22 +324,56 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         if character_id and character_id not in scene_ids:
             scene_ids.append(character_id)
 
+    scene_candidates = _scene_candidates(
+        characters,
+        director_guidance,
+        focus_ids,
+        turn_number=turn_number,
+    )
+    candidate_ids = [item["character_id"] for item in scene_candidates]
+    context_ids = [*focus_ids, *candidate_ids]
+    candidate_by_id = {item["character_id"]: item for item in scene_candidates}
+
     loaded_characters = []
-    for character_id in focus_ids:
+    for character_id in context_ids:
         card = _get_character(characters, character_id)
         if card:
-            load_reason = ["player_character"] if character_id == player_id else (["physically_present"] if character_id in scene_ids else ["nearby_context"])
-            loaded_characters.append({"character_id": character_id, "display_name": _display_name(characters, character_id), "load_reason": load_reason, "card": card})
+            candidate = candidate_by_id.get(character_id)
+            load_reason = (
+                ["player_character"]
+                if character_id == player_id
+                else (
+                    ["planned_scene_candidate", str(candidate.get("event_id") or "director_event")]
+                    if candidate
+                    else (["physically_present"] if character_id in scene_ids else ["nearby_context"])
+                )
+            )
+            loaded_characters.append({
+                "character_id": character_id,
+                "display_name": _display_name(characters, character_id),
+                "load_reason": load_reason,
+                "scene_presence": "candidate_not_present_yet" if candidate else ("present" if character_id in scene_ids else "nearby"),
+                "candidate": candidate or None,
+                "card": card,
+            })
 
     loaded_relationships = []
     visible_relationship_pair_ids: list[str] = []
-    for index, character_a in enumerate(focus_ids):
-        for character_b in focus_ids[index + 1:]:
+    for index, character_a in enumerate(context_ids):
+        for character_b in context_ids[index + 1:]:
             relationship_id = pair_id(character_a, character_b)
             both_in_scene = character_a in scene_ids and character_b in scene_ids
             if relationship_id in relationships:
                 content = normalize_relationship_pair(relationships[relationship_id], characters, str(player_id))
-                load_reason = ["both_present"] if both_in_scene else ["nearby_context"]
+                load_reason = (
+                    ["both_present"]
+                    if both_in_scene
+                    else (
+                        ["planned_scene_candidate_context"]
+                        if character_a in candidate_ids or character_b in candidate_ids
+                        else ["nearby_context"]
+                    )
+                )
                 is_baseline = False
             elif both_in_scene and player_id in {character_a, character_b}:
                 content = normalize_relationship_pair(_baseline_relationship_content(characters, character_a, character_b), characters, str(player_id))
@@ -265,6 +386,9 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
                 "display_label": f"{_display_name(characters, character_a)} ↔ {_display_name(characters, character_b)}",
                 "load_reason": load_reason,
                 "visible_in_footer": both_in_scene,
+                "may_become_visible_if_candidate_enters": (
+                    character_a in candidate_ids or character_b in candidate_ids
+                ),
                 "is_runtime_baseline": is_baseline,
                 "content": content,
             })
@@ -331,8 +455,17 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         "loaded_characters": loaded_characters,
         "loaded_relationships": loaded_relationships,
         "visible_relationship_pair_ids": visible_relationship_pair_ids,
-        "knowledge_boundaries": [_knowledge_boundary(knowledge, character_id) for character_id in focus_ids if character_id in knowledge],
-        "director_guidance": build_director_guidance(bundle),
+        "knowledge_boundaries": [_knowledge_boundary(knowledge, character_id) for character_id in context_ids if character_id in knowledge],
+        "director_guidance": director_guidance,
+        "scene_candidates": {
+            "characters": scene_candidates,
+            "rules": {
+                "optional_not_mandatory": "кандидат не обязан входить в эту сцену; используй только если вход причинно уместен",
+                "not_present_until_written": "candidate_not_present_yet не слышит и не видит сцену до фактического появления",
+                "first_scene_cast_limit": "на первом ходу можно ввести не более одного нового значимого персонажа",
+                "hidden_reveal_protocol": "для hidden_before_scene нужны matching reveal_id, director_bible reveal_update и scene_state_patch",
+            },
+        },
         "story_compass": {
             "genre": story_plan.get("genre"),
             "tone": story_plan.get("tone"),
@@ -351,7 +484,13 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "open_threads": _clip_list(story_plan.get("open_threads", []), 6, 180),
             "forbidden_drift": _clip_list(story_plan.get("forbidden_drift", []), 8, 180),
         },
-        "npc_runtime": _focused_npc_runtime(characters, npc_state if isinstance(npc_state, dict) else {}, focus_ids, player_id),
+        "npc_runtime": _focused_npc_runtime(
+            characters,
+            npc_state if isinstance(npc_state, dict) else {},
+            context_ids,
+            player_id,
+            candidate_ids=set(candidate_ids),
+        ),
         "status_slots": status_slots[:2] if isinstance(status_slots, list) else [],
         "recent_scene_history": recent_scene_history,
         "memory_chunks": memory_chunks,

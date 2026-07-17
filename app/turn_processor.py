@@ -53,11 +53,21 @@ def _compact_character_card(card: dict[str, Any]) -> dict[str, Any]:
         "name": card.get("name"),
         "display_name": card.get("display_name") or card.get("visible_name") or card.get("name_ru"),
         "role": card.get("role"),
+        "cast_status": card.get("cast_status"),
         "introduced": card.get("introduced"),
+        "known_to_player": card.get("known_to_player"),
+        "available_to_scene": card.get("available_to_scene"),
         "appearance": _compact_dict(card.get("appearance", {}) if isinstance(card.get("appearance"), dict) else {"summary": card.get("appearance")}, 180),
         "personality": _compact_dict(card.get("personality", {}) if isinstance(card.get("personality"), dict) else {"summary": card.get("personality")}, 180),
         "goal": _clip_text(card.get("goal"), 180),
+        "past_short": _clip_text(card.get("past_short"), 220),
         "habits": _clip_list(card.get("habits"), 3, 100),
+        "inner_logic": _compact_dict(card.get("inner_logic", {}) if isinstance(card.get("inner_logic"), dict) else {}, 180),
+        "behavior": _compact_dict(card.get("behavior", {}) if isinstance(card.get("behavior"), dict) else {}, 180),
+        "speech_profile": _compact_dict(card.get("speech_profile", {}) if isinstance(card.get("speech_profile"), dict) else {}, 160),
+        "life_outside_player": _compact_dict(card.get("life_outside_player", {}) if isinstance(card.get("life_outside_player"), dict) else {}, 180),
+        "social_triggers": _clip_list(card.get("social_triggers"), 3, 140),
+        "skills": _clip_list(card.get("skills"), 4, 100),
         "likes_in_people": _clip_list(card.get("likes_in_people"), 3, 100),
         "dislikes_in_people": _clip_list(card.get("dislikes_in_people"), 3, 100),
         "relationship_triggers": _compact_dict(card.get("relationship_triggers", {}) if isinstance(card.get("relationship_triggers"), dict) else {}, 160),
@@ -75,6 +85,7 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
         "director_guidance": _compact_dict(contract.get("director_guidance", {}) if isinstance(contract.get("director_guidance"), dict) else {}, 900),
         "time_skip_request": _compact_dict(contract.get("time_skip_request", {}) if isinstance(contract.get("time_skip_request"), dict) else {}, 900),
         "npc_runtime": _compact_dict(contract.get("npc_runtime", {}) if isinstance(contract.get("npc_runtime"), dict) else {}, 420),
+        "scene_candidates": _compact_dict(contract.get("scene_candidates", {}) if isinstance(contract.get("scene_candidates"), dict) else {}, 420),
         "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
         "player_input_rules": contract.get("player_input_rules", {}),
         "maintenance": contract.get("maintenance", {}),
@@ -91,22 +102,29 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
             "character_id": i.get("character_id"),
             "display_name": i.get("display_name"),
             "load_reason": i.get("load_reason", []),
+            "scene_presence": i.get("scene_presence"),
+            "candidate": i.get("candidate"),
             "card": _compact_character_card(i.get("card") if isinstance(i.get("card"), dict) else {}),
         }
         for i in (contract.get("loaded_characters", []) or [])
         if isinstance(i, dict)
-    ][:4]
+    ]
     compact["loaded_relationships"] = [
         {
             "pair_id": i.get("pair_id"),
             "display_label": i.get("display_label"),
             "visible_in_footer": i.get("visible_in_footer", False),
+            "may_become_visible_if_candidate_enters": i.get("may_become_visible_if_candidate_enters", False),
             "content": _compact_dict(i.get("content") if isinstance(i.get("content"), dict) else {}, 260),
         }
         for i in (contract.get("loaded_relationships", []) or [])
         if isinstance(i, dict)
-    ][:5]
-    compact["knowledge_boundaries"] = [_compact_dict(i, 220) for i in (contract.get("knowledge_boundaries", []) or []) if isinstance(i, dict)][:4]
+    ]
+    compact["knowledge_boundaries"] = [
+        _compact_dict(i, 220)
+        for i in (contract.get("knowledge_boundaries", []) or [])
+        if isinstance(i, dict)
+    ]
     compact["recent_scene_history"] = [
         {
             "turn": i.get("turn"),

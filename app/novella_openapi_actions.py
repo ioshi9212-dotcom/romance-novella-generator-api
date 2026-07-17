@@ -150,20 +150,12 @@ def _load_actions_component_schemas() -> dict[str, Any]:
 
 CREATE_SESSION_SCHEMA = _schema_obj(
     {
-        "title": {"type": ["string", "null"]},
-        "genre": {"type": "string", "default": ""},
-        "language": {"type": "string", "default": "ru"},
-        "tone": {"type": ["string", "null"]},
-        "setting_request": {"type": "string", "default": ""},
-        "protagonist_request": {"type": "string", "default": ""},
-        "romance_request": {"type": ["string", "null"]},
-        "rating": {"type": ["string", "null"]},
-        "avoid": _string_array(),
-        "extra": _loose_obj(),
         "raw_start_text": {
-            "type": ["string", "null"],
+            "type": "string",
+            "minLength": 1,
             "description": (
-                "Exact complete user questionnaire answer. Send it verbatim. Partial answers are valid; "
+                "The one canonical setup field. Copy the user's complete questionnaire answer verbatim into this string; "
+                "do not split it into title, genre, protagonist or other Action kwargs. Partial answers are valid and "
                 "the bootstrap generator fills every unspecified detail."
             ),
         },
@@ -173,7 +165,8 @@ CREATE_SESSION_SCHEMA = _schema_obj(
             "default": "gpt_actions",
         },
     },
-    additional_properties=True,
+    required=["raw_start_text"],
+    additional_properties=False,
 )
 
 BOOTSTRAP_PREVIEW_SCHEMA = _schema_obj(
@@ -209,7 +202,7 @@ SAVE_BOOTSTRAP_PART_SCHEMA = _schema_obj(
             "type": "object",
             "properties": {},
             "additionalProperties": True,
-            "description": "One character card, story_plan, current_state, or optional advanced section. Do not send the full bootstrap here.",
+            "description": "One complete character card, story_plan, current_state, or authored director_bible matching the same-named BootstrapPayload section. Do not send the full bootstrap here.",
         },
         "delete_fields": {
             "type": "array",
@@ -601,8 +594,8 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "post": {
                     "operationId": "createSession",
                     "summary": (
-                        "Create a new novella session or return questionnaire "
-                        "if setup is too small."
+                        "Create a session from exactly raw_start_text plus optional mode. "
+                        "Never split the questionnaire into title/genre/character kwargs."
                     ),
                     "requestBody": _request_body(
                         {"$ref": "#/components/schemas/CreateSessionRequest"}
@@ -633,8 +626,8 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "get": {
                     "operationId": "debugSessionDump",
                     "summary": (
-                        "Compact technical debug dump. Do not use it for "
-                        "normal scene continuation."
+                        "Compact technical debug dump for bootstrap_pending, "
+                        "bootstrap_review_pending or active. Do not use it for normal scene continuation."
                     ),
                     "parameters": [_session_id_param()],
                     "responses": {
@@ -643,14 +636,14 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                             {"$ref": "#/components/schemas/DebugSessionDumpResponse"},
                         ),
                         "404": _json_response("Session not found", _loose_obj()),
-                        "409": _json_response("Session not active", _loose_obj()),
+                        "409": _json_response("Session status is not debuggable", _loose_obj()),
                     },
                 }
             },
             "/api/v1/sessions/{session_id}/bootstrap-part": {
                 "post": {
                     "operationId": "saveBootstrapPart",
-                    "summary": "Stage one character card or one core section. Required core: characters, story_plan, current_state; runtime sections are derived.",
+                    "summary": "Stage one complete character card or one authorial section. Normal flow writes characters, story_plan, current_state and director_bible; technical runtime sections are derived.",
                     "parameters": [_session_id_param()],
                     "requestBody": _request_body({"$ref": "#/components/schemas/SaveBootstrapPartRequest"}),
                     "responses": {
@@ -664,7 +657,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "post": {
                     "operationId": "finalizeBootstrapPreview",
                     "summary": (
-                        "Build derived runtime state from characters, story_plan and current_state, then create the visible preview. "
+                        "Preserve authored characters/story/director state, build missing technical runtime state, then create the visible preview. "
                         "If status=bootstrap_repair_required, "
                         "do not show the response or ask the user again: apply repair_plan with saveBootstrapPart and retry."
                     ),
@@ -679,6 +672,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
             "/api/v1/sessions/{session_id}/bootstrap-preview": {
                 "post": {
                     "operationId": "createBootstrapPreview",
+                    "deprecated": True,
                     "summary": (
                         "Compatibility-only full preview call. Send exactly one body field named bootstrap_json; "
                         "never pass bootstrap root fields as separate Action kwargs. Prefer saveBootstrapPart. "

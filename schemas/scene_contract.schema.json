@@ -55,6 +55,14 @@
     "loaded_relationships": {
       "type": "array"
     },
+    "scene_candidates": {
+      "type": "object",
+      "required": ["characters", "rules"],
+      "properties": {
+        "characters": {"type": "array", "maxItems": 2},
+        "rules": {"type": "object"}
+      }
+    },
     "knowledge_boundaries": {
       "type": "array"
     },

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -46,6 +48,76 @@ def test_actions_schema_exposes_small_staged_bootstrap_calls():
     assert "bootstrap_json" not in request_schema["properties"]
     assert request_schema["properties"]["delete_fields"]["items"]["type"] == "string"
     assert request_schema["properties"]["replace"]["type"] == "boolean"
+
+
+def test_debug_dump_is_available_while_bootstrap_is_pending():
+    client = TestClient(app)
+    session_id = _create_session(client)
+
+    response = client.get(f"/api/v1/sessions/{session_id}/debug-dump")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "bootstrap_pending"
+    bootstrap = body["diagnostics"]["bootstrap"]
+    assert bootstrap["draft_present"] is False
+    assert bootstrap["progress"]["ready_to_finalize"] is False
+    assert bootstrap["progress"]["missing_sections"] == [
+        "characters",
+        "current_state",
+        "story_plan",
+    ]
+    assert bootstrap["last_error"] == {}
+
+
+def test_finalize_persists_path_based_validation_error_and_success_clears_it():
+    client = TestClient(app)
+    session_id = _create_session(client)
+    bootstrap = deepcopy(_valid_bootstrap())
+    bootstrap["characters"]["pc_01"]["age"] = -5
+
+    for item_id, value in bootstrap["characters"].items():
+        stored = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-part",
+            json={"section": "characters", "item_id": item_id, "value": value},
+        )
+        assert stored.status_code == 200, stored.text
+    for section in ("story_plan", "current_state"):
+        stored = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-part",
+            json={"section": section, "value": bootstrap[section]},
+        )
+        assert stored.status_code == 200, stored.text
+
+    failed = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview-finalize")
+
+    assert failed.status_code == 422, failed.text
+    detail = failed.json()["detail"]
+    assert detail["code"] == "BOOTSTRAP_VALIDATION_FAILED"
+    assert detail["operation"] == "finalizeBootstrapPreview"
+    assert detail["error_id"].startswith("bootstrap_error_")
+    assert any(item["path"] == "characters.pc_01.age" for item in detail["errors"])
+
+    session = client.get(f"/api/v1/sessions/{session_id}").json()
+    assert session["status"] == "bootstrap_pending"
+    assert session["last_error"] == detail
+
+    debug = client.get(f"/api/v1/sessions/{session_id}/debug-dump")
+    assert debug.status_code == 200, debug.text
+    bootstrap_debug = debug.json()["diagnostics"]["bootstrap"]
+    assert bootstrap_debug["progress"]["ready_to_finalize"] is True
+    assert bootstrap_debug["staged_character_ids"] == ["coworker_01", "pc_01"]
+    assert bootstrap_debug["last_error"]["error_id"] == detail["error_id"]
+
+    repaired = client.post(
+        f"/api/v1/sessions/{session_id}/bootstrap-part",
+        json={"section": "characters", "item_id": "pc_01", "value": {"age": 25}},
+    )
+    assert repaired.status_code == 200, repaired.text
+    finalized = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview-finalize")
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["status"] == "bootstrap_review_pending"
+    assert "last_error" not in client.get(f"/api/v1/sessions/{session_id}").json()
 
 
 def test_repeated_character_part_deep_merges_instead_of_erasing_card_fields():
@@ -195,6 +267,12 @@ def test_finalize_rejects_incomplete_staged_bootstrap():
     detail = final.json()["detail"]
     assert detail["code"] == "bootstrap_parts_incomplete"
     assert "characters" in detail["missing_sections"]
+    assert detail["operation"] == "finalizeBootstrapPreview"
+    session = client.get(f"/api/v1/sessions/{session_id}").json()
+    assert session["last_error"] == detail
+    debug = client.get(f"/api/v1/sessions/{session_id}/debug-dump")
+    assert debug.status_code == 200, debug.text
+    assert debug.json()["diagnostics"]["bootstrap"]["last_error"]["code"] == "bootstrap_parts_incomplete"
 
 
 def test_normalizer_uses_the_single_player_card_without_a_protagonist_copy():
@@ -290,3 +368,78 @@ def test_minimal_staged_core_creates_playable_preview_and_derives_runtime_state(
     session = client.get(f"/api/v1/sessions/{session_id}")
     assert session.status_code == 200
     assert session.json()["status"] == "bootstrap_review_pending"
+
+
+def test_authored_director_lore_is_saved_but_never_leaks_into_preview():
+    client = TestClient(app)
+    session_id = _create_session(client)
+    bootstrap = _valid_bootstrap()
+    secret_truth = "Свет отвечает не эмоциям, а обещанию, которое Мира забыла после аварии."
+    authored_director_bible = {
+        "world_truth": {
+            "core_truth": secret_truth,
+            "hidden_cause": "Последствие того же обещания закрепилось в здании.",
+            "world_rules": ["Искажение оставляет физический след только рядом со свидетелем."],
+        },
+        "hidden_lore": [
+            {
+                "id": "lore_promise",
+                "truth": secret_truth,
+                "status": "locked",
+                "reveal_policy": "только через три независимых следа",
+                "known_by": [],
+                "related_character_ids": [],
+                "evidence_chain": ["сбой камеры", "запах озона", "чужая запись времени"],
+            }
+        ],
+        "story_hooks": [
+            {
+                "id": "hook_camera",
+                "hook": "Камера фиксирует другое время, чем телефон Миры.",
+                "status": "active",
+                "earliest_turn": 1,
+            }
+        ],
+        "active_conflicts": [
+            {
+                "id": "conflict_control",
+                "description": "Мира скрывает сбои, а Рен отвечает на скрытность усилением контроля.",
+                "status": "active",
+            }
+        ],
+        "event_queue": [
+            {"id": "event_trace", "title": "Первый след", "status": "ready", "priority": 90, "earliest_turn": 1, "participants": ["coworker_01"]},
+            {"id": "event_cost", "title": "Цена молчания", "status": "planned", "priority": 70, "earliest_turn": 2, "participants": ["coworker_01"]},
+            {"id": "event_return", "title": "Возврат обещания", "status": "planned", "priority": 60, "earliest_turn": 3, "participants": []},
+        ],
+        "future_consequences": ["Игнорирование следа делает следующий сбой публичным."],
+    }
+
+    for item_id, value in bootstrap["characters"].items():
+        response = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-part",
+            json={"section": "characters", "item_id": item_id, "value": value},
+        )
+        assert response.status_code == 200, response.text
+    for section, value in (
+        ("story_plan", bootstrap["story_plan"]),
+        ("current_state", bootstrap["current_state"]),
+        ("director_bible", authored_director_bible),
+    ):
+        response = client.post(
+            f"/api/v1/sessions/{session_id}/bootstrap-part",
+            json={"section": section, "value": value},
+        )
+        assert response.status_code == 200, response.text
+
+    final = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview-finalize")
+
+    assert final.status_code == 200, final.text
+    assert secret_truth not in final.json()["preview"]
+    pending = SessionManager().storage.read_json(session_id, "pending_bootstrap.json")
+    assert pending["director_bible"]["world_truth"]["core_truth"] == secret_truth
+    assert pending["director_bible"]["hidden_lore"][0]["evidence_chain"] == [
+        "сбой камеры",
+        "запах озона",
+        "чужая запись времени",
+    ]

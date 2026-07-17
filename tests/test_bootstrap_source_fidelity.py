@@ -203,6 +203,16 @@ def test_staged_finalize_returns_private_repair_plan_instead_of_preview_error():
     assert "не проси повторить анкету" in body["repair_prompt"]
     storage = SessionManager().storage
     assert not (storage.session_dir(session_id) / "pending_bootstrap.json").exists()
+    session = client.get(f"/api/v1/sessions/{session_id}").json()
+    assert session["last_error"]["code"] == "BOOTSTRAP_SOURCE_FIDELITY_REPAIR_REQUIRED"
+    assert session["last_error"]["operation"] == "finalizeBootstrapPreview"
+    assert any(
+        item["path"].startswith("source_fidelity.characters")
+        for item in session["last_error"]["errors"]
+    )
+    debug = client.get(f"/api/v1/sessions/{session_id}/debug-dump")
+    assert debug.status_code == 200, debug.text
+    assert debug.json()["diagnostics"]["bootstrap"]["last_error"]["error_id"] == body["diagnostics"]["error_id"]
 
     confirm = client.post(
         f"/api/v1/sessions/{session_id}/bootstrap-confirm",
@@ -246,3 +256,4 @@ def test_staged_finalize_returns_private_repair_plan_instead_of_preview_error():
     assert retried.json()["repair_required"] is False
     assert "невысокая" in retried.json()["preview"]
     assert "Adrian Vale" in retried.json()["preview"]
+    assert "last_error" not in client.get(f"/api/v1/sessions/{session_id}").json()

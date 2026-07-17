@@ -50,6 +50,33 @@ def test_explicit_request_to_invent_everything_is_not_treated_as_missing_input()
     assert response.json()["status"] == "bootstrap_pending"
 
 
+def test_random_choice_starts_bootstrap_and_is_preserved_as_the_source_request():
+    response = TestClient(app).post(
+        "/api/v1/sessions",
+        json={"raw_start_text": "Рандом", "mode": "gpt_actions"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "bootstrap_pending"
+    assert "Рандом" in body["bootstrap_prompt"]
+    assert "Недостающие" in body["bootstrap_prompt"]
+    stored = SessionManager().storage.read_json(body["session_id"], "user_request.json")
+    assert stored["raw_start_text"] == "Рандом"
+
+
+def test_questionnaire_visibly_offers_random_generation():
+    response = TestClient(app).post(
+        "/api/v1/sessions",
+        json={"raw_start_text": "начнем", "mode": "gpt_actions"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "needs_questionnaire"
+    assert "Рандом" in body["questionnaire"]
+
+
 def test_custom_gpt_passes_the_exact_questionnaire_answer_to_create_session():
     instructions = Path("gpt/custom_gpt_instructions.md").read_text(encoding="utf-8")
 

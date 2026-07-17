@@ -9,9 +9,19 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.openapi.utils import get_openapi
 
 from app.bootstrap_content_repair import repair_bootstrap_content
+from app.bootstrap_diagnostics import (
+    DEBUGGABLE_SESSION_STATUSES,
+    bootstrap_debug_summary as _bootstrap_debug_summary,
+    clear_bootstrap_error as _clear_bootstrap_error,
+    record_bootstrap_error as _record_bootstrap_error,
+)
 from app.bootstrap_preview_transport import BootstrapPreviewTransportError
 from app.bootstrap_normalizer import normalize_bootstrap_json
-from app.bootstrap_staging import BootstrapStageError, assemble_staged_bootstrap, save_bootstrap_part as save_staged_bootstrap_part
+from app.bootstrap_staging import (
+    BootstrapStageError,
+    assemble_staged_bootstrap,
+    save_bootstrap_part as save_staged_bootstrap_part,
+)
 from app.bootstrap_source_fidelity import validate_bootstrap_source_fidelity
 from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
@@ -34,6 +44,12 @@ app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v9", s
 class BootstrapSourceFidelityError(ValueError):
     def __init__(self, errors: list[str]):
         super().__init__("Bootstrap lost concrete source details.")
+        self.errors = errors
+
+
+class BootstrapValidationError(ValueError):
+    def __init__(self, errors: list[str]):
+        super().__init__("Bootstrap validation failed.")
         self.errors = errors
 
 
@@ -98,6 +114,19 @@ def _require_active_session(bundle: dict, action: str) -> None:
     status = (bundle.get("session") or {}).get("status")
     if status != "active":
         raise HTTPException(status_code=409, detail=f"Session must be active before {action}. Current status: {status}")
+
+
+def _require_debuggable_session(bundle: dict) -> None:
+    status = (bundle.get("session") or {}).get("status")
+    if status not in DEBUGGABLE_SESSION_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SESSION_NOT_DEBUGGABLE",
+                "status": status,
+                "debuggable_statuses": sorted(DEBUGGABLE_SESSION_STATUSES),
+            },
+        )
 
 
 def _is_explicit_confirmation(text: str) -> bool:
@@ -285,6 +314,7 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
     raw_scene_history = manager.storage.read_json(session_id, "scene_history.json", default=[])
     raw_turns = manager.storage.read_json(session_id, "turns.json", default=[])
     session = bundle.get("session", {}) if isinstance(bundle.get("session"), dict) else {}
+    bootstrap_debug = _bootstrap_debug_summary(manager, session_id, session)
     current_state = bundle.get("current_state", {}) if isinstance(bundle.get("current_state"), dict) else {}
     story_plan = bundle.get("story_plan", {}) if isinstance(bundle.get("story_plan"), dict) else {}
     continuity = bundle.get("continuity", {}) if isinstance(bundle.get("continuity"), dict) else {}
@@ -361,6 +391,7 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
         },
         "pending_turn": pending_safe,
         "diagnostics": {
+            "bootstrap": bootstrap_debug,
             "turn_number": current_state.get("turn_number"),
             "state_recovery_audit_due": maintenance.get("state_recovery_audit_due") or maintenance.get("continuity_check_required_next"),
             "state_compaction_cleanup_due": maintenance.get("state_compaction_cleanup_due") or maintenance.get("memory_review_required_next"),
@@ -658,7 +689,7 @@ def _prepare_bootstrap_preview_payload(
     errors.extend(validate_directional_relationships(normalized_bootstrap))
     errors.extend(validate_director_bible(normalized_bootstrap))
     if errors:
-        raise HTTPException(status_code=422, detail=errors)
+        raise BootstrapValidationError(errors)
     fidelity_errors = validate_bootstrap_source_fidelity(normalized_bootstrap, user_request)
     if fidelity_errors:
         raise BootstrapSourceFidelityError(fidelity_errors)
@@ -730,6 +761,18 @@ def _bootstrap_repair_response(
         f"затем снова вызови {retry_action}. Ошибки: " + " | ".join(errors)
     )
     session = manager.storage.read_json(session_id, "session.json", default={}) or {}
+    recorded_error = _record_bootstrap_error(
+        manager,
+        session_id,
+        operation=retry_action,
+        status_code=200,
+        detail={
+            "code": "BOOTSTRAP_SOURCE_FIDELITY_REPAIR_REQUIRED",
+            "message": "Bootstrap must be repaired from the stored source request before preview.",
+            "errors": errors,
+        },
+        default_code="BOOTSTRAP_SOURCE_FIDELITY_REPAIR_REQUIRED",
+    )
     return {
         # This is an internal Action continuation, not a user-facing failure.
         # Keeping message_to_user empty prevents clients that privilege this
@@ -753,6 +796,7 @@ def _bootstrap_repair_response(
             "session_status": session.get("status"),
             "retry_action": retry_action,
             "staged_progress": staged_progress or {},
+            "error_id": recorded_error["error_id"],
         },
         "repair_required": True,
         "repair_errors": errors,
@@ -833,7 +877,9 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
                 request.bootstrap_json,
                 user_request=user_request if isinstance(user_request, dict) else {},
             )
-            return manager.save_bootstrap_preview(session_id, normalized_bootstrap)
+            response = manager.save_bootstrap_preview(session_id, normalized_bootstrap)
+            _clear_bootstrap_error(manager, session_id)
+            return response
     except BootstrapSourceFidelityError as exc:
         return _bootstrap_repair_response(
             manager,
@@ -841,10 +887,28 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
             exc.errors,
             retry_action="createBootstrapPreview",
         )
+    except BootstrapValidationError as exc:
+        detail = _record_bootstrap_error(
+            manager,
+            session_id,
+            operation="createBootstrapPreview",
+            status_code=422,
+            detail=exc.errors,
+            default_code="BOOTSTRAP_VALIDATION_FAILED",
+        )
+        raise HTTPException(status_code=422, detail=detail) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        detail = _record_bootstrap_error(
+            manager,
+            session_id,
+            operation="createBootstrapPreview",
+            status_code=409,
+            detail=str(exc),
+            default_code="BOOTSTRAP_PREVIEW_STATE_CONFLICT",
+        )
+        raise HTTPException(status_code=409, detail=detail) from exc
 
 
 @app.get(
@@ -889,7 +953,15 @@ def save_bootstrap_part_action(session_id: str, request: SaveBootstrapPartReques
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BootstrapStageError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        detail = _record_bootstrap_error(
+            manager,
+            session_id,
+            operation="saveBootstrapPart",
+            status_code=exc.status_code,
+            detail=exc.detail,
+            default_code="BOOTSTRAP_STAGE_FAILED",
+        )
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
 
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-preview-finalize", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)], operation_id="finalizeBootstrapPreview")
@@ -905,6 +977,7 @@ def finalize_bootstrap_preview(session_id: str) -> dict:
                 user_request=user_request if isinstance(user_request, dict) else {},
             )
             response = manager.save_bootstrap_preview(session_id, normalized_bootstrap)
+            _clear_bootstrap_error(manager, session_id)
             diagnostics = dict(response.get("diagnostics") or {})
             diagnostics.update({"staged_bootstrap": True, "staged_progress": progress})
             response["diagnostics"] = diagnostics
@@ -917,12 +990,38 @@ def finalize_bootstrap_preview(session_id: str) -> dict:
             retry_action="finalizeBootstrapPreview",
             staged_progress=progress,
         )
+    except BootstrapValidationError as exc:
+        detail = _record_bootstrap_error(
+            manager,
+            session_id,
+            operation="finalizeBootstrapPreview",
+            status_code=422,
+            detail=exc.errors,
+            default_code="BOOTSTRAP_VALIDATION_FAILED",
+        )
+        raise HTTPException(status_code=422, detail=detail) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BootstrapStageError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        detail = _record_bootstrap_error(
+            manager,
+            session_id,
+            operation="finalizeBootstrapPreview",
+            status_code=exc.status_code,
+            detail=exc.detail,
+            default_code="BOOTSTRAP_STAGE_FAILED",
+        )
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        detail = _record_bootstrap_error(
+            manager,
+            session_id,
+            operation="finalizeBootstrapPreview",
+            status_code=409,
+            detail=str(exc),
+            default_code="BOOTSTRAP_PREVIEW_STATE_CONFLICT",
+        )
+        raise HTTPException(status_code=409, detail=detail) from exc
 
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-confirm", response_model=BootstrapConfirmResponse, dependencies=[Depends(require_api_key)], operation_id="confirmBootstrapPreview")
@@ -932,11 +1031,15 @@ def confirm_bootstrap_preview(session_id: str, request: BootstrapConfirmRequest)
     manager = SessionManager()
     try:
         with _session_request_context(manager, session_id):
-            return manager.confirm_bootstrap_preview(session_id)
+            response = manager.confirm_bootstrap_preview(session_id)
+            _clear_bootstrap_error(manager, session_id)
+            return response
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        # Do not overwrite the more useful finalize/save failure that explains
+        # why there is no confirmable preview yet.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/sessions/{session_id}/debug-dump", response_model=DebugSessionDumpResponse, dependencies=[Depends(require_api_key)], operation_id="debugSessionDump")
@@ -945,7 +1048,7 @@ def debug_session_dump(session_id: str) -> dict:
     try:
         with _session_request_context(manager, session_id):
             bundle = manager.get_memory(session_id)
-            _require_active_session(bundle, "debugging a session")
+            _require_debuggable_session(bundle)
             return _debug_dump(manager, session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

@@ -47,8 +47,9 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 2. Сохрани героиню ОДИН раз: section=characters, item_id=<её id>, value=<полная карточка>, role=player_character, cast_status=player. Не создавай сокращённую копию в protagonist.
 3. Сохрани отдельную карточку каждого явно указанного знакомого и будущего значимого персонажа. Недостающие внешность, характер, прошлое и цель придумай сам.
 4. Сохрани story_plan и current_state. У каждого акта должны быть свои goal/must_happen; «старт/развитие/выбор» и повтор «развить конфликт» запрещены.
-5. Вызови finalizeBootstrapPreview. Сервер сам построит protagonist, relationships, knowledge, npc_state, director_bible, future_locks и continuity; пустые технические разделы не отправляй.
-6. Если finalize вернул `bootstrap_repair_required`, не показывай его и не спрашивай анкету заново: прочитай repair_plan.source_request, дополни только указанные секции и повтори finalize.
+5. Сама придумай и сохрани director_bible: причинную правду мира, скрытый лор, крючки, конфликты, будущие последствия, план раскрытий, функции персонажей и очередь событий. Это авторский материал GPT, а не видимый preview. Сервер только нормализует и дополняет пропущенные технические поля.
+6. Вызови finalizeBootstrapPreview. Сервер сам построит protagonist, relationships, knowledge, npc_state, future_locks и continuity; пустые технические разделы не отправляй.
+7. Если finalize вернул `bootstrap_repair_required`, не показывай его и не спрашивай анкету заново: прочитай repair_plan.source_request, дополни только указанные секции и повтори finalize.
 
 КАРТОЧКА ЗНАЧИМОГО ПЕРСОНАЖА
 Заполни строго по Action-схеме:
@@ -85,13 +86,23 @@ STORY PLAN
 РЕЖИССЁРСКИЕ ОПОРЫ
 Story plan должен дать серверу материал для скрытой режиссуры: конкретную причинную основу мира, минимум две незакрытые сюжетные нити, разные функции значимых NPC, будущие последствия и три возможных ближайших давления. Это не рельсы: события адаптируются к действиям игрока и не решают выбор героини заранее.
 
+В director_bible сохрани минимум:
+- world_truth с конкретной причиной происходящего и правилами мира;
+- hidden_lore и evidence_chain без раннего раскрытия;
+- story_hooks и active_conflicts;
+- planned_reveals, связанные с hidden_core через related_character_ids;
+- у planned_reveals держи status=locked, пока вход запрещён; status=available означает, что карточку уже можно предложить ближайшей сцене;
+- event_queue минимум из трёх разных событий с participants, earliest_turn и последствиями игнорирования;
+- character_functions для значимых NPC.
+Не копируй туда пользовательскую анкету и не раскрывай этот раздел в preview.
+
 CURRENT STATE
 Заполни конкретно date, time, location, weather, scene_state, outfit, inventory, nearby_items, environment и status. В active/nearby только реально доступные стартовые персонажи. time_skip_control на старте: allowed=false, blockers=["opening_scene_not_played"].
 
 ЗАПРОС ПОЛЬЗОВАТЕЛЯ:
 {request_json}
 
-Не выводи JSON пользователю. Сохрани ядро небольшими вызовами saveBootstrapPart и вызови finalizeBootstrapPreview. Первую сцену не пиши: сначала пользователь должен увидеть полный preview и подтвердить его.
+Не выводи JSON пользователю. Сохрани characters, story_plan, current_state и director_bible небольшими вызовами saveBootstrapPart, затем вызови finalizeBootstrapPreview. Первую сцену не пиши: сначала пользователь должен увидеть полный preview и подтвердить его.
 """.strip()
 
 

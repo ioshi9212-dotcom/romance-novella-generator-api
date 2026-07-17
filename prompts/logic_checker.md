@@ -5,6 +5,7 @@
 ## Проверить
 
 - Все говорящие персонажи есть в loaded_characters.
+- `candidate_not_present_yet` не знает сцену до написанного входа; если не вошёл, не добавлен в witnesses/active/nearby и не получает patches.
 - Важный новый NPC сохранён через proposed_updates.new_or_updated_characters.
 - Нет знания без источника.
 - Нет раскрытия future_locks.

@@ -6,6 +6,7 @@ from pathlib import Path
 from app.npc_runtime import prepare_npc_runtime_map
 from app.npc_state_updates import apply_npc_state_patches
 from app.scene_contract_builder import build_scene_contract
+from app.turn_processor import build_scene_prompt
 from app.state_updater import StateUpdater
 from app.storage import JsonStorage
 
@@ -131,6 +132,10 @@ def test_scene_contract_loads_only_focused_available_npc_runtime():
     assert "hidden_01" not in runtime["characters"]
     assert "awareness_is_not_change" in runtime["rules"]
     assert "relapse_under_stress" in runtime["rules"]
+
+    prompt = build_scene_prompt(contract)
+    assert "приезжает без предупреждения" in prompt
+    assert "закрыть собственную рабочую смену" in prompt
 
 
 def test_npc_runtime_patch_survives_into_next_scene_contract(tmp_path):

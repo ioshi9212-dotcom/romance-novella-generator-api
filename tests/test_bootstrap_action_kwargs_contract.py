@@ -21,8 +21,24 @@ def test_create_bootstrap_preview_action_accepts_only_bootstrap_json_body_field(
     assert "root fields" in description.lower()
 
     operation = contract["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview"]["post"]
+    assert operation["deprecated"] is True
     assert "exactly one body field" in operation["summary"]
     assert "separate Action kwargs" in operation["summary"]
+
+
+def test_create_session_action_keeps_the_questionnaire_in_one_string_field():
+    contract = build_openapi_actions("https://example.invalid")
+    schema = contract["components"]["schemas"]["CreateSessionRequest"]
+
+    assert schema["required"] == ["raw_start_text"]
+    assert set(schema["properties"]) == {"raw_start_text", "mode"}
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["raw_start_text"]["type"] == "string"
+    assert schema["properties"]["raw_start_text"]["minLength"] == 1
+
+    operation = contract["paths"]["/api/v1/sessions"]["post"]
+    assert "exactly raw_start_text" in operation["summary"]
+    assert "Never split" in operation["summary"]
 
 
 def test_bootstrap_transport_rules_forbid_root_fields_as_action_kwargs():
@@ -36,6 +52,8 @@ def test_bootstrap_transport_rules_forbid_root_fields_as_action_kwargs():
         "bootstrap_json",
     ):
         assert marker in rules
+    assert "story_plan, current_state и придуманный GPT director_bible" in rules
+    assert "Director_bible не пустой технический раздел" in rules
 
 
 def test_custom_gpt_instructions_keep_strict_bootstrap_action_shapes():
@@ -46,7 +64,7 @@ def test_custom_gpt_instructions_keep_strict_bootstrap_action_shapes():
         "saveBootstrapPart: только section, value",
         "finalizeBootstrapPreview: только session_id",
         "scene_history и turns не отправляй",
-        "createBootstrapPreview: только bootstrap_json",
         "Корневые разделы не передавай как kwargs",
+        "director_bible с лором/крючками",
     ):
         assert marker in instructions
