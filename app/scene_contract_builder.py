@@ -76,10 +76,12 @@ def _compact_continuity(continuity: Any) -> dict[str, Any]:
     return {
         "current_arc": continuity.get("current_arc"),
         "current_act": continuity.get("current_act"),
+        "story_progress": _compact_dict(continuity.get("story_progress", {}), 360),
         "open_threads": _clip_list(continuity.get("open_threads", []), 8, 200),
         "notes": _clip_list(continuity.get("notes", []), 6, 180),
         "warnings": _clip_list(continuity.get("warnings", []), 5, 180),
         "maintenance_events": _clip_list(continuity.get("maintenance_events", []), 4, 160),
+        "memory_compacts": _clip_list(continuity.get("memory_compacts", []), 6, 220),
     }
 
 
@@ -270,11 +272,32 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
                 visible_relationship_pair_ids.append(relationship_id)
 
     status = _normalise_status(current_state, story_plan)
+    acts = story_plan.get("act_structure", []) if isinstance(story_plan.get("act_structure"), list) else []
+    stored_progress = continuity.get("story_progress") if isinstance(continuity.get("story_progress"), dict) else {}
+    try:
+        active_act_index = int(stored_progress.get("current_act_index", 0) or 0)
+    except (TypeError, ValueError):
+        active_act_index = 0
+    active_act_index = max(0, min(active_act_index, max(0, len(acts) - 1)))
+    active_act = acts[active_act_index] if acts else None
+    active_act_id = None
+    if isinstance(active_act, dict):
+        active_act_id = active_act.get("id") or active_act.get("act") or f"act_{active_act_index + 1}"
+    story_progress = {
+        **stored_progress,
+        "current_act_index": active_act_index,
+        "current_act_id": active_act_id,
+    }
     status_slots = status.get("custom", [])
     memory_chunks = [
         _compact_memory_chunk(chunk)
         for chunk in (continuity.get("memory_chunks", []) or [])[-4:]
         if isinstance(chunk, dict)
+    ]
+    episode_summaries = [
+        _compact_dict(item, 420)
+        for item in (continuity.get("episode_summaries", []) or [])[-8:]
+        if isinstance(item, dict)
     ]
     recent_scene_history = [
         _compact_history_entry(item)
@@ -321,7 +344,8 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "central_question": _clip_text(story_plan.get("central_question"), 420),
             "opening_scene_intent": _clip_text(story_plan.get("opening_scene_intent"), 420),
             "current_story_position": _clip_text(story_plan.get("current_story_position"), 500),
-            "active_act": _clip_list(story_plan.get("act_structure", [])[:1], 1, 360),
+            "active_act": _clip_list([active_act] if active_act is not None else [], 1, 360),
+            "story_progress": _compact_dict(story_progress, 360),
             "relationship_focus": _clip_list(story_plan.get("relationship_focus", []), 4, 220),
             "character_arcs": _compact_dict(story_plan.get("character_arcs", {}), 360),
             "open_threads": _clip_list(story_plan.get("open_threads", []), 6, 180),
@@ -331,6 +355,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         "status_slots": status_slots[:2] if isinstance(status_slots, list) else [],
         "recent_scene_history": recent_scene_history,
         "memory_chunks": memory_chunks,
+        "episode_summaries": episode_summaries,
         "future_locks": {
             "do_not_reveal_yet": _clip_list(future_locks.get("do_not_reveal_yet", []), 4, 160),
             "hidden_character_seeds": _clip_list(future_locks.get("hidden_character_seeds", []), 4, 160),
@@ -348,6 +373,7 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
             "state_compaction_cleanup_status": maintenance_state.get("state_compaction_cleanup_status"),
             "state_compaction_cleanup_issue_count": maintenance_state.get("state_compaction_cleanup_issue_count", 0),
             "memory_chunk_count": len(memory_chunks),
+            "episode_summary_count": len(episode_summaries),
         },
         "player_input_rules": {
             "outside_parentheses": "spoken dialogue by the player character",

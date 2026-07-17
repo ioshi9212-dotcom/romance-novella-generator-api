@@ -27,18 +27,21 @@ def apply_npc_state_patches(
         return result
 
     source_current = source_bundle.get("current_state") if isinstance(source_bundle.get("current_state"), dict) else {}
-    characters = source_bundle.get("characters") if isinstance(source_bundle.get("characters"), dict) else {}
     player_id = str(source_current.get("player_character_id") or "")
+
+    saved_current = storage.read_json(session_id, "current_state.json", default={})
+    characters = storage.read_characters(session_id)
     source_scene_ids = {
         str(item)
         for item in [
             *(source_current.get("active_character_ids") or []),
             *(source_current.get("nearby_character_ids") or []),
+            *(saved_current.get("active_character_ids") or []),
+            *(saved_current.get("nearby_character_ids") or []),
+            *(scene_response.get("witnesses") or []),
         ]
-        if item
+        if isinstance(item, str) and item
     }
-
-    saved_current = storage.read_json(session_id, "current_state.json", default={})
     turn_number = int((saved_current or {}).get("turn_number", 0) or 0)
     npc_state = storage.read_json(session_id, "npc_state.json", default={})
     if not isinstance(npc_state, dict):

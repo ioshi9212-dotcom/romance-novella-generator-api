@@ -333,7 +333,7 @@ def test_apply_turn_result_requires_pending_turn_id():
     assert response.status_code == 409
 
 
-def test_apply_turn_result_recovers_body_and_safety_from_dirty_gpt_payload():
+def test_apply_turn_result_recovers_body_but_rejects_missing_safety_contract():
     client = TestClient(app)
     created = client.post("/api/v1/sessions", json={
         "genre": "urban mysticism",
@@ -381,10 +381,8 @@ def test_apply_turn_result_recovers_body_and_safety_from_dirty_gpt_payload():
         json={"turn_id": turn_id, "scene_response": dirty_scene_response},
     )
 
-    assert applied.status_code == 200, applied.text
-    body = applied.json()
-    assert "После закрытия" in body["message_to_user"]
-    assert body["status"] in {"applied", "partially_applied"}
+    assert applied.status_code == 422, applied.text
+    assert any("safety_checks" in error for error in applied.json()["detail"])
 
 
 def test_visible_footer_is_compact_and_dialogue_is_canonical():
@@ -705,4 +703,3 @@ def test_openapi_actions_exposes_debug_session_dump():
     paths = response.json()["paths"]
     assert "/api/v1/sessions/{session_id}/debug-dump" in paths
     assert paths["/api/v1/sessions/{session_id}/debug-dump"]["get"]["operationId"] == "debugSessionDump"
-

@@ -36,7 +36,13 @@ class CreateSessionRequest(BaseModel):
     rating: str | None = None
     avoid: list[str] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
-    raw_start_text: str | None = None
+    raw_start_text: str | None = Field(
+        default=None,
+        description=(
+            "Exact complete user questionnaire answer. Partial answers are valid; "
+            "bootstrap must generate every unspecified detail."
+        ),
+    )
     mode: SessionMode = "gpt_actions"
 
 class CreateSessionResponse(BaseModel):
@@ -97,9 +103,20 @@ class SaveBootstrapPartRequest(BaseModel):
     section: BootstrapPartSection
     item_id: str | None = Field(
         default=None,
-        description="Entry id for characters/relationships/knowledge/npc_state. Omit to replace a whole section.",
+        description="Entry id for a map section. Normal setup uses it once per characters card.",
     )
-    value: dict[str, Any] = Field(..., description="One bootstrap section or one map entry. Keep this call small.")
+    value: dict[str, Any] = Field(
+        ...,
+        description="One character card, story_plan, current_state, or an optional advanced section. Keep this call small.",
+    )
+    delete_fields: list[str] = Field(
+        default_factory=list,
+        description="Explicit dotted field paths to delete after merging value, for example behavior.stress_response.",
+    )
+    replace: bool = Field(
+        default=False,
+        description="Replace the selected object instead of safely deep-merging it. Use only when full replacement is intentional.",
+    )
 
 
 class SaveBootstrapPartResponse(BaseModel):
@@ -131,6 +148,10 @@ class BootstrapPreviewResponse(BaseModel):
     has_more_preview_chunks: bool = False
     next_preview_chunk_index: int | None = Field(default=None, ge=0)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+    repair_required: bool = False
+    repair_errors: list[str] = Field(default_factory=list)
+    repair_plan: dict[str, Any] = Field(default_factory=dict)
+    repair_prompt: str | None = None
 
 
 class BootstrapPreviewChunkResponse(BaseModel):

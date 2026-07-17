@@ -339,3 +339,222 @@ def validate_scene_response(data: dict[str, Any]) -> list[str]:
         if isinstance(card, dict) and "name" in card:
             errors.extend(_validate_display_name(card.get("name"), f"proposed_updates.new_or_updated_characters[{index}]"))
     return errors
+
+
+def validate_scene_state_invariants(data: dict[str, Any], bundle: dict[str, Any]) -> list[str]:
+    """Validate identity and visibility references before any turn state is written."""
+    errors: list[str] = []
+    existing_characters = bundle.get("characters") if isinstance(bundle.get("characters"), dict) else {}
+    updates = data.get("proposed_updates") if isinstance(data.get("proposed_updates"), dict) else {}
+    continuity_patch = updates.get("continuity_patch") if isinstance(updates.get("continuity_patch"), dict) else {}
+    progress_patch = continuity_patch.get("story_progress_patch")
+    if progress_patch is not None:
+        location = "proposed_updates.continuity_patch.story_progress_patch"
+        if not isinstance(progress_patch, dict):
+            errors.append(f"{location} must be an object")
+        else:
+            acts = ((bundle.get("story_plan") or {}).get("act_structure") or [])
+            stored_progress = ((bundle.get("continuity") or {}).get("story_progress") or {})
+            try:
+                current_index = int(stored_progress.get("current_act_index", 0) or 0)
+                requested_index = int(progress_patch.get("current_act_index", current_index))
+            except (TypeError, ValueError):
+                errors.append(f"{location}.current_act_index must be an integer")
+            else:
+                if requested_index < 0 or requested_index >= len(acts):
+                    errors.append(f"{location}.current_act_index references a missing act: {requested_index}")
+                if requested_index < current_index:
+                    errors.append(f"{location} cannot move backwards from act {current_index} to {requested_index}")
+                if requested_index > current_index + 1:
+                    errors.append(f"{location} cannot jump over an act from {current_index} to {requested_index}")
+                if requested_index != current_index:
+                    if not str(progress_patch.get("reason") or "").strip():
+                        errors.append(f"{location}.reason is required for an act transition")
+                    if not str(progress_patch.get("source_in_scene") or "").strip():
+                        errors.append(f"{location}.source_in_scene is required for an act transition")
+    new_cards = {
+        str(card.get("id")): card
+        for card in (updates.get("new_or_updated_characters") or [])
+        if isinstance(card, dict) and card.get("id")
+    }
+
+    for index, card in enumerate(updates.get("new_or_updated_characters") or []):
+        if not isinstance(card, dict):
+            continue
+        character_id = str(card.get("id") or "").strip()
+        if not character_id or character_id in existing_characters:
+            continue
+        cast_status = str(card.get("cast_status") or "known_support").strip()
+        if cast_status == "background":
+            continue
+        if cast_status not in {"known_core", "known_support"}:
+            errors.append(
+                f"proposed_updates.new_or_updated_characters[{index}].cast_status must be known_core or known_support for a newly introduced significant NPC"
+            )
+            continue
+        location = f"proposed_updates.new_or_updated_characters[{index}]"
+        candidate = {
+            **card,
+            "cast_status": cast_status,
+            "known_to_player": True,
+            "introduced": True,
+            "show_in_preview": True,
+            "available_to_scene": True,
+        }
+        for field_name in ("age", "goal", "past_short"):
+            _validate_not_placeholder(candidate.get(field_name), f"{location}.{field_name}", errors)
+        for field_name in ("habits", "skills", "connections"):
+            if not isinstance(candidate.get(field_name), list):
+                errors.append(f"{location}.{field_name} must be an array in a complete significant NPC card")
+        appearance = candidate.get("appearance") if isinstance(candidate.get("appearance"), dict) else {}
+        for field_name in ("height", "build", "hair", "eyes", "face", "style"):
+            _validate_not_placeholder(appearance.get(field_name), f"{location}.appearance.{field_name}", errors)
+        personality = candidate.get("personality") if isinstance(candidate.get("personality"), dict) else {}
+        for field_name in ("core", "flaws"):
+            if not isinstance(personality.get(field_name), list) or not personality.get(field_name):
+                errors.append(f"{location}.personality.{field_name} must contain concrete items")
+        _validate_not_placeholder(personality.get("speech"), f"{location}.personality.speech", errors)
+        _validate_character_profile(character_id, candidate, errors)
+
+    characters = {
+        **existing_characters,
+        **{
+            character_id: {
+                **(existing_characters.get(character_id) if isinstance(existing_characters.get(character_id), dict) else {}),
+                **card,
+            }
+            for character_id, card in new_cards.items()
+        },
+    }
+
+    director_bible = bundle.get("director_bible") if isinstance(bundle.get("director_bible"), dict) else {}
+    planned_reveals = {
+        str(item.get("id")): item
+        for item in (director_bible.get("planned_reveals") or [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    director_patches = updates.get("director_bible_patches") if isinstance(updates.get("director_bible_patches"), dict) else {}
+    reveal_updates = {
+        str(item.get("id")): item
+        for item in (director_patches.get("reveal_updates") or [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    future_locks = bundle.get("future_locks") if isinstance(bundle.get("future_locks"), dict) else {}
+    hidden_ids = {str(item) for item in (future_locks.get("hidden_character_ids") or [])}
+    next_turn = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
+
+    for index, patch in enumerate(updates.get("new_or_updated_characters") or []):
+        if not isinstance(patch, dict):
+            continue
+        character_id = str(patch.get("id") or "").strip()
+        existing = existing_characters.get(character_id) if isinstance(existing_characters.get(character_id), dict) else None
+        if not existing or existing.get("cast_status") != "hidden_core":
+            continue
+        location = f"proposed_updates.new_or_updated_characters[{index}]"
+        reveal_id = str(patch.get("reveal_id") or "").strip()
+        if not reveal_id:
+            errors.append(f"{location} cannot update hidden_core before an explicit reveal_id")
+            continue
+        if not str(patch.get("reason") or "").strip() or not str(patch.get("source_in_scene") or "").strip():
+            errors.append(f"{location} reveal requires reason and source_in_scene")
+        if character_id not in hidden_ids:
+            errors.append(f"{location} character_id is not present in future_locks.hidden_character_ids: {character_id}")
+        planned = planned_reveals.get(reveal_id)
+        if not isinstance(planned, dict):
+            errors.append(f"{location}.reveal_id references unknown planned reveal: {reveal_id}")
+            continue
+        related_ids = {str(item) for item in (planned.get("related_character_ids") or [])}
+        if character_id not in related_ids:
+            errors.append(f"{location}.reveal_id is not linked to character_id: {character_id}")
+        if next_turn < int(planned.get("earliest_turn", 0) or 0):
+            errors.append(f"{location} reveal attempted before earliest_turn")
+        matching_update = reveal_updates.get(reveal_id)
+        if not isinstance(matching_update, dict) or matching_update.get("status") != "revealed":
+            errors.append(f"{location} requires matching director_bible_patches.reveal_updates status=revealed")
+        characters[character_id] = {
+            **existing,
+            "cast_status": str(patch.get("revealed_cast_status") or "known_core"),
+            "known_to_player": True,
+            "introduced": True,
+            "show_in_preview": True,
+            "available_to_scene": True,
+        }
+
+    def validate_character_ref(character_id: Any, location: str, *, require_available: bool = True) -> str | None:
+        value = str(character_id or "").strip()
+        if not value or value not in characters:
+            errors.append(f"{location} references unknown character_id: {value or '<empty>'}")
+            return None
+        card = characters[value] if isinstance(characters.get(value), dict) else {}
+        if require_available and (
+            card.get("available_to_scene") is False
+            or card.get("introduced") is False
+            or card.get("cast_status") == "hidden_core"
+        ):
+            errors.append(f"{location} references hidden or unavailable character_id: {value}")
+            return None
+        return value
+
+    scene_patch = updates.get("scene_state_patch") if isinstance(updates.get("scene_state_patch"), dict) else {}
+    for field_name in ("active_character_ids", "nearby_character_ids"):
+        if field_name not in scene_patch:
+            continue
+        values = scene_patch.get(field_name)
+        if not isinstance(values, list):
+            errors.append(f"proposed_updates.scene_state_patch.{field_name} must be an array")
+            continue
+        seen: set[str] = set()
+        for index, character_id in enumerate(values):
+            validated = validate_character_ref(
+                character_id,
+                f"proposed_updates.scene_state_patch.{field_name}[{index}]",
+            )
+            if validated and validated in seen:
+                errors.append(f"proposed_updates.scene_state_patch.{field_name} contains duplicate character_id: {validated}")
+            if validated:
+                seen.add(validated)
+
+    for index, witness in enumerate(data.get("witnesses") or []):
+        character_id = witness
+        if isinstance(witness, dict):
+            character_id = witness.get("character_id") or witness.get("id")
+        validate_character_ref(character_id, f"witnesses[{index}]")
+
+    for index, patch in enumerate(updates.get("knowledge_patches") or []):
+        if isinstance(patch, dict):
+            validate_character_ref(patch.get("character_id"), f"proposed_updates.knowledge_patches[{index}].character_id")
+
+    player_id = str((bundle.get("current_state") or {}).get("player_character_id") or "")
+    for index, patch in enumerate(updates.get("npc_state_patches") or []):
+        if not isinstance(patch, dict):
+            continue
+        character_id = validate_character_ref(
+            patch.get("character_id"),
+            f"proposed_updates.npc_state_patches[{index}].character_id",
+        )
+        if character_id and character_id == player_id:
+            errors.append(f"proposed_updates.npc_state_patches[{index}] cannot target the player character: {character_id}")
+
+    for index, patch in enumerate(updates.get("relationship_patches") or []):
+        if not isinstance(patch, dict):
+            continue
+        raw_pair_id = str(patch.get("pair_id") or "")
+        parts = raw_pair_id.split("__")
+        if len(parts) != 2 or not all(parts):
+            continue
+        left = validate_character_ref(parts[0], f"proposed_updates.relationship_patches[{index}].pair_id")
+        right = validate_character_ref(parts[1], f"proposed_updates.relationship_patches[{index}].pair_id")
+        if left and right and raw_pair_id != pair_id(left, right):
+            errors.append(f"proposed_updates.relationship_patches[{index}].pair_id is not canonical: {raw_pair_id}")
+        from_id = patch.get("from_character_id")
+        to_id = patch.get("to_character_id")
+        if from_id is not None:
+            validated_from = validate_character_ref(from_id, f"proposed_updates.relationship_patches[{index}].from_character_id")
+            if validated_from and validated_from not in {left, right}:
+                errors.append(f"proposed_updates.relationship_patches[{index}].from_character_id is outside pair_id")
+        if to_id is not None:
+            validated_to = validate_character_ref(to_id, f"proposed_updates.relationship_patches[{index}].to_character_id")
+            if validated_to and validated_to not in {left, right}:
+                errors.append(f"proposed_updates.relationship_patches[{index}].to_character_id is outside pair_id")
+
+    return errors

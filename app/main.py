@@ -25,10 +25,16 @@ from app.state_updater import StateUpdater
 from app.turn_maintenance import finalize_due_turn_maintenance
 from app.turn_processor import process_time_skip_gpt_actions, process_turn_debug_stub, process_turn_gpt_actions
 from app.time_skip import assess_time_skip, record_time_skip_result, validate_time_skip_scene_response
-from app.validators import validate_bootstrap_result, validate_scene_response
+from app.validators import validate_bootstrap_result, validate_scene_response, validate_scene_state_invariants
 
 RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
 app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v9", servers=[{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}])
+
+
+class BootstrapSourceFidelityError(ValueError):
+    def __init__(self, errors: list[str]):
+        super().__init__("Bootstrap lost concrete source details.")
+        self.errors = errors
 
 
 def _ensure_object_properties(schema_part: Any) -> None:
@@ -651,10 +657,108 @@ def _prepare_bootstrap_preview_payload(
     prepare_director_bible(normalized_bootstrap)
     errors.extend(validate_directional_relationships(normalized_bootstrap))
     errors.extend(validate_director_bible(normalized_bootstrap))
-    errors.extend(validate_bootstrap_source_fidelity(normalized_bootstrap, user_request))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
+    fidelity_errors = validate_bootstrap_source_fidelity(normalized_bootstrap, user_request)
+    if fidelity_errors:
+        raise BootstrapSourceFidelityError(fidelity_errors)
     return normalized_bootstrap
+
+
+def _bootstrap_repair_plan(errors: list[str]) -> dict[str, Any]:
+    paths = [str(error).split(":", 1)[0] for error in errors]
+    sections: list[str] = []
+    if any(path.startswith("source_fidelity.protagonist") for path in paths):
+        sections.append("characters")
+    if any(path.startswith("source_fidelity.characters") for path in paths):
+        sections.append("characters")
+    if any(path.startswith("source_fidelity.story_plan") for path in paths):
+        sections.append("story_plan")
+    sections = list(dict.fromkeys(sections))
+    missing_roles = [
+        error.rsplit(" for ", 1)[-1].rstrip(".")
+        for error in errors
+        if error.startswith("source_fidelity.characters.missing_known:") and " for " in error
+    ]
+    steps = [
+        "Read source_request as the canon; never ask the user to repeat the questionnaire.",
+    ]
+    if "characters" in sections:
+        steps.append(
+            "Patch only characters: preserve the existing player card, add every missing explicit fact, "
+            "and create one playable card for every named role; invent only unspecified details."
+        )
+    if "story_plan" in sections:
+        steps.append(
+            "Patch story_plan with distinct story-specific acts while keeping outcomes open to player choices."
+        )
+    steps.append(
+        "Save only the listed sections with saveBootstrapPart, then call finalizeBootstrapPreview again; "
+        "the server derives protagonist, relationships, knowledge, npc_state and director runtime."
+    )
+    return {
+        "sections": sections,
+        "error_paths": paths,
+        "missing_known_roles": missing_roles,
+        "steps": steps,
+    }
+
+
+def _bootstrap_repair_response(
+    manager: SessionManager,
+    session_id: str,
+    errors: list[str],
+    *,
+    retry_action: str,
+    staged_progress: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    plan = _bootstrap_repair_plan(errors)
+    user_request = manager.storage.read_json(session_id, "user_request.json", default={}) or {}
+    if isinstance(user_request, dict):
+        raw_source = user_request.get("raw_start_text")
+        if not isinstance(raw_source, str) or not raw_source.strip():
+            raw_source = json.dumps(
+                {key: value for key, value in user_request.items() if key != "mode" and value not in (None, "", [], {})},
+                ensure_ascii=False,
+            )
+        raw_source = raw_source.strip()
+        plan["source_request"] = raw_source[:16000]
+        plan["source_request_truncated"] = len(raw_source) > 16000
+    repair_prompt = (
+        "Не показывай эти ошибки пользователю и не проси повторить анкету. "
+        "Используй repair_plan.source_request как канон. Исправь перечисленные секции, "
+        f"затем снова вызови {retry_action}. Ошибки: " + " | ".join(errors)
+    )
+    session = manager.storage.read_json(session_id, "session.json", default={}) or {}
+    return {
+        # This is an internal Action continuation, not a user-facing failure.
+        # Keeping message_to_user empty prevents clients that privilege this
+        # field from accidentally surfacing the repair diagnostics.
+        "message_to_user": "",
+        "session_id": session_id,
+        "status": "bootstrap_repair_required",
+        "must_show_to_user": False,
+        "wait_for_confirmation": False,
+        "next_user_action": "none; automatically repair the staged bootstrap and retry finalize",
+        "preview": "",
+        "user_visible_preview": "",
+        "can_confirm": False,
+        "preview_id": "not_created_repair_required",
+        "preview_chars": 0,
+        "preview_chunk_index": 0,
+        "preview_chunk_count": 1,
+        "has_more_preview_chunks": False,
+        "next_preview_chunk_index": None,
+        "diagnostics": {
+            "session_status": session.get("status"),
+            "retry_action": retry_action,
+            "staged_progress": staged_progress or {},
+        },
+        "repair_required": True,
+        "repair_errors": errors,
+        "repair_plan": plan,
+        "repair_prompt": repair_prompt,
+    }
 
 
 @app.get("/health", operation_id="health")
@@ -730,6 +834,13 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
                 user_request=user_request if isinstance(user_request, dict) else {},
             )
             return manager.save_bootstrap_preview(session_id, normalized_bootstrap)
+    except BootstrapSourceFidelityError as exc:
+        return _bootstrap_repair_response(
+            manager,
+            session_id,
+            exc.errors,
+            retry_action="createBootstrapPreview",
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -772,6 +883,8 @@ def save_bootstrap_part_action(session_id: str, request: SaveBootstrapPartReques
                 section=request.section,
                 item_id=request.item_id,
                 value=request.value,
+                delete_fields=request.delete_fields,
+                replace=request.replace,
             )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -782,6 +895,7 @@ def save_bootstrap_part_action(session_id: str, request: SaveBootstrapPartReques
 @app.post("/api/v1/sessions/{session_id}/bootstrap-preview-finalize", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)], operation_id="finalizeBootstrapPreview")
 def finalize_bootstrap_preview(session_id: str) -> dict:
     manager = SessionManager()
+    progress: dict[str, Any] | None = None
     try:
         with _session_request_context(manager, session_id):
             staged_bootstrap, progress = assemble_staged_bootstrap(manager, session_id)
@@ -795,6 +909,14 @@ def finalize_bootstrap_preview(session_id: str) -> dict:
             diagnostics.update({"staged_bootstrap": True, "staged_progress": progress})
             response["diagnostics"] = diagnostics
             return response
+    except BootstrapSourceFidelityError as exc:
+        return _bootstrap_repair_response(
+            manager,
+            session_id,
+            exc.errors,
+            retry_action="finalizeBootstrapPreview",
+            staged_progress=progress,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BootstrapStageError as exc:
@@ -929,6 +1051,7 @@ def apply_turn_result(session_id: str, request: ApplyTurnResultRequest) -> dict:
             normalized_scene_response = normalize_scene_response(raw_scene_response, bundle)
             pending = _require_pending_turn_match(manager, session_id, compatible_turn_id, normalized_scene_response, bundle)
             errors = validate_scene_response(normalized_scene_response)
+            errors.extend(validate_scene_state_invariants(normalized_scene_response, bundle))
             errors.extend(validate_time_skip_scene_response(pending, normalized_scene_response, bundle))
             if errors:
                 raise HTTPException(status_code=422, detail=errors)

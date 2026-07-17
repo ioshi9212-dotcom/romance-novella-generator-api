@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
@@ -8,14 +9,18 @@ from app.character_profiles import prepare_bootstrap_cast, visible_character_ids
 
 
 def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
+    request_json = json.dumps(user_request, ensure_ascii=False, indent=2)
     return f"""
 Ты создаёшь новую интерактивную визуальную новеллу с нуля.
 
 ИСТОЧНИК ДАННЫХ
 - Сохрани все конкретные факты пользователя. Не заменяй их удобными шаблонами.
 - Всё, чего пользователь не указал, придумай сам логично из жанра, роли, прошлого и стартовой ситуации.
-- Перед finalize сверь результат с запросом: каждый явно описанный знакомый и будущий значимый персонаж должен иметь полную карточку.
-- Если finalize вернул source_fidelity, исправь перечисленные части через saveBootstrapPart и повтори finalize; неполный preview пользователю не показывай.
+- Пустые поля, прочерки и отсутствующие пункты не являются ошибкой и не требуют новой анкеты: это разрешение придумать недостающее.
+- raw_start_text хранит точный полный ответ пользователя и является главным источником при конфликте со структурированными полями.
+- Явный запрет пользователя имеет приоритет над любым сгенерированным вариантом.
+- Перед finalize сверь результат с запросом: каждый явно описанный знакомый и будущий значимый персонаж должен иметь карточку.
+- Если finalize вернул bootstrap_repair_required, исправь перечисленные части через saveBootstrapPart и повтори finalize; служебный ответ пользователю не показывай.
 - Не оставляй «будет уточняться», «не указано», «ценит честность», «не любит ложь», «живая речь» и другие заглушки.
 - Значимые персонажи должны отличаться способом заботиться, спорить, сближаться, прикасаться, ревновать, ошибаться и реагировать на отказ.
 - Любовь, дружба и родство не означают автоматическое уважение дистанции. Добрый человек может давить; любящий — ревновать и лезть; близкий — считать, что имеет право спрашивать повторно.
@@ -37,6 +42,14 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 - Не описывай hidden_core в видимой части story_plan, preview-полях или знаниях героини.
 - background не раздувай полной биографией без сюжетной причины.
 
+ПОРЯДОК STAGED-СБОРКИ
+1. Сначала выпиши для себя чек-лист всех явных фактов и всех названных пользователем ролей. Не показывай его пользователю.
+2. Сохрани героиню ОДИН раз: section=characters, item_id=<её id>, value=<полная карточка>, role=player_character, cast_status=player. Не создавай сокращённую копию в protagonist.
+3. Сохрани отдельную карточку каждого явно указанного знакомого и будущего значимого персонажа. Недостающие внешность, характер, прошлое и цель придумай сам.
+4. Сохрани story_plan и current_state. У каждого акта должны быть свои goal/must_happen; «старт/развитие/выбор» и повтор «развить конфликт» запрещены.
+5. Вызови finalizeBootstrapPreview. Сервер сам построит protagonist, relationships, knowledge, npc_state, director_bible, future_locks и continuity; пустые технические разделы не отправляй.
+6. Если finalize вернул `bootstrap_repair_required`, не показывай его и не спрашивай анкету заново: прочитай repair_plan.source_request, дополни только указанные секции и повтори finalize.
+
 КАРТОЧКА ЗНАЧИМОГО ПЕРСОНАЖА
 Заполни строго по Action-схеме:
 - appearance и personality;
@@ -50,22 +63,17 @@ def build_bootstrap_prompt(user_request: dict[str, Any]) -> str:
 Поля должны описывать ДЕЙСТВИЯ, а не моральные качества. Не пиши всем «говорит тихо/ровно», «даёт пространство», «уважает границы». У каждого свой темп, громкость, словарь и изменение речи под стрессом.
 
 ЗНАКОМЫЕ НА СТАРТЕ
-Для каждого known_core/known_support:
-- создай стартовую пару отношений с героиней;
-- добавь shared_history/open_threads и направленные предположения, если пользователь дал материал;
-- создай knowledge: что знает, видел, предполагает, в чём ошибается, чего не знает, какие вопросы остались;
-- создай npc_state: current_goal, current_route, current_pressure, next_self_action_if_ignored.
+Для known_core/known_support сохрани в карточке связи, общую историю, открытые темы и собственную текущую задачу, если пользователь дал материал. Из этого сервер создаст стартовые отношения, знания и npc_state.
 
 СКРЫТЫЕ НА СТАРТЕ
-- Для hidden_core тоже создай собственное knowledge и npc_state, но не знания героини о нём.
-- Полная карточка хранится в characters, а future_locks содержит техническую блокировку раскрытия.
+- Полная карточка hidden_core хранится в characters; сервер создаст его knowledge, npc_state и блокировку раскрытия.
 - Не используй seed вместо полной карточки для будущего главного персонажа. hidden_character_seeds оставь только для действительно неопределённых далёких фигур.
 
 СТРУКТУРА
-Корень: protagonist, characters, relationships, knowledge, story_plan, director_bible, current_state, npc_state, future_locks, continuity, scene_history=[], turns=[].
-- characters/relationships/knowledge — объекты по id.
-- protagonist.id существует в characters и имеет cast_status=player.
-- scene_history=[], turns=[], turn_number=0, last_player_input="".
+Обязательное смысловое ядро: characters, story_plan, current_state.
+- characters — объект по id; ровно одна карточка имеет cast_status=player.
+- current_state.player_character_id указывает на id героини.
+- turn_number=0, last_player_input="". scene_history и turns создаёт сервер.
 - status_slots и current_state.status.custom — ровно два story-specific поля.
 - Имена полные, латиницей, не русские/славянские; display_name можно дать русской транскрипцией.
 - Не используй персонажей, имена, id и лор из 1206, Академии, других новелл, старых сессий и примеров.
@@ -74,25 +82,16 @@ STORY PLAN
 Создай подробный, но открытый сюжетный компас: setting_summary, main_premise, protagonist_start, player_goal, central_conflict, central_question, opening_scene_intent, opening_pacing, scene_focus_rules, act_structure, character_arcs, relationship_focus, open_threads, forbidden_drift, current_story_position и два status_slots.
 Не фиксируй единственный финал. NPC имеют собственные дела и маршруты. Первые сцены не должны превращаться в инструкцию, квест или процедуру.
 
-DIRECTOR BIBLE — СКРЫТО ОТ ПОЛЬЗОВАТЕЛЯ
-Создай отдельный авторский файл, чтобы история не превращалась в кашу и не выдумывала тайны по ходу:
-- world_truth: core_truth, world_rules, hidden_cause;
-- hidden_lore: минимум одна конкретная причинная истина с reveal_policy и evidence_chain;
-- character_functions для каждого known_core/known_support/hidden_core: story_role, pressure_source, conflict_function, private_goal, do_not_flatten_into;
-- story_hooks: минимум два незакрытых крючка;
-- planned_reveals: что раскрывается, earliest_turn, prerequisites и forbidden_before;
-- active_conflicts и do_not_resolve_early;
-- event_queue: минимум три ближайших события с priority, earliest/latest turn, conditions, participants, purpose, scene_pressure, next_if_ignored, time_hint, skip_unit и skip_amount;
-- time_anchors, continuity_truths, future_consequences, pacing и time_flow с allowed_units/max_amounts.
-События не являются рельсами: они должны адаптироваться к действиям игрока. Не решай выбор героини заранее. Не выводи director_bible в preview. `future_locks` оставь только технической блокировкой раскрытия.
+РЕЖИССЁРСКИЕ ОПОРЫ
+Story plan должен дать серверу материал для скрытой режиссуры: конкретную причинную основу мира, минимум две незакрытые сюжетные нити, разные функции значимых NPC, будущие последствия и три возможных ближайших давления. Это не рельсы: события адаптируются к действиям игрока и не решают выбор героини заранее.
 
 CURRENT STATE
 Заполни конкретно date, time, location, weather, scene_state, outfit, inventory, nearby_items, environment и status. В active/nearby только реально доступные стартовые персонажи. time_skip_control на старте: allowed=false, blockers=["opening_scene_not_played"].
 
 ЗАПРОС ПОЛЬЗОВАТЕЛЯ:
-{user_request}
+{request_json}
 
-Верни строго JSON без markdown по Action-схеме BootstrapPayload. Не пиши первую сцену: сначала будет полный preview и подтверждение пользователя.
+Не выводи JSON пользователю. Сохрани ядро небольшими вызовами saveBootstrapPart и вызови finalizeBootstrapPreview. Первую сцену не пиши: сначала пользователь должен увидеть полный preview и подтвердить его.
 """.strip()
 
 
@@ -153,7 +152,11 @@ def _append_character(lines: list[str], card: dict[str, Any]) -> None:
 
 
 
-def build_setup_preview(bootstrap_json: dict[str, Any]) -> str:
+def build_setup_preview(
+    bootstrap_json: dict[str, Any],
+    *,
+    user_request: dict[str, Any] | None = None,
+) -> str:
     data = normalize_bootstrap_json(bootstrap_json)
     prepare_bootstrap_cast(data)
     protagonist = data.get("protagonist") or {}
@@ -170,13 +173,44 @@ def build_setup_preview(bootstrap_json: dict[str, Any]) -> str:
         "",
         "Это ещё не активная сцена и не сохранённая игра. Проверь героиню, знакомых ей людей и видимый сюжетный план. Скрытые будущие персонажи и тайный лор в preview не выводятся.",
         "",
+    ]
+
+    source = user_request if isinstance(user_request, dict) else {}
+    raw_start_text = source.get("raw_start_text")
+    if isinstance(raw_start_text, str) and raw_start_text.strip():
+        lines.extend([
+            "### Исходная анкета пользователя",
+            "",
+            raw_start_text,
+            "",
+        ])
+    elif source:
+        visible_source = {
+            key: value
+            for key, value in source.items()
+            if key not in {"mode", "language"}
+            and value is not None
+            and value != ""
+            and not (isinstance(value, (list, dict, tuple)) and not value)
+        }
+        if visible_source:
+            lines.extend([
+                "### Исходные пожелания пользователя",
+                "",
+                "```json",
+                json.dumps(visible_source, ensure_ascii=False, indent=2),
+                "```",
+                "",
+            ])
+
+    lines.extend([
         "### Главная героиня / персонаж игрока",
         f"- **Имя:** {_visible_name(pc_card)}",
         f"- **Возраст / роль:** {_one_line(pc_card.get('age'))} · {_one_line(pc_card.get('role'))}",
         f"- **Кто она:** {_one_line(pc_card.get('past_short'))}",
         f"- **Цель:** {_one_line(pc_card.get('goal'))}",
         f"- **Характер:** {_one_line((pc_card.get('personality') or {}).get('core'))}",
-    ]
+    ])
     lines.extend(_profile_lines(pc_card))
     lines.append(f"- **Привычки:** {_one_line(pc_card.get('habits'))}")
     lines.append("")

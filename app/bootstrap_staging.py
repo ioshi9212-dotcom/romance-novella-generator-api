@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import re
 from typing import Any
 
@@ -16,7 +17,11 @@ SINGLE_SECTIONS = {
 }
 ENTRY_SECTIONS = {"characters", "relationships", "knowledge", "npc_state"}
 ALL_STAGED_SECTIONS = SINGLE_SECTIONS | ENTRY_SECTIONS
-REQUIRED_SECTIONS = SINGLE_SECTIONS | ENTRY_SECTIONS
+# The normalizer derives relationships, knowledge, NPC runtime, director state,
+# future locks and continuity from the cast/story core. Requiring empty Action
+# calls for those derived sections made long questionnaires fragile without
+# adding any gameplay information.
+REQUIRED_SECTIONS = {"characters", "story_plan", "current_state"}
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 PAIR_ID_RE = re.compile(r"^[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$")
 
@@ -169,12 +174,38 @@ def _normalize_relationship_bucket(entries: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _deep_merge(existing: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(existing)
+    for key, value in patch.items():
+        current = result.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            result[key] = _deep_merge(current, value)
+        else:
+            result[key] = deepcopy(value)
+    return result
+
+
+def _delete_field_paths(value: dict[str, Any], field_paths: list[str]) -> dict[str, Any]:
+    result = deepcopy(value)
+    for raw_path in field_paths:
+        path = str(raw_path or "").strip()
+        parts = path.split(".") if path else []
+        if not parts or len(parts) > 12 or any(not part or len(part) > 128 for part in parts):
+            raise BootstrapStageError(f"Invalid delete_fields path: {raw_path!r}")
+        parent: Any = result
+        for part in parts[:-1]:
+            if not isinstance(parent, dict) or not isinstance(parent.get(part), dict):
+                parent = None
+                break
+            parent = parent[part]
+        if isinstance(parent, dict):
+            parent.pop(parts[-1], None)
+    return result
+
+
 def bootstrap_stage_progress(draft: dict[str, Any]) -> dict[str, Any]:
     missing: list[str] = []
-    for section in sorted(SINGLE_SECTIONS):
-        if section not in draft or not isinstance(draft.get(section), dict):
-            missing.append(section)
-    for section in sorted(ENTRY_SECTIONS):
+    for section in sorted(REQUIRED_SECTIONS):
         if section not in draft or not isinstance(draft.get(section), dict):
             missing.append(section)
     if isinstance(draft.get("characters"), dict) and not draft.get("characters"):
@@ -187,7 +218,7 @@ def bootstrap_stage_progress(draft: dict[str, Any]) -> dict[str, Any]:
     }
     stored_sections = sorted(
         section
-        for section in REQUIRED_SECTIONS
+        for section in ALL_STAGED_SECTIONS
         if section in draft and isinstance(draft.get(section), dict)
     )
     return {
@@ -205,6 +236,8 @@ def save_bootstrap_part(
     section: str,
     value: dict[str, Any],
     item_id: str | None = None,
+    delete_fields: list[str] | None = None,
+    replace: bool = False,
 ) -> dict[str, Any]:
     session = _require_editable_session(manager, session_id)
     if section not in ALL_STAGED_SECTIONS:
@@ -213,25 +246,35 @@ def save_bootstrap_part(
         raise BootstrapStageError("value must be an object.")
 
     draft = _load_draft(manager, session_id)
+    delete_fields = list(delete_fields or [])
     stored_item_id: str | None = None
     if section in ENTRY_SECTIONS:
         if item_id in {None, ""}:
-            draft[section] = _normalize_relationship_bucket(value) if section == "relationships" else value
+            stored_section = _normalize_relationship_bucket(value) if section == "relationships" else deepcopy(value)
+            draft[section] = _delete_field_paths(stored_section, delete_fields)
         else:
-            if section == "relationships":
-                stored_item_id, stored_value = _normalize_relationship_entry(item_id, value)
-            else:
-                stored_item_id = _validate_item_id(section, item_id)
-                stored_value = value
             bucket = draft.get(section)
             if not isinstance(bucket, dict):
                 bucket = {}
+            if section == "relationships":
+                stored_item_id, normalized_patch = _normalize_relationship_entry(item_id, value)
+                existing = bucket.get(stored_item_id) if isinstance(bucket.get(stored_item_id), dict) else {}
+                stored_value = normalized_patch if replace else _deep_merge(existing, normalized_patch)
+                stored_value = _delete_field_paths(stored_value, delete_fields)
+                _, stored_value = _normalize_relationship_entry(stored_item_id, stored_value)
+            else:
+                stored_item_id = _validate_item_id(section, item_id)
+                existing = bucket.get(stored_item_id) if isinstance(bucket.get(stored_item_id), dict) else {}
+                stored_value = deepcopy(value) if replace else _deep_merge(existing, value)
+                stored_value = _delete_field_paths(stored_value, delete_fields)
             bucket[stored_item_id] = stored_value
             draft[section] = bucket
     else:
         if item_id not in {None, ""}:
             raise BootstrapStageError(f"item_id is not allowed for section {section}.")
-        draft[section] = value
+        existing = draft.get(section) if isinstance(draft.get(section), dict) else {}
+        stored_value = deepcopy(value) if replace else _deep_merge(existing, value)
+        draft[section] = _delete_field_paths(stored_value, delete_fields)
 
     staging_meta = draft.get("_staging") if isinstance(draft.get("_staging"), dict) else {}
     staging_meta.update({

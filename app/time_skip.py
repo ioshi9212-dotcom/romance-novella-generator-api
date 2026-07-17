@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta
+import re
 from typing import Any
 
 from app.director_bible import normalise_director_bible
@@ -149,6 +150,19 @@ def _target_frame_hint(current_state: dict[str, Any], unit: str | None, amount: 
         return {"date": None, "time": None, "deterministic": False}
     raw_date = _text(current_state.get("date"))
     raw_time = _text(current_state.get("time"), "00:00")
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", raw_time):
+        return {"date": None, "time": None, "deterministic": False}
+    day_match = re.fullmatch(r"День\s+(\d+)", raw_date, flags=re.IGNORECASE)
+    if day_match:
+        day_number = int(day_match.group(1))
+        base_minutes = int(raw_time[:2]) * 60 + int(raw_time[3:])
+        elapsed_minutes = amount * _UNIT_HOURS[unit] * 60
+        day_delta, minute_of_day = divmod(base_minutes + elapsed_minutes, 24 * 60)
+        return {
+            "date": f"День {day_number + day_delta}",
+            "time": f"{minute_of_day // 60:02d}:{minute_of_day % 60:02d}",
+            "deterministic": True,
+        }
     try:
         base = datetime.fromisoformat(f"{raw_date}T{raw_time}")
     except ValueError:
@@ -316,6 +330,15 @@ def validate_time_skip_scene_response(
     state_patch = proposed.get("scene_state_patch") if isinstance(proposed.get("scene_state_patch"), dict) else {}
     if not _text(state_patch.get("date")) or not _text(state_patch.get("time")):
         errors.append("time skip scene_state_patch must set non-empty date and time")
+    target_hint = request.get("target_frame_hint") if isinstance(request.get("target_frame_hint"), dict) else {}
+    if not target_hint:
+        target_hint = _target_frame_hint(bundle.get("current_state") or {}, expected_unit, expected_amount)
+    if target_hint.get("deterministic") is True:
+        if state_patch.get("date") != target_hint.get("date") or state_patch.get("time") != target_hint.get("time"):
+            errors.append(
+                "time skip scene_state_patch date/time must match the server-calculated target frame "
+                f"{target_hint.get('date')} {target_hint.get('time')}"
+            )
     control = state_patch.get("time_skip_control") if isinstance(state_patch.get("time_skip_control"), dict) else None
     if control is None or not isinstance(control.get("allowed"), bool):
         errors.append("time skip scene_state_patch.time_skip_control.allowed is required")

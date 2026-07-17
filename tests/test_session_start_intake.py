@@ -1,0 +1,84 @@
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.bootstrap_setup import build_setup_preview
+from app.session_manager import SessionManager
+
+
+def test_partial_raw_questionnaire_answer_starts_session_and_is_preserved_exactly():
+    raw_start_text = (
+        "Хочу современную романтическую мистику.\n"
+        "Героине 21 год, она работает в кофейне.\n"
+        "Характер и остальных персонажей придумай сам.\n"
+        "Нельзя: архивы, организации и магические коробки."
+    )
+
+    response = TestClient(app).post(
+        "/api/v1/sessions",
+        json={"raw_start_text": raw_start_text, "mode": "gpt_actions"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "bootstrap_pending"
+    assert body["session_id"]
+    assert all(line in body["bootstrap_prompt"] for line in raw_start_text.splitlines())
+
+    stored = SessionManager().storage.read_json(body["session_id"], "user_request.json")
+    assert stored["raw_start_text"] == raw_start_text
+
+
+def test_any_explicit_partial_field_is_enough_to_start_bootstrap():
+    response = TestClient(app).post(
+        "/api/v1/sessions",
+        json={"genre": "медленный роман", "mode": "gpt_actions"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "bootstrap_pending"
+
+
+def test_explicit_request_to_invent_everything_is_not_treated_as_missing_input():
+    response = TestClient(app).post(
+        "/api/v1/sessions",
+        json={"raw_start_text": "Придумай всё сам, но сделай персонажей живыми.", "mode": "gpt_actions"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "bootstrap_pending"
+
+
+def test_custom_gpt_passes_the_exact_questionnaire_answer_to_create_session():
+    instructions = Path("gpt/custom_gpt_instructions.md").read_text(encoding="utf-8")
+
+    assert 'createSession(raw_start_text="<точный полный ответ пользователя>"' in instructions
+    assert "Незаполненные пункты не являются ошибкой" in instructions
+
+
+def test_setup_preview_shows_the_exact_user_questionnaire_text():
+    raw_start_text = (
+        "Героине 21 год, у неё зелёно-янтарные глаза.\n"
+        "Характер: гиперзабота, мягкий юмор, не умеет отказывать.\n"
+        "Остальных персонажей придумай сам."
+    )
+    bootstrap = {
+        "protagonist": {"id": "pc_01"},
+        "characters": {
+            "pc_01": {
+                "id": "pc_01",
+                "name": "Mira Vale",
+                "role": "player_character",
+                "cast_status": "player",
+            }
+        },
+        "current_state": {"player_character_id": "pc_01"},
+        "story_plan": {},
+        "relationships": {},
+    }
+
+    preview = build_setup_preview(bootstrap, user_request={"raw_start_text": raw_start_text})
+
+    assert "### Исходная анкета пользователя" in preview
+    assert raw_start_text in preview

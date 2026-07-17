@@ -75,6 +75,9 @@
     "recent_scene_history": {
       "type": "array"
     },
+    "episode_summaries": {
+      "type": "array"
+    },
     "future_locks": {
       "type": "object"
     },

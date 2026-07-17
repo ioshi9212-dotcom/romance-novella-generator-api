@@ -1,4 +1,4 @@
-# API Contracts — GPT Actions v8
+# API Contracts — GPT Actions v9
 
 Этот слой описывает работу Custom GPT с Railway API.
 
@@ -19,7 +19,7 @@ Railway отвечает за:
 Основные файлы:
 
 ```text
-openapi.yaml
+openapi.yaml (сгенерирован из app/novella_openapi_actions.py)
 gpt/custom_gpt_instructions.md
 api_contracts/actions_contract.md
 schemas/*.schema.json

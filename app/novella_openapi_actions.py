@@ -160,7 +160,13 @@ CREATE_SESSION_SCHEMA = _schema_obj(
         "rating": {"type": ["string", "null"]},
         "avoid": _string_array(),
         "extra": _loose_obj(),
-        "raw_start_text": {"type": ["string", "null"]},
+        "raw_start_text": {
+            "type": ["string", "null"],
+            "description": (
+                "Exact complete user questionnaire answer. Send it verbatim. Partial answers are valid; "
+                "the bootstrap generator fills every unspecified detail."
+            ),
+        },
         "mode": {
             "type": "string",
             "enum": ["gpt_actions", "debug_stub"],
@@ -197,13 +203,24 @@ SAVE_BOOTSTRAP_PART_SCHEMA = _schema_obj(
         },
         "item_id": {
             "type": ["string", "null"],
-            "description": "For map sections, send one entry id. Omit to replace the whole section, including an empty object.",
+            "description": "For map sections, send one entry id. Normal setup uses it once per characters card.",
         },
         "value": {
             "type": "object",
             "properties": {},
             "additionalProperties": True,
-            "description": "One section or one entry. Do not send the full bootstrap here.",
+            "description": "One character card, story_plan, current_state, or optional advanced section. Do not send the full bootstrap here.",
+        },
+        "delete_fields": {
+            "type": "array",
+            "items": {"type": "string"},
+            "default": [],
+            "description": "Explicit dotted field paths to delete after deep merge.",
+        },
+        "replace": {
+            "type": "boolean",
+            "default": False,
+            "description": "Replace instead of deep merge. Use only for an intentional full replacement.",
         },
     },
     required=["section", "value"],
@@ -313,6 +330,13 @@ BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA = _schema_obj(
         "has_more_preview_chunks": {"type": "boolean"},
         "next_preview_chunk_index": {"type": ["integer", "null"], "minimum": 0},
         "diagnostics": _loose_obj(),
+        "repair_required": {
+            "type": "boolean",
+            "description": "When true, do not show message_to_user. Apply repair_plan and retry the action in diagnostics.retry_action.",
+        },
+        "repair_errors": {"type": "array", "items": {"type": "string"}},
+        "repair_plan": _loose_obj(),
+        "repair_prompt": {"type": ["string", "null"]},
     },
     required=[
         "message_to_user",
@@ -330,6 +354,10 @@ BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA = _schema_obj(
         "preview_chunk_count",
         "has_more_preview_chunks",
         "next_preview_chunk_index",
+        "repair_required",
+        "repair_errors",
+        "repair_plan",
+        "repair_prompt",
     ],
     additional_properties=True,
 )
@@ -622,7 +650,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
             "/api/v1/sessions/{session_id}/bootstrap-part": {
                 "post": {
                     "operationId": "saveBootstrapPart",
-                    "summary": "Stage one small bootstrap section or one map entry. Preferred over one huge bootstrap request.",
+                    "summary": "Stage one character card or one core section. Required core: characters, story_plan, current_state; runtime sections are derived.",
                     "parameters": [_session_id_param()],
                     "requestBody": _request_body({"$ref": "#/components/schemas/SaveBootstrapPartRequest"}),
                     "responses": {
@@ -635,7 +663,11 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
             "/api/v1/sessions/{session_id}/bootstrap-preview-finalize": {
                 "post": {
                     "operationId": "finalizeBootstrapPreview",
-                    "summary": "Assemble staged parts, validate them and create the visible bootstrap preview.",
+                    "summary": (
+                        "Build derived runtime state from characters, story_plan and current_state, then create the visible preview. "
+                        "If status=bootstrap_repair_required, "
+                        "do not show the response or ask the user again: apply repair_plan with saveBootstrapPart and retry."
+                    ),
                     "parameters": [_session_id_param()],
                     "responses": {
                         "200": _json_response("Bootstrap preview created from staged parts.", {"$ref": "#/components/schemas/BootstrapPreviewResponse"}),
@@ -649,7 +681,8 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                     "operationId": "createBootstrapPreview",
                     "summary": (
                         "Compatibility-only full preview call. Send exactly one body field named bootstrap_json; "
-                        "never pass bootstrap root fields as separate Action kwargs. Prefer saveBootstrapPart."
+                        "never pass bootstrap root fields as separate Action kwargs. Prefer saveBootstrapPart. "
+                        "If status=bootstrap_repair_required, silently apply repair_plan and retry."
                     ),
                     "parameters": [_session_id_param()],
                     "requestBody": _request_body(

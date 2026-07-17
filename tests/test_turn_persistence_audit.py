@@ -318,20 +318,17 @@ def test_semantically_invalid_updates_are_rejected_and_not_persisted():
         f"/api/v1/sessions/{session_id}/apply-turn-result",
         json={"turn_id": turn.json()["turn_id"], "scene_response": response},
     )
-    assert applied.status_code == 200, applied.text
-    payload = applied.json()
-    assert payload["status"] == "partially_applied"
-    rejected_targets = {item["target"] for item in payload["rejected"]}
-    assert "knowledge.ghost_knowledge" in rejected_targets
-    assert "npc_state.pc_01" in rejected_targets
-    assert "characters.coworker_01" in rejected_targets
-    assert "relationships.ghost_a__ghost_b" in rejected_targets
+    assert applied.status_code == 422, applied.text
+    errors = applied.json()["detail"]
+    assert any("ghost_knowledge" in error for error in errors)
+    assert any("cannot target the player character" in error for error in errors)
+    assert any("ghost_a" in error for error in errors)
 
     assert "ghost_knowledge" not in manager.storage.read_knowledge(session_id)
     assert "pc_01" not in manager.storage.read_json(session_id, "npc_state.json", default={})
     assert manager.storage.read_characters(session_id)["coworker_01"]["age"] == 28
     assert "ghost_a__ghost_b" not in manager.storage.read_relationships(session_id)
-    assert manager.storage.read_json(session_id, "current_state.json")["turn_number"] == 1
+    assert manager.storage.read_json(session_id, "current_state.json")["turn_number"] == 0
 
 
 def test_director_prompt_calibrates_sparse_sarcasm():

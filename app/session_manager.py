@@ -46,18 +46,33 @@ def _questionnaire_text() -> str:
 
 
 def _needs_questionnaire(request: CreateSessionRequest) -> bool:
-    raw = (request.raw_start_text or "").strip().lower()
-    if raw in {"начнем", "начнём", "старт", "создай сессию", "новая сессия"}:
+    raw = " ".join((request.raw_start_text or "").strip().lower().replace("ё", "е").split())
+    start_command = raw.strip(" .!?")
+    if start_command in {
+        "начнем",
+        "старт",
+        "создай сессию",
+        "новая сессия",
+        "новая игра",
+    }:
         return True
-    meaningful = [
+
+    # A non-command raw message is the canonical questionnaire answer. It may be
+    # deliberately incomplete: unspecified details are generated during bootstrap.
+    if raw:
+        return False
+
+    meaningful_text = [
+        (request.title or "").strip(),
+        request.genre.strip(),
         request.setting_request.strip(),
         request.protagonist_request.strip(),
         (request.romance_request or "").strip(),
         (request.tone or "").strip(),
+        (request.rating or "").strip(),
     ]
-    has_meaningful_detail = any(value and value not in {"-", "—", "придумай"} for value in meaningful)
-    genre_only = bool(request.genre.strip()) and not has_meaningful_detail
-    return genre_only or not has_meaningful_detail
+    has_explicit_input = any(meaningful_text) or bool(request.avoid) or bool(request.extra)
+    return not has_explicit_input
 
 
 class SessionManager:
@@ -206,7 +221,14 @@ class SessionManager:
         if session.get("status") not in {"bootstrap_pending", "bootstrap_review_pending"}:
             raise ValueError(f"Cannot create bootstrap preview for session status: {session.get('status')}")
 
-        preview = append_directional_preview(build_setup_preview(bootstrap_json), bootstrap_json)
+        user_request = self.storage.read_json(session_id, "user_request.json", default={})
+        preview = append_directional_preview(
+            build_setup_preview(
+                bootstrap_json,
+                user_request=user_request if isinstance(user_request, dict) else {},
+            ),
+            bootstrap_json,
+        )
         self.storage.write_json(session_id, "pending_bootstrap.json", bootstrap_json)
         (self.storage.session_dir(session_id) / "pending_setup_preview.md").write_text(preview, encoding="utf-8")
         session["status"] = "bootstrap_review_pending"

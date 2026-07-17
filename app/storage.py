@@ -81,7 +81,7 @@ def _compact_continuity_for_actions(continuity: Any) -> dict[str, Any]:
     if not isinstance(continuity, dict):
         return {}
     result: dict[str, Any] = {}
-    for key in ("current_arc", "current_act", "last_continuity_check"):
+    for key in ("current_arc", "current_act", "last_continuity_check", "story_progress"):
         if key in continuity:
             result[key] = continuity[key]
     for key in ("open_threads", "notes", "warnings"):
@@ -91,8 +91,13 @@ def _compact_continuity_for_actions(continuity: Any) -> dict[str, Any]:
         for chunk in (continuity.get("memory_chunks", []) or [])[-6:]
         if isinstance(chunk, dict)
     ]
+    result["episode_summaries"] = _compact_list(continuity.get("episode_summaries", [])[-8:], 8, 260)
     result["maintenance_events"] = _compact_list(continuity.get("maintenance_events", []), 6, 200)
-    result["gpt_memory_compacts"] = _compact_list(continuity.get("gpt_memory_compacts", []), 4, 200)
+    result["memory_compacts"] = _compact_list(
+        [*(continuity.get("gpt_memory_compacts", []) or []), *(continuity.get("memory_compacts", []) or [])][-6:],
+        6,
+        220,
+    )
     return result
 
 

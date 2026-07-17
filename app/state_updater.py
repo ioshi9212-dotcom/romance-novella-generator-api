@@ -1,11 +1,15 @@
 from typing import Any
+from app.character_profiles import enrich_character_card
+from app.directional_relationships import prepare_directional_relationships
 from app.id_utils import now_iso
+from app.npc_runtime import build_initial_npc_runtime
 from app.storage import JsonStorage
 
 
 MAX_RECENT_SCENE_HISTORY = 6
 MAX_RECENT_TURNS = 8
 MAX_MEMORY_CHUNKS = 12
+MAX_EPISODE_SUMMARIES = 32
 
 
 def _append_unique(target: list[Any], items: list[Any]) -> list[Any]:
@@ -20,6 +24,22 @@ def _append_many(target: list[Any], items: list[Any]) -> list[Any]:
     result = list(target or [])
     result.extend(items or [])
     return result
+
+
+def _empty_knowledge_entry(character_id: str) -> dict[str, Any]:
+    return {
+        "character_id": character_id,
+        "known_facts": [],
+        "observations": [],
+        "assumptions": [],
+        "wrong_beliefs": [],
+        "does_not_know": [],
+        "must_not_assume": [],
+        "recent_memories": [],
+        "open_questions": [],
+        "knows": [],
+        "history": [],
+    }
 
 
 def _clip_text(value: Any, limit: int = 500) -> str:
@@ -125,6 +145,73 @@ def _append_memory_chunk(continuity: dict[str, Any], chunk: dict[str, Any] | Non
     return True
 
 
+def _make_episode_summary(
+    continuity: dict[str, Any],
+    scenes: list[dict[str, Any]],
+    turns: list[dict[str, Any]],
+    turn_number: int,
+) -> dict[str, Any] | None:
+    if turn_number <= 0 or turn_number % 15 != 0:
+        return None
+    start = turn_number - 14
+    scene_by_turn: dict[int, dict[str, Any]] = {}
+    turn_by_turn: dict[int, dict[str, Any]] = {}
+    sources = [
+        *[item for item in continuity.get("memory_chunks", []) if isinstance(item, dict)],
+        {"scene_summaries": scenes, "turn_summaries": turns},
+    ]
+    for source in sources:
+        for item in source.get("scene_summaries", []) or []:
+            compact = _compact_scene_history_entry(item) if isinstance(item, dict) else {}
+            try:
+                item_turn = int(compact.get("turn"))
+            except (TypeError, ValueError):
+                continue
+            if start <= item_turn <= turn_number:
+                scene_by_turn[item_turn] = compact
+        for item in source.get("turn_summaries", []) or []:
+            compact = _compact_turn_entry(item) if isinstance(item, dict) else {}
+            try:
+                item_turn = int(compact.get("turn"))
+            except (TypeError, ValueError):
+                continue
+            if start <= item_turn <= turn_number:
+                turn_by_turn[item_turn] = compact
+    if not scene_by_turn and not turn_by_turn:
+        return None
+    return {
+        "episode_id": f"episode_{start}_{turn_number}",
+        "type": "episode_summary",
+        "turn_start": start,
+        "turn_end": turn_number,
+        "created_at": now_iso(),
+        "scene_summaries": [
+            {
+                "turn": item_turn,
+                "summary": item.get("summary", ""),
+                "important_facts": item.get("important_facts", []),
+                "witnesses": item.get("witnesses", []),
+            }
+            for item_turn, item in sorted(scene_by_turn.items())
+        ],
+        "player_actions": [
+            {"turn": item_turn, "player_input": item.get("player_input", ""), "summary": item.get("summary", "")}
+            for item_turn, item in sorted(turn_by_turn.items())
+        ],
+    }
+
+
+def _append_episode_summary(continuity: dict[str, Any], summary: dict[str, Any] | None) -> bool:
+    if not summary:
+        return False
+    continuity.setdefault("episode_summaries", [])
+    existing_ids = {item.get("episode_id") for item in continuity["episode_summaries"] if isinstance(item, dict)}
+    if summary.get("episode_id") not in existing_ids:
+        continuity["episode_summaries"].append(summary)
+    continuity["episode_summaries"] = continuity["episode_summaries"][-MAX_EPISODE_SUMMARIES:]
+    return True
+
+
 def _trim_continuity(continuity: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(continuity, dict):
         continuity = {}
@@ -134,9 +221,15 @@ def _trim_continuity(continuity: dict[str, Any]) -> dict[str, Any]:
     continuity["memory_chunks"] = [
         chunk for chunk in (continuity.get("memory_chunks", []) or []) if isinstance(chunk, dict)
     ][-MAX_MEMORY_CHUNKS:]
+    legacy_compacts = continuity.pop("gpt_memory_compacts", [])
     continuity["memory_compacts"] = [
-        item for item in (continuity.get("memory_compacts", []) or []) if isinstance(item, dict)
-    ][-6:]
+        item
+        for item in [*(legacy_compacts or []), *((continuity.get("memory_compacts", []) or []))]
+        if isinstance(item, dict)
+    ][-12:]
+    continuity["episode_summaries"] = [
+        item for item in (continuity.get("episode_summaries", []) or []) if isinstance(item, dict)
+    ][-MAX_EPISODE_SUMMARIES:]
     continuity["turn_archives"] = [
         item for item in (continuity.get("turn_archives", []) or []) if isinstance(item, dict)
     ][-6:]
@@ -206,9 +299,28 @@ def _merge_continuity_patch(continuity: dict[str, Any], patch: dict[str, Any], t
             continuity[key] = _append_unique(continuity.get(key, []), patch[key])
 
     if isinstance(patch.get("memory_compact"), dict):
-        continuity.setdefault("gpt_memory_compacts", [])
-        continuity["gpt_memory_compacts"].append({**patch["memory_compact"], "turn": turn_number, "created_at": now_iso()})
-        continuity["gpt_memory_compacts"] = continuity["gpt_memory_compacts"][-8:]
+        continuity.setdefault("memory_compacts", [])
+        continuity["memory_compacts"].append({**patch["memory_compact"], "turn": turn_number, "created_at": now_iso()})
+        continuity["memory_compacts"] = continuity["memory_compacts"][-12:]
+
+    if isinstance(patch.get("story_progress_patch"), dict):
+        progress_patch = patch["story_progress_patch"]
+        progress = continuity.get("story_progress") if isinstance(continuity.get("story_progress"), dict) else {}
+        old_index = int(progress.get("current_act_index", 0) or 0)
+        new_index = int(progress_patch.get("current_act_index", old_index) or 0)
+        continuity["story_progress"] = {
+            **progress,
+            **{key: value for key, value in progress_patch.items() if key not in {"reason", "source_in_scene"}},
+            "current_act_index": new_index,
+            "entered_turn": turn_number if new_index != old_index else progress.get("entered_turn", 0),
+            "last_transition": {
+                "turn": turn_number,
+                "from_act_index": old_index,
+                "to_act_index": new_index,
+                "reason": progress_patch.get("reason"),
+                "source_in_scene": progress_patch.get("source_in_scene"),
+            } if new_index != old_index else progress.get("last_transition"),
+        }
 
     for key in ["current_arc", "current_act", "last_continuity_check"]:
         if key in patch:
@@ -253,6 +365,10 @@ def _auto_compact_runtime_history(
             "note": "Review recent scene summaries/knowledge patches for missed durable facts.",
         })
     if turn_number > 0 and turn_number % 15 == 0:
+        compacted = _append_episode_summary(
+            continuity,
+            _make_episode_summary(continuity, scene_history, turns, turn_number),
+        ) or compacted
         continuity["maintenance_events"].append({
             "turn": turn_number,
             "type": "state_compaction_cleanup",
@@ -286,6 +402,8 @@ class StateUpdater:
         relationships = bundle.get("relationships", {})
         knowledge = bundle.get("knowledge", {})
         characters = bundle.get("characters", {})
+        npc_state = self.storage.read_json(session_id, "npc_state.json", default={}) or {}
+        future_locks = self.storage.read_json(session_id, "future_locks.json", default={}) or {}
         scene_history = bundle.get("scene_history", []) or []
         turns = bundle.get("turns", []) or []
         # read_session_bundle intentionally compacts continuity for Action payloads;
@@ -308,6 +426,117 @@ class StateUpdater:
         current_state["turn_number"] = int(current_state.get("turn_number", 0) or 0) + 1
         current_state["last_player_input"] = scene_response.get("player_input", current_state.get("last_player_input", ""))
         turn_number = current_state["turn_number"]
+
+        immutable_locked_fields = {
+            "name", "age", "appearance", "personality", "past_short", "role", "goal", "habits",
+            "likes_in_people", "dislikes_in_people", "relationship_triggers", "inner_logic", "behavior",
+            "speech_profile", "life_outside_player", "skills", "social_triggers", "cast_status",
+        }
+        allowed_locked_runtime_fields = {
+            "id", "introduced", "known_to_player", "last_seen", "current_mood",
+            "temporary_state", "scene_notes", "connections", "locked",
+        }
+        player_id = str(current_state.get("player_character_id") or "")
+
+        def ensure_player_relationship(character_id: str, card: dict[str, Any]) -> None:
+            if not player_id or character_id == player_id or card.get("cast_status") == "background":
+                return
+            pair_seed = {
+                "characters": {
+                    player_id: characters.get(player_id, {}),
+                    character_id: card,
+                },
+                "protagonist": {"id": player_id},
+                "current_state": {"player_character_id": player_id},
+                "relationships": {},
+            }
+            prepare_directional_relationships(pair_seed)
+            for relationship_id, relationship in pair_seed["relationships"].items():
+                if relationship_id not in relationships:
+                    relationships[relationship_id] = relationship
+                    self.storage.write_relationship_pair(session_id, relationship_id, relationship)
+                    applied["relationships"].append({"pair_id": relationship_id, "operation": "create_directional_pair"})
+
+        for patch in updates.get("new_or_updated_characters", []) or []:
+            character_id = str(patch.get("id") or "").strip() if isinstance(patch, dict) else ""
+            if not character_id:
+                rejected.append({"target": "characters", "reason": "missing id", "severity": "error"})
+                continue
+            existing = characters.get(character_id, {})
+            if existing.get("locked"):
+                reveal_id = str(patch.get("reveal_id") or "").strip()
+                if existing.get("cast_status") == "hidden_core" and reveal_id:
+                    revealed_cast_status = str(patch.get("revealed_cast_status") or "known_core")
+                    if revealed_cast_status not in {"known_core", "known_support"}:
+                        revealed_cast_status = "known_core"
+                    card = {
+                        **existing,
+                        "cast_status": revealed_cast_status,
+                        "known_to_player": True,
+                        "introduced": True,
+                        "show_in_preview": True,
+                        "available_to_scene": True,
+                        "locked": True,
+                        "last_seen": current_state.get("location"),
+                    }
+                    characters[character_id] = card
+                    self.storage.write_character(session_id, character_id, card)
+                    hidden_ids = [str(item) for item in (future_locks.get("hidden_character_ids") or [])]
+                    future_locks["hidden_character_ids"] = [item for item in hidden_ids if item != character_id]
+                    revealed_ids = [str(item) for item in (future_locks.get("revealed_character_ids") or [])]
+                    if character_id not in revealed_ids:
+                        revealed_ids.append(character_id)
+                    future_locks["revealed_character_ids"] = revealed_ids
+                    ensure_player_relationship(character_id, card)
+                    npc_state[character_id] = build_initial_npc_runtime(card, npc_state.get(character_id))
+                    applied["characters"].append({
+                        "character_id": character_id,
+                        "operation": "reveal_locked_character",
+                        "reveal_id": reveal_id,
+                    })
+                    continue
+                changed_immutable = [field for field in immutable_locked_fields if field in patch and patch.get(field) != existing.get(field)]
+                if changed_immutable:
+                    rejected.append({"target": f"characters.{character_id}", "reason": f"locked character card immutable fields cannot be changed: {changed_immutable}", "severity": "error"})
+                    continue
+                runtime_patch = {key: value for key, value in patch.items() if key in allowed_locked_runtime_fields}
+                characters[character_id] = {**existing, **runtime_patch, "locked": True}
+                self.storage.write_character(session_id, character_id, characters[character_id])
+                applied["characters"].append({"character_id": character_id, "operation": "runtime_patch_locked_card_file"})
+                continue
+
+            cast_status = str(patch.get("cast_status") or "known_support")
+            if cast_status == "background":
+                card = {
+                    **patch,
+                    "id": character_id,
+                    "cast_status": "background",
+                    "known_to_player": True,
+                    "introduced": True,
+                    "show_in_preview": False,
+                    "available_to_scene": True,
+                    "locked": True,
+                }
+            else:
+                card = enrich_character_card(
+                    {**patch, "cast_status": cast_status},
+                    character_id,
+                )
+            characters[character_id] = card
+            self.storage.write_character(session_id, character_id, card)
+
+            if character_id not in knowledge:
+                knowledge[character_id] = _empty_knowledge_entry(character_id)
+                self.storage.write_character_knowledge(session_id, character_id, knowledge[character_id])
+
+            if cast_status != "background" and character_id != player_id:
+                npc_state[character_id] = build_initial_npc_runtime(card, npc_state.get(character_id))
+                ensure_player_relationship(character_id, card)
+
+            applied["characters"].append({"character_id": character_id, "operation": "introduce_complete_card"})
+
+        self.storage.write_json(session_id, "npc_state.json", npc_state)
+        self.storage.write_json(session_id, "future_locks.json", future_locks)
 
         if isinstance(updates.get("continuity_patch"), dict):
             continuity = _merge_continuity_patch(continuity, updates["continuity_patch"], turn_number)
@@ -488,30 +717,6 @@ class StateUpdater:
             knowledge[character_id] = base
             self.storage.write_character_knowledge(session_id, character_id, base)
             applied["knowledge"].append({"character_id": character_id, "operation": "patch_character_knowledge_file"})
-
-        immutable_locked_fields = {"name", "age", "appearance", "personality", "past_short", "role", "goal", "habits", "likes_in_people", "dislikes_in_people", "relationship_triggers"}
-        allowed_locked_runtime_fields = {"id", "introduced", "known_to_player", "last_seen", "current_mood", "temporary_state", "scene_notes", "connections", "locked"}
-        for patch in updates.get("new_or_updated_characters", []) or []:
-            character_id = patch.get("id")
-            if not character_id:
-                rejected.append({"target": "characters", "reason": "missing id", "severity": "error"})
-                continue
-            existing = characters.get(character_id, {})
-            if existing.get("locked"):
-                changed_immutable = [field for field in immutable_locked_fields if field in patch and patch.get(field) != existing.get(field)]
-                if changed_immutable:
-                    rejected.append({"target": f"characters.{character_id}", "reason": f"locked character card immutable fields cannot be changed: {changed_immutable}", "severity": "error"})
-                    continue
-                runtime_patch = {key: value for key, value in patch.items() if key in allowed_locked_runtime_fields}
-                characters[character_id] = {**existing, **runtime_patch, "locked": True}
-                self.storage.write_character(session_id, character_id, characters[character_id])
-                applied["characters"].append({"character_id": character_id, "operation": "runtime_patch_locked_card_file"})
-                continue
-            characters[character_id] = {**existing, **patch, "locked": patch.get("locked", True)}
-            self.storage.write_character(session_id, character_id, characters[character_id])
-            if character_id not in knowledge:
-                self.storage.write_character_knowledge(session_id, character_id, {"character_id": character_id, "known_facts": [], "observations": [], "assumptions": [], "wrong_beliefs": [], "does_not_know": [], "must_not_assume": [], "recent_memories": [], "open_questions": [], "knows": [], "history": []})
-            applied["characters"].append({"character_id": character_id, "operation": "upsert_card_file"})
 
         history_entry = _compact_scene_history_entry({
             "turn": turn_number,

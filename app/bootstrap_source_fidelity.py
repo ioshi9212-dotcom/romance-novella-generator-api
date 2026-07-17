@@ -15,25 +15,6 @@ _MISSING_TEXT = {
     "null",
 }
 
-_GENERIC_PLAYER_VALUES = {
-    "оказаться бессильным, ненужным или использованным",
-    "слишком быстро объясняет чужое поведение через собственный страх",
-    "хочет близости, но защищается способом, который эту близость портит",
-    "не отпускает важную для себя тему и защищает собственную версию происходящего",
-    "помогает так, как умеет сам, а не обязательно так, как удобно героине",
-    "проверяет близость действиями и реакцией на отказ",
-    "физическая дистанция зависит от привычки, статуса отношений и текущего напряжения",
-    "теряет часть самоконтроля и возвращается к привычной защите",
-    "может спорить, закрыться, обидеться или сделать неверный вывод",
-    "понимание ошибки не превращается в мгновенно новое поведение",
-    "в критический момент выбирает знакомый способ защиты, даже если он уже вредил отношениям",
-    "узнаваемая речь с собственным темпом, словарём и способом уходить от неудобного",
-    "манера речи заметно меняется: темп, громкость или резкость выдают напряжение",
-    "имеет собственные дела и сроки вне героини",
-    "решает личную проблему, которую не обязан сразу раскрывать",
-    "человек, место или дело из отдельной жизни",
-}
-
 _KNOWN_ROLE_EXPECTATIONS = (
     {
         "key": "older_brother",
@@ -142,39 +123,10 @@ def _source_detail_score(source: str) -> int:
     return score
 
 
-def _field_text(card: dict[str, Any], block: str, field: str) -> str:
-    nested = card.get(block) if isinstance(card.get(block), dict) else {}
-    return _normalise(nested.get(field))
-
-
-def _generic_player_template_matches(card: dict[str, Any]) -> int:
-    values = [
-        _field_text(card, "inner_logic", "main_fear"),
-        _field_text(card, "inner_logic", "blind_spot"),
-        _field_text(card, "inner_logic", "contradiction"),
-        _field_text(card, "behavior", "conflict_style"),
-        _field_text(card, "behavior", "care_style"),
-        _field_text(card, "behavior", "closeness_style"),
-        _field_text(card, "behavior", "touch_style"),
-        _field_text(card, "behavior", "stress_response"),
-        _field_text(card, "behavior", "rejection_response"),
-        _field_text(card, "behavior", "change_inertia"),
-        _field_text(card, "behavior", "inconvenient_pattern"),
-        _field_text(card, "speech_profile", "baseline"),
-        _field_text(card, "speech_profile", "under_pressure"),
-        _field_text(card, "life_outside_player", "current_obligation"),
-        _field_text(card, "life_outside_player", "private_problem"),
-        _field_text(card, "life_outside_player", "person_or_place_that_matters"),
-    ]
-    return sum(value in _GENERIC_PLAYER_VALUES for value in values)
-
-
 def _validate_protagonist(
     data: dict[str, Any],
     source: str,
     errors: list[str],
-    *,
-    strict_source: bool,
 ) -> None:
     protagonist = data.get("protagonist") if isinstance(data.get("protagonist"), dict) else {}
     characters = data.get("characters") if isinstance(data.get("characters"), dict) else {}
@@ -195,18 +147,9 @@ def _validate_protagonist(
                 f"source_fidelity.protagonist.age: user specified {requested_age}, but bootstrap has {card.get('age')!r}."
             )
 
-    past_short = _normalise(card.get("past_short"))
-    if strict_source and "уже жил(а) с обязанностью" in past_short and "текущая проблема" in past_short:
-        errors.append(
-            "source_fidelity.protagonist.past_short: generic repair prose replaced the user's concrete biography."
-        )
-
-    generic_matches = _generic_player_template_matches(card)
-    if strict_source and generic_matches >= 4:
-        errors.append(
-            "source_fidelity.protagonist.profile: generic fallback template replaced the user's concrete character details "
-            f"({generic_matches} template fields detected)."
-        )
+    # Generated biography and role templates are valid for fields the player
+    # omitted. Only source facts that can be identified with high confidence are
+    # checked here; generic prose alone is never treated as data loss.
 
     appearance = card.get("appearance") if isinstance(card.get("appearance"), dict) else {}
     appearance_checks = (
@@ -303,8 +246,9 @@ def validate_bootstrap_source_fidelity(
     """Reject a structurally valid bootstrap that lost concrete user input.
 
     The normalizer and repair layer may invent safe defaults for small omissions.
-    This guard prevents those defaults from masking missing cast, biography,
-    appearance, age, or a generic story plan when the source request was explicit.
+    This guard catches only high-confidence losses such as an explicit age,
+    appearance fact, named starting role, or a generic story plan. It must not
+    reject details that were absent from the questionnaire and invented later.
     """
 
     if not isinstance(data, dict):
@@ -315,7 +259,7 @@ def validate_bootstrap_source_fidelity(
         return []
     strict_source = len(source) >= 1200 or _source_detail_score(source) >= 3
     errors: list[str] = []
-    _validate_protagonist(data, source, errors, strict_source=strict_source)
+    _validate_protagonist(data, source, errors)
     _validate_cast(data, source, errors)
     _validate_story_plan(data, errors, strict_source=strict_source)
     return errors

@@ -84,6 +84,7 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
         },
         "continuity": _compact_dict(contract.get("continuity", {}) if isinstance(contract.get("continuity"), dict) else {}, 260),
         "memory_chunks": [_compact_dict(i, 220) for i in (contract.get("memory_chunks", []) or [])[-3:] if isinstance(i, dict)],
+        "episode_summaries": [_compact_dict(i, 360) for i in (contract.get("episode_summaries", []) or [])[-8:] if isinstance(i, dict)],
     }
     compact["loaded_characters"] = [
         {
@@ -240,6 +241,7 @@ def process_time_skip_gpt_actions(
             "unit": assessment.get("unit"),
             "amount": assessment.get("amount"),
             "target_event": assessment.get("target_event"),
+            "target_frame_hint": assessment.get("target_frame_hint"),
             "from_frame": {
                 "date": (bundle.get("current_state") or {}).get("date"),
                 "time": (bundle.get("current_state") or {}).get("time"),

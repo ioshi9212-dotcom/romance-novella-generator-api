@@ -171,7 +171,7 @@ def apply_directional_relationship_patches(
     if not patches:
         return result
 
-    characters = bundle_before_scene.get("characters") if isinstance(bundle_before_scene.get("characters"), dict) else {}
+    characters = storage.read_characters(session_id)
     protagonist_id = str((bundle_before_scene.get("current_state") or {}).get("player_character_id") or "pc_01")
     relationships = storage.read_relationships(session_id)
     turn_number = int((storage.read_json(session_id, "current_state.json", default={}) or {}).get("turn_number") or 0)

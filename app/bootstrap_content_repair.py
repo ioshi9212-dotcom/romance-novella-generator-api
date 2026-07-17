@@ -167,6 +167,71 @@ def _repair_story_plan(data: dict[str, Any]) -> None:
         story_plan.get("opening_scene_intent"),
         f"Открыть сцену {time} в месте «{location}»: показать текущую задачу {player_name}, самостоятельный шаг другого персонажа и один конкретный сдвиг ситуации.",
     )
+
+    acts = story_plan.get("act_structure") if isinstance(story_plan.get("act_structure"), list) else []
+    generic_goals = {"старт", "развитие", "выбор", "акт 1", "акт 2", "акт 3"}
+    generic_must_happen = {"развить конфликт", "главный конфликт"}
+
+    opening = _text(story_plan.get("opening_scene_intent"), "показать стартовую ситуацию через действия персонажей")
+    conflict = _text(story_plan.get("central_conflict"), "столкнуть самостоятельные цели персонажей")
+    question = _text(story_plan.get("central_question"), "оставить главный выбор за игроком")
+    premise = _text(story_plan.get("main_premise"), "нарушить привычную жизнь героини")
+    threads = [str(item).strip() for item in (story_plan.get("open_threads") or []) if str(item).strip()]
+    first_thread = threads[0] if threads else premise
+    generated_acts = [
+        {
+            "act": 1,
+            "goal": f"Завязка: {opening}",
+            "must_happen": [f"Нарушить привычный порядок: {premise}", f"Запустить незакрытую нить: {first_thread}"],
+            "must_not_resolve_yet": [conflict, question],
+        },
+        {
+            "act": 2,
+            "goal": f"Углубить отношения и цену конфликта: {conflict}",
+            "must_happen": ["Дать каждому значимому NPC действовать из собственной цели", "Показать последствия близости, отказов и ошибочных выводов"],
+            "must_not_resolve_yet": [question, "не исправлять характеры одним разговором"],
+        },
+        {
+            "act": 3,
+            "goal": f"Довести центральный вопрос до решений игрока: {question}",
+            "must_happen": ["Связать последствия конфликта с отношениями персонажей", "Оставить важный личный выбор героине"],
+            "must_not_resolve_yet": ["не фиксировать единственный финал заранее"],
+        },
+    ]
+
+    if not acts:
+        story_plan["act_structure"] = generated_acts
+    else:
+        signatures = [
+            tuple(" ".join(_text(item).lower().split()) for item in (act.get("must_happen") or []))
+            if isinstance(act, dict)
+            else ()
+            for act in acts
+        ]
+        non_empty_signatures = [signature for signature in signatures if signature]
+        repeated_must_happen = len(non_empty_signatures) >= 2 and len(set(non_empty_signatures)) == 1
+        repaired_acts: list[dict[str, Any]] = []
+        for index, raw_act in enumerate(acts):
+            act = dict(raw_act) if isinstance(raw_act, dict) else {}
+            template = generated_acts[min(index, len(generated_acts) - 1)]
+            goal = " ".join(_text(act.get("goal")).lower().split())
+            must_happen = [
+                " ".join(_text(item).lower().split())
+                for item in (act.get("must_happen") or [])
+            ]
+            if not goal or goal in generic_goals:
+                act["goal"] = template["goal"]
+            if (
+                not must_happen
+                or repeated_must_happen
+                or all(item in generic_must_happen for item in must_happen)
+            ):
+                act["must_happen"] = list(template["must_happen"])
+            if not act.get("must_not_resolve_yet"):
+                act["must_not_resolve_yet"] = list(template["must_not_resolve_yet"])
+            act["act"] = act.get("act", index + 1)
+            repaired_acts.append(act)
+        story_plan["act_structure"] = repaired_acts
     data["story_plan"] = story_plan
 
 

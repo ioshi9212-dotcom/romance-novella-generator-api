@@ -20,7 +20,7 @@ _EVENT_TRANSITIONS = {
     "completed": {"completed"},
 }
 _REVEAL_TRANSITIONS = {
-    "locked": {"locked", "available", "deferred"},
+    "locked": {"locked", "available", "revealed", "deferred"},
     "available": {"available", "revealed", "deferred"},
     "deferred": {"deferred", "available", "revealed"},
     "revealed": {"revealed"},

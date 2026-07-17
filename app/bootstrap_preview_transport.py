@@ -14,8 +14,9 @@ BOOTSTRAP_STAGING_TRANSPORT_RULES = """
 ТРАНСПОРТ BOOTSTRAP ЧЕРЕЗ ACTIONS — ОБЯЗАТЕЛЬНО
 - Основной путь: saveBootstrapPart небольшими вызовами, затем finalizeBootstrapPreview.
 - В saveBootstrapPart передавай ровно section, value и item_id только для одной записи map-раздела.
-- protagonist, story_plan, director_bible, current_state, future_locks и continuity сохраняй как section+value без item_id.
-- characters, relationships, knowledge и npc_state сохраняй по одной записи: section+item_id+value; пустой раздел — section+value={}.
+- Повторная запись одного item_id глубоко объединяется с черновиком и не стирает пропущенные поля. Для удаления передай delete_fields с точными dotted paths; replace=true используй только для намеренной полной замены.
+- Обязательное ядро: одна полная карточка игрока и карточки значимых NPC через characters+item_id+value; затем story_plan и current_state через section+value.
+- Не дублируй игрока в protagonist. Не отправляй пустые relationships, knowledge, npc_state, director_bible, future_locks или continuity: сервер выводит их из ядра.
 - Не передавай protagonist, characters, relationships, knowledge, story_plan, director_bible, current_state, npc_state, future_locks или continuity как отдельные kwargs любого Action.
 - scene_history и turns не отправляй: staged backend сам создаёт оба пустых списка.
 - В finalizeBootstrapPreview передавай только session_id, без body и без дополнительных kwargs.

@@ -220,6 +220,28 @@ def test_duration_skip_respects_scene_limit_and_selects_highest_priority_reachab
     assert "duration_exceeds_scene_control" in blocked["blockers"]
 
 
+def test_day_number_calendar_is_calculated_across_midnight():
+    bundle = _bundle()
+    bundle["current_state"].update({"date": "День 1", "time": "22:40"})
+
+    assessment = assess_time_skip(bundle, mode="duration", unit="hours", amount=3)
+
+    assert assessment["target_frame_hint"] == {
+        "date": "День 2",
+        "time": "01:40",
+        "deterministic": True,
+    }
+
+
+def test_invalid_clock_does_not_produce_a_fake_deterministic_target():
+    bundle = _bundle()
+    bundle["current_state"].update({"date": "День 1", "time": "77:88"})
+
+    assessment = assess_time_skip(bundle, mode="duration", unit="hours", amount=3)
+
+    assert assessment["target_frame_hint"]["deterministic"] is False
+
+
 def test_time_skip_contract_keeps_hidden_core_out_of_loaded_scene():
     bundle = _bundle()
     bundle["director_bible"]["event_queue"][0].update({
@@ -290,6 +312,26 @@ def test_time_skip_result_requires_exact_elapsed_event_and_closes_skip_window():
     errors = validate_time_skip_scene_response(pending, response, bundle)
     assert "time_skip_result.elapsed must match the selected skip duration" in errors
     assert "time skip must close time_skip_control until the new scene reaches another natural pause" in errors
+
+
+def test_time_skip_rejects_model_invented_date_instead_of_server_target():
+    bundle = _bundle()
+    pending = {
+        "turn_kind": "time_skip",
+        "time_skip_request": {
+            "mode": "nearest_event",
+            "unit": "hours",
+            "amount": 3,
+            "target_event": {"id": "event_hours"},
+            "target_frame_hint": {"date": "2026-07-14", "time": "13:00", "deterministic": True},
+        },
+    }
+    response = _valid_time_skip_response()
+    response["proposed_updates"]["scene_state_patch"].update({"date": "2026-07-15", "time": "09:00"})
+
+    errors = validate_time_skip_scene_response(pending, response, bundle)
+
+    assert any("server-calculated target frame" in error for error in errors)
 
 
 def test_record_time_skip_persists_last_skip_without_rewriting_world_truth(tmp_path: Path):

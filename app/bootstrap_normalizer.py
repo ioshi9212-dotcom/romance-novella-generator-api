@@ -307,6 +307,16 @@ def _normalize_character(card: Any, character_id: str, role_fallback: str = "npc
     return normalized
 
 
+def _deep_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    result = dict(base)
+    for key, value in patch.items():
+        if isinstance(result.get(key), dict) and isinstance(value, dict):
+            result[key] = _deep_merge_dict(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 def _normalize_story_plan(story_plan: Any, data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(story_plan, dict):
         story_plan = {}
@@ -547,12 +557,37 @@ def normalize_bootstrap_json(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         data = {}
     raw_protagonist = data.get("protagonist") if isinstance(data.get("protagonist"), dict) else {}
-    protagonist_id = data.get("protagonist_id") or raw_protagonist.get("id") or raw_protagonist.get("character_id") or "pc_01"
-    protagonist_id = _safe_id(protagonist_id, "pc_01")
-    raw_characters = data.get("characters") if isinstance(data.get("characters"), dict) else {}
+    raw_characters = dict(data.get("characters")) if isinstance(data.get("characters"), dict) else {}
+    raw_current_state = data.get("current_state") if isinstance(data.get("current_state"), dict) else {}
+
+    protagonist_id = (
+        data.get("protagonist_id")
+        or raw_protagonist.get("id")
+        or raw_protagonist.get("character_id")
+        or raw_current_state.get("player_character_id")
+    )
+    if not protagonist_id:
+        for character_id, card in raw_characters.items():
+            if not isinstance(card, dict):
+                continue
+            role = _as_str(card.get("role"), "").lower()
+            if card.get("cast_status") == "player" or role in {
+                "player",
+                "player_character",
+                "protagonist",
+                "персонаж игрока",
+                "героиня",
+            }:
+                protagonist_id = character_id
+                break
+    protagonist_id = _safe_id(protagonist_id or "pc_01", "pc_01")
+
     characters: dict[str, Any] = {}
-    if protagonist_id not in raw_characters:
-        raw_characters[protagonist_id] = raw_protagonist
+    raw_player_card = raw_characters.get(protagonist_id) if isinstance(raw_characters.get(protagonist_id), dict) else {}
+    # GPT may stage the player card in protagonist, characters, or split it
+    # between both. Merge nested fields so a short duplicate cannot erase the
+    # complete questionnaire stored in the other location.
+    raw_characters[protagonist_id] = _deep_merge_dict(raw_protagonist, raw_player_card)
     for cid, card in raw_characters.items():
         safe_cid = _safe_id(cid, "npc_01")
         role = "player_character" if safe_cid == protagonist_id else _as_str((card or {}).get("role") if isinstance(card, dict) else None, "npc")
@@ -562,7 +597,10 @@ def normalize_bootstrap_json(data: dict[str, Any]) -> dict[str, Any]:
     protagonist["introduced"] = True
     protagonist["known_to_player"] = True
     characters[protagonist_id] = protagonist
-    story_plan = _normalize_story_plan(data.get("story_plan"), data)
+    story_plan = _normalize_story_plan(
+        data.get("story_plan"),
+        {**data, "protagonist_id": protagonist_id},
+    )
     relationships = _normalize_relationships(data.get("relationships"), characters, protagonist_id)
     knowledge = _normalize_knowledge(data.get("knowledge"), characters)
     current_state = _normalize_current_state(data.get("current_state"), story_plan, protagonist_id)

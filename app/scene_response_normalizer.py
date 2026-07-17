@@ -211,29 +211,25 @@ def _meter(value: Any, *, kind: str, fallback: str = "норма") -> str:
 
 
 def _preview_bundle_with_scene_status_patch(bundle: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
-    """Show this turn's status patch immediately in the visible footer.
+    """Build the post-patch frame used by the visible header and footer.
 
-    StateUpdater persists proposed_updates after normalization. Without this
-    preview merge, the user sees the old fatigue/injury/emotion state for one
-    turn even when the current scene changed it.
+    StateUpdater persists proposed_updates after normalization. Rendering from
+    this merged frame prevents the model-authored header from disagreeing with
+    the state that the backend is about to save.
     """
     if not isinstance(updates, dict):
         return bundle
     scene_patch = updates.get("scene_state_patch")
     if not isinstance(scene_patch, dict):
         return bundle
-    status_patch = scene_patch.get("status")
-    if not isinstance(status_patch, dict) or not status_patch:
-        return bundle
-
     preview = dict(bundle)
     current_state = dict(bundle.get("current_state") or {})
-    state_status = current_state.get("status") if isinstance(current_state.get("status"), dict) else {}
-    merged_status = dict(state_status)
-    for key, value in status_patch.items():
-        if value is not None:
-            merged_status[key] = value
-    current_state["status"] = merged_status
+    for key, value in scene_patch.items():
+        if key == "status" and isinstance(value, dict):
+            state_status = current_state.get("status") if isinstance(current_state.get("status"), dict) else {}
+            current_state["status"] = {**state_status, **value}
+        elif value is not None:
+            current_state[key] = value
     preview["current_state"] = current_state
     return preview
 
@@ -457,12 +453,47 @@ def _normalize_relationships_panel(scene: dict[str, Any], bundle: dict[str, Any]
 # Header, body, patches, rendered text
 # -----------------------------------------------------------------------------
 
-def _normalize_header(scene: dict[str, Any]) -> None:
+def _normalize_header(scene: dict[str, Any], bundle: dict[str, Any]) -> None:
     header = scene.setdefault("header", {})
     if not isinstance(header, dict):
         scene["header"] = header = {}
     if "story_title" not in header and "title" in header:
         header["story_title"] = header.get("title")
+    current_state = bundle.get("current_state") if isinstance(bundle.get("current_state"), dict) else {}
+    story_plan = bundle.get("story_plan") if isinstance(bundle.get("story_plan"), dict) else {}
+    session = bundle.get("session") if isinstance(bundle.get("session"), dict) else {}
+    characters = bundle.get("characters") if isinstance(bundle.get("characters"), dict) else {}
+    player_id = str(current_state.get("player_character_id") or "")
+    player_card = characters.get(player_id) if isinstance(characters.get(player_id), dict) else {}
+
+    session_title = _as_str(session.get("title"))
+    if session_title and session_title != "Untitled novella":
+        header["story_title"] = session_title
+    elif _as_str(story_plan.get("title")):
+        header["story_title"] = _as_str(story_plan.get("title"))
+
+    state_fields = {
+        "date": "date",
+        "time": "time",
+        "location": "location",
+        "weather": "weather",
+        "scene_state": "scene_state",
+        "outfit": "outfit",
+        "inventory": "inventory",
+    }
+    for header_key, state_key in state_fields.items():
+        state_value = current_state.get(state_key)
+        if state_key in current_state and state_value is not None and state_value != "":
+            header[header_key] = current_state.get(state_key)
+
+    for name_key in ("display_name", "visible_name", "name_ru", "russian_name", "name"):
+        if _as_str(player_card.get(name_key)):
+            header["player_name"] = _as_str(player_card.get(name_key))
+            break
+    status = current_state.get("status") if isinstance(current_state.get("status"), dict) else {}
+    emotional_state = status.get("emotional_state")
+    if emotional_state is not None and emotional_state != "":
+        header["visible_state"] = status.get("emotional_state")
     defaults = {
         "story_title": "Новая новелла",
         "date": "День 1",
@@ -682,12 +713,8 @@ def _normalize_safety_checks(result: dict[str, Any], scene: dict[str, Any]) -> N
     if not isinstance(checks, dict):
         checks = {}
         result["safety_checks"] = checks
-    rendered_text = _as_str(scene.get("rendered_text"))
-    body = _as_str(scene.get("body"))
-    can_fill_missing = _has_full_visible_scene(rendered_text) and len(body) >= 500
-    for key in REQUIRED_SAFETY_CHECKS:
-        if key not in checks and can_fill_missing:
-            checks[key] = True
+    # Self-review flags are diagnostics supplied by the scene writer. Never
+    # manufacture successful checks from formatting markers.
     checks["notes"] = _as_list(checks.get("notes"))
 
 
@@ -713,9 +740,6 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
     if top_level_rendered and not _as_str(scene.get("rendered_text")):
         scene["rendered_text"] = top_level_rendered
 
-    _normalize_header(scene)
-    _normalize_options(scene)
-
     updates = result.setdefault("proposed_updates", {})
     if not isinstance(updates, dict):
         updates = {}
@@ -724,6 +748,8 @@ def normalize_scene_response(data: dict[str, Any], bundle: dict[str, Any]) -> di
         updates["scene_state_patch"] = {}
 
     status_bundle = _preview_bundle_with_scene_status_patch(bundle, updates)
+    _normalize_header(scene, status_bundle)
+    _normalize_options(scene)
     _normalize_status_panel(scene, status_bundle)
 
     current_body = _as_str(scene.get("body"), "")
