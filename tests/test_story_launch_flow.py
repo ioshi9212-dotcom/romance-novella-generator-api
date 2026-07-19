@@ -57,7 +57,7 @@ def test_random_launch_uses_one_preview_and_exposes_only_one_eligible_future_see
         json={"bootstrap_json": bootstrap},
     )
     assert preview.status_code == 200, preview.text
-    visible_preview = preview.json()["preview"]
+    visible_preview = preview.json()["message_to_user"]
     assert "planned_guest_seed" not in visible_preview
     assert "later_guest_seed" not in visible_preview
 

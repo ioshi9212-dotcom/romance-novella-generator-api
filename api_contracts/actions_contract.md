@@ -25,6 +25,7 @@ Custom GPT is the writer. Railway stores memory, validates JSON, builds scene pr
 - Show only the preview during setup review.
 - Send `turn_id` and scene fields flat to `applyTurnResult`; do not wrap them in `scene_response` and do not send `rendered_text`.
 - Railway builds and retains the visible scene. After normal turns, show only `message_to_user`.
+- A preview response contains visible text only once. When chunked, concatenate `message_to_user` (chunk 0) with every later `getBootstrapPreviewChunk` result. After a lost/`ResponseTooLargeError` response, read `diagnostics.bootstrap.preview_transport` from `debugSessionDump` and fetch chunks starting at index 0; do not rebuild the preview.
 - A repeated `applyTurnResult` for the same applied `turn_id` is idempotent and replays the saved response.
 - If the Action response is lost, call `getLastScene`; never create a replacement turn.
 

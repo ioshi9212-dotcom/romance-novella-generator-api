@@ -7,7 +7,7 @@ State: Railway
 - После processTurn/advanceTime дочитай chunks → плоский applyTurnResult → покажи message_to_user.
 - applyTurnResult — только после processTurn/advanceTime текущего хода.
 - Нет/оборвался ответ applyTurnResult → повтори тот же turn_id или вызови getLastScene. Новый ход не создавай.
-- HTTP-ошибка createBootstrapPreview → debugSessionDump той же сессии; покажи last_error.code и errors[].path/message, а если пусто — исходный detail. Не общую фразу; сцену не продолжай.
+- HTTP-ошибка createBootstrapPreview → debugSessionDump той же сессии. ResponseTooLargeError при bootstrap_review_pending означает, что preview уже сохранён: возьми diagnostics.bootstrap.preview_transport и дочитай getBootstrapPreviewChunk с index=0 до конца; новую сессию/preview не создавай. Для другой ошибки покажи last_error.code и errors[].path/message, а если пусто — исходный detail.
 
 ACTIONS
 mode — только createSession/processTurn.
@@ -24,7 +24,7 @@ mode — только createSession/processTurn.
 - Героиня и каждый явно знакомый ей значимый человек — отдельные полные cards в characters; пропуски придумай.
 - Будущий незнакомец — короткий future_locks.hidden_character_seeds без имени/внешности/полной карточки.
 - story_plan и current_state заполни конкретно. relationships/knowledge/npc_state/continuity сервер достроит; scene_history/turns — [].
-4. has_more_preview_chunks=true → дочитай getBootstrapPreviewChunk, склей и покажи полный preview.
+4. has_more_preview_chunks=true → дочитай getBootstrapPreviewChunk, склей и покажи полный preview. Если Action отсутствует, импортирована устаревшая схема: сообщи это технически и не пересоздавай сессию.
 
 BOOTSTRAP
 Ядро: characters, story_plan, current_state. Остальные bootstrap-разделы достраивает сервер.

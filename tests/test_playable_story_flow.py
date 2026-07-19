@@ -173,7 +173,7 @@ def test_questionnaire_preview_two_turns_and_seed_character_are_persisted_atomic
         json={"bootstrap_json": _emily_bootstrap()},
     )
     assert preview_response.status_code == 200, preview_response.text
-    preview = preview_response.json()["preview"]
+    preview = preview_response.json()["message_to_user"]
     for visible_name in ("Эмили Харпер", "Ryan Harper", "Chloe Bennett", "Ethan Cole"):
         assert visible_name in preview
     for hidden_or_internal in (

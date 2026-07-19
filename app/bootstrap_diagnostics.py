@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 import uuid
 
+from app.bootstrap_preview_transport import load_bootstrap_preview_chunks
 from app.id_utils import now_iso
 
 
@@ -132,12 +133,27 @@ def bootstrap_debug_summary(manager: Any, session_id: str, session: dict[str, An
     pending = manager.storage.read_json(session_id, "pending_bootstrap.json", default={})
     pending = pending if isinstance(pending, dict) else {}
     pending_characters = pending.get("characters") if isinstance(pending.get("characters"), dict) else {}
+    preview_transport: dict[str, Any] = {}
+    if (session_dir / "pending_setup_preview.md").exists():
+        try:
+            metadata, _ = load_bootstrap_preview_chunks(manager.storage, session_id)
+            preview_transport = {
+                "preview_id": metadata.get("preview_id"),
+                "preview_chars": metadata.get("preview_chars"),
+                "chunk_size": metadata.get("chunk_size"),
+                "chunk_count": metadata.get("chunk_count"),
+                "recovery_start_chunk_index": 0,
+                "recovery_action": "getBootstrapPreviewChunk",
+            }
+        except (FileNotFoundError, ValueError, TypeError):
+            preview_transport = {}
 
     return {
         "flow": "single_preview",
         "pending_bootstrap_present": (session_dir / "pending_bootstrap.json").exists(),
         "pending_character_ids": sorted(str(item) for item in pending_characters),
         "pending_preview_present": (session_dir / "pending_setup_preview.md").exists(),
+        "preview_transport": preview_transport,
         "ready_to_confirm": session.get("status") == "bootstrap_review_pending",
         "committed": session.get("status") == "active",
         "last_error": _clip(session.get("last_error") or {}),

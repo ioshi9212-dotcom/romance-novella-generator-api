@@ -187,7 +187,7 @@ def test_source_fidelity_heuristics_warn_but_do_not_block_preview():
     assert body["must_show_to_user"] is True
     assert body["wait_for_confirmation"] is True
     assert body["can_confirm"] is True
-    assert "Черновик новеллы" in body["preview"]
+    assert "Черновик новеллы" in body["message_to_user"]
     assert body["diagnostics"]["source_fidelity_warning_count"] > 0
     assert "repair_required" not in body
 

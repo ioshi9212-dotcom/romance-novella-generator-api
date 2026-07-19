@@ -393,6 +393,7 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
         "pending_bootstrap_present": bootstrap_debug.get("pending_bootstrap_present"),
         "pending_character_ids": list(bootstrap_debug.get("pending_character_ids") or [])[:20],
         "pending_preview_present": bootstrap_debug.get("pending_preview_present"),
+        "preview_transport": _debug_clip_dict(bootstrap_debug.get("preview_transport"), 240, 8),
         "ready_to_confirm": bootstrap_debug.get("ready_to_confirm"),
         "committed": bootstrap_debug.get("committed"),
         "last_error": _debug_clip_dict(bootstrap_debug.get("last_error"), 320, 8),

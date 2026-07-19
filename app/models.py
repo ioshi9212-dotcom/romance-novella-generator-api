@@ -104,8 +104,6 @@ class BootstrapPreviewResponse(BaseModel):
     must_show_to_user: bool = True
     wait_for_confirmation: bool = True
     next_user_action: str = "Напиши `подтверждаю`, если всё подходит, или скажи, что изменить."
-    preview: str
-    user_visible_preview: str
     can_confirm: bool = True
     preview_id: str
     preview_chars: int = Field(ge=0)

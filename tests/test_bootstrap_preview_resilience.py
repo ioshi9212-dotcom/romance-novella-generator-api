@@ -131,7 +131,20 @@ def test_bootstrap_preview_returns_user_visible_preview_instead_of_422_for_repai
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "bootstrap_review_pending"
-    assert body["must_show_to_user"] is True
-    assert body["can_confirm"] is True
-    assert "Черновик новеллы" in body["message_to_user"]
-    assert "будет уточняться" not in body["message_to_user"].lower()
+    chunks = [body["message_to_user"]]
+    if body["has_more_preview_chunks"]:
+        assert body["must_show_to_user"] is False
+        assert body["can_confirm"] is False
+        for chunk_index in range(1, body["preview_chunk_count"]):
+            chunk = client.get(
+                f"/api/v1/sessions/{session_id}/bootstrap-preview-chunk",
+                params={"chunk_index": chunk_index, "preview_id": body["preview_id"]},
+            )
+            assert chunk.status_code == 200, chunk.text
+            chunks.append(chunk.json()["preview_chunk"])
+    else:
+        assert body["must_show_to_user"] is True
+        assert body["can_confirm"] is True
+    complete_preview = "".join(chunks)
+    assert "Черновик новеллы" in complete_preview
+    assert "будет уточняться" not in complete_preview.lower()

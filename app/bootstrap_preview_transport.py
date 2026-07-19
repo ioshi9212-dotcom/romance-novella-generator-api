@@ -5,8 +5,8 @@ import json
 from typing import Any
 
 
-BOOTSTRAP_PREVIEW_CHUNK_SIZE = 7000
-BOOTSTRAP_PREVIEW_INLINE_LIMIT = 20000
+BOOTSTRAP_PREVIEW_CHUNK_SIZE = 4500
+BOOTSTRAP_PREVIEW_INLINE_LIMIT = 6000
 PREVIEW_TEXT_FILE = "pending_setup_preview.md"
 PREVIEW_TRANSPORT_FILE = "pending_setup_preview_transport.json"
 
@@ -16,6 +16,7 @@ BOOTSTRAP_PREVIEW_TRANSPORT_RULES = """
 - Не разворачивай protagonist, characters, story_plan и другие корневые разделы в отдельные Action kwargs.
 - scene_history и turns передай пустыми списками. Технические relationships, knowledge, npc_state и continuity можно оставить пустыми: сервер их достроит.
 - Если preview разбит на части, дочитай getBootstrapPreviewChunk по порядку, склей без изменений и только затем покажи пользователю.
+- Если createBootstrapPreview потерян с ResponseTooLargeError, возьми preview_transport из debugSessionDump и получи части с chunk_index=0; bootstrap повторно не сохраняй.
 - Не подтверждай preview и не запускай сцену, пока пользователь не увидел полный склеенный текст и явно его не подтвердил.
 """.strip()
 
@@ -65,6 +66,32 @@ def _transport_metadata(text: str, chunk_size: int) -> tuple[dict[str, Any], lis
     }, chunks
 
 
+def load_bootstrap_preview_chunks(storage: Any, session_id: str) -> tuple[dict[str, Any], list[str]]:
+    """Load a stored preview and migrate legacy oversized recovery chunks."""
+    preview_path = storage.session_dir(session_id) / PREVIEW_TEXT_FILE
+    if not preview_path.exists():
+        raise FileNotFoundError(f"No stored bootstrap preview for session {session_id}")
+    preview = preview_path.read_text(encoding="utf-8")
+    stored_metadata = storage.read_json(session_id, PREVIEW_TRANSPORT_FILE, default={})
+    try:
+        stored_chunk_size = int((stored_metadata or {}).get("chunk_size") or BOOTSTRAP_PREVIEW_CHUNK_SIZE)
+    except (TypeError, ValueError):
+        stored_chunk_size = BOOTSTRAP_PREVIEW_CHUNK_SIZE
+    if stored_chunk_size < 1000:
+        stored_chunk_size = BOOTSTRAP_PREVIEW_CHUNK_SIZE
+    # Deployments before v9.2 stored a 20k recovery chunk. Re-split it when the
+    # saved preview is read so an already-created session can recover safely.
+    chunk_size = (
+        BOOTSTRAP_PREVIEW_CHUNK_SIZE
+        if stored_chunk_size > BOOTSTRAP_PREVIEW_INLINE_LIMIT
+        else stored_chunk_size
+    )
+    metadata, chunks = _transport_metadata(preview, chunk_size)
+    if stored_metadata != metadata:
+        storage.write_json(session_id, PREVIEW_TRANSPORT_FILE, metadata)
+    return metadata, chunks
+
+
 def build_bootstrap_preview_response(
     storage: Any,
     session_id: str,
@@ -81,7 +108,7 @@ def build_bootstrap_preview_response(
     chunk_count = len(chunks)
     has_more = chunk_count > 1
     first_chunk = chunks[0]
-    legacy_visible_text = first_chunk if has_more else preview
+    visible_text = first_chunk if has_more else preview
     next_required_action = (
         "Call getBootstrapPreviewChunk for chunk_index 1 through chunk_count-1 using this preview_id; concatenate message_to_user plus every preview_chunk in order; then show the complete preview exactly once and wait for explicit confirmation."
         if has_more
@@ -96,11 +123,14 @@ def build_bootstrap_preview_response(
         "returned_chunk_index": 0,
         "next_chunk_index": 1 if has_more else None,
         "next_required_action": next_required_action,
-        "staged_input_recommended": True,
+        "single_bootstrap_input": True,
     }
 
     response = {
-        "message_to_user": legacy_visible_text,
+        # Return the visible text exactly once. The old response copied the same
+        # preview into three fields; an 8-character setup could therefore exceed
+        # the Custom GPT Action response limit before chunking even started.
+        "message_to_user": visible_text,
         "session_id": session_id,
         "status": "bootstrap_review_pending",
         "must_show_to_user": not has_more,
@@ -110,8 +140,6 @@ def build_bootstrap_preview_response(
             if has_more
             else "Напиши `подтверждаю`, если всё подходит, или скажи, что изменить."
         ),
-        "preview": legacy_visible_text,
-        "user_visible_preview": legacy_visible_text,
         "can_confirm": not has_more,
         "preview_id": metadata["preview_id"],
         "preview_chars": metadata["preview_chars"],
@@ -141,16 +169,7 @@ def get_bootstrap_preview_chunk(
             status_code=409,
         )
 
-    preview_path = storage.session_dir(session_id) / PREVIEW_TEXT_FILE
-    if not preview_path.exists():
-        raise FileNotFoundError(f"No stored bootstrap preview for session {session_id}")
-    preview = preview_path.read_text(encoding="utf-8")
-
-    stored_metadata = storage.read_json(session_id, PREVIEW_TRANSPORT_FILE, default={})
-    chunk_size = int((stored_metadata or {}).get("chunk_size") or BOOTSTRAP_PREVIEW_CHUNK_SIZE)
-    metadata, chunks = _transport_metadata(preview, chunk_size)
-    if stored_metadata != metadata:
-        storage.write_json(session_id, PREVIEW_TRANSPORT_FILE, metadata)
+    metadata, chunks = load_bootstrap_preview_chunks(storage, session_id)
 
     current_preview_id = str(metadata["preview_id"])
     if expected_preview_id and expected_preview_id != current_preview_id:

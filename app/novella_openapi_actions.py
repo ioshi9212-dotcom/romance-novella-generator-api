@@ -375,8 +375,6 @@ BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA = _schema_obj(
         "must_show_to_user": {"type": "boolean"},
         "wait_for_confirmation": {"type": "boolean"},
         "next_user_action": {"type": "string"},
-        "preview": {"type": "string"},
-        "user_visible_preview": {"type": "string"},
         "can_confirm": {"type": "boolean"},
         "preview_id": {"type": "string", "minLength": 1},
         "preview_chars": {"type": "integer", "minimum": 0},
@@ -393,8 +391,6 @@ BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA = _schema_obj(
         "must_show_to_user",
         "wait_for_confirmation",
         "next_user_action",
-        "preview",
-        "user_visible_preview",
         "can_confirm",
         "preview_id",
         "preview_chars",
@@ -731,8 +727,11 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                             "name": "chunk_index",
                             "in": "query",
                             "required": True,
-                            "schema": {"type": "integer", "minimum": 1},
-                            "description": "Next zero-based preview chunk index; start at 1.",
+                            "schema": {"type": "integer", "minimum": 0},
+                            "description": (
+                                "Zero-based preview chunk index. Normally start at 1 because preview creation returned chunk 0; "
+                                "start at 0 when recovering a lost/ResponseTooLarge preview response from debugSessionDump."
+                            ),
                         },
                         {
                             "name": "preview_id",

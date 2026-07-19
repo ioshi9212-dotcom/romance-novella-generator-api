@@ -55,6 +55,8 @@ GPT builds one bootstrap_json and calls POST /api/v1/sessions/{session_id}/boots
 ↓
 API derives technical runtime state, performs structural validation and returns a spoiler-free preview; source-fidelity heuristics are diagnostic warnings only
 ↓
+Большой preview возвращается безопасными chunks; потерянный первый ответ восстанавливается с chunk 0 по metadata из debugSessionDump
+↓
 User confirms or asks edits
 ↓
 If edits: GPT sends one updated bootstrap_json to the same preview endpoint

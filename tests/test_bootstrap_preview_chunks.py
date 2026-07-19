@@ -1,9 +1,16 @@
 import json
+from copy import deepcopy
 
 from fastapi.testclient import TestClient
 
-from app.bootstrap_preview_transport import BOOTSTRAP_PREVIEW_CHUNK_SIZE, split_bootstrap_preview
+from app.bootstrap_preview_transport import (
+    BOOTSTRAP_PREVIEW_CHUNK_SIZE,
+    BOOTSTRAP_PREVIEW_INLINE_LIMIT,
+    PREVIEW_TRANSPORT_FILE,
+    split_bootstrap_preview,
+)
 from app.main import app
+from app.session_manager import SessionManager
 from tests.test_smoke import _valid_bootstrap
 
 
@@ -54,7 +61,8 @@ def test_large_bootstrap_preview_is_returned_in_safe_ordered_chunks():
     assert body["next_preview_chunk_index"] == 1
     assert body["must_show_to_user"] is False
     assert body["can_confirm"] is False
-    assert body["message_to_user"] == body["preview"] == body["user_visible_preview"]
+    assert "preview" not in body
+    assert "user_visible_preview" not in body
     assert len(body["message_to_user"]) <= BOOTSTRAP_PREVIEW_CHUNK_SIZE
     assert len(json.dumps(body, ensure_ascii=False)) < 30000
 
@@ -84,11 +92,115 @@ def test_large_bootstrap_preview_is_returned_in_safe_ordered_chunks():
     assert last_chunk["can_confirm"] is True
 
 
+def test_eight_character_preview_stays_within_action_response_budget_and_is_recoverable():
+    client = TestClient(app)
+    session_id = _create_pending_session(client)
+    bootstrap = _valid_bootstrap()
+    template = bootstrap["characters"]["coworker_01"]
+    specs = (
+        ("ryan_01", "Ryan Harper", "Райан", "older brother", "защитная резкость"),
+        ("chloe_01", "Chloe Bennett", "Хлоя", "best friend", "навязчивая честность"),
+        ("ethan_01", "Ethan Cole", "Итан", "coworker", "спокойное соперничество"),
+        ("grace_01", "Grace Holloway", "Грейс", "coffee shop owner", "деловой контроль"),
+        ("kai_01", "Kai Mercer", "Кай", "regular guest", "насмешливая дистанция"),
+        ("nicole_01", "Nicole Hayes", "Николь", "neighbor", "тревожная настойчивость"),
+    )
+    for character_id, name, display_name, role, marker in specs:
+        card = deepcopy(template)
+        card.update(
+            {
+                "id": character_id,
+                "name": name,
+                "display_name": display_name,
+                "role": role,
+                "cast_status": "known_support",
+                "goal": f"решить собственную задачу через {marker}, не становясь приложением к героине",
+                "past_short": f"У {display_name} есть отдельная история и незакрытое последствие: {marker}.",
+                "connections": [{"character_id": "pc_01", "relation": role}],
+            }
+        )
+        card["behavior"] = {
+            **card.get("behavior", {}),
+            "care_style": f"проявляет заботу через {marker}",
+            "conflict_style": f"спорит через {marker}",
+            "stress_response": f"под стрессом усиливает {marker}",
+        }
+        card["speech_profile"] = {
+            **card.get("speech_profile", {}),
+            "baseline": f"узнаваемая речь: {marker}",
+        }
+        bootstrap["characters"][character_id] = card
+
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/bootstrap-preview",
+        json={"bootstrap_json": bootstrap},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["has_more_preview_chunks"] is True
+    assert body["preview_chars"] > BOOTSTRAP_PREVIEW_INLINE_LIMIT
+    assert len(json.dumps(body, ensure_ascii=False)) < 12_000
+    assert len(body["message_to_user"]) <= BOOTSTRAP_PREVIEW_CHUNK_SIZE
+    assert "preview" not in body
+    assert "user_visible_preview" not in body
+
+    chunks = [body["message_to_user"]]
+    for chunk_index in range(1, body["preview_chunk_count"]):
+        chunk_response = client.get(
+            f"/api/v1/sessions/{session_id}/bootstrap-preview-chunk",
+            params={"chunk_index": chunk_index, "preview_id": body["preview_id"]},
+        )
+        assert chunk_response.status_code == 200, chunk_response.text
+        chunks.append(chunk_response.json()["preview_chunk"])
+
+    complete_preview = "".join(chunks)
+    assert len(complete_preview) == body["preview_chars"]
+    for _, _, display_name, _, _ in specs:
+        assert display_name in complete_preview
+
+    # Simulate the real failure: createBootstrapPreview was saved, but its whole
+    # Action response was lost. Debug must provide enough compact metadata to
+    # recover from chunk 0 without rebuilding the bootstrap.
+    SessionManager().storage.write_json(
+        session_id,
+        PREVIEW_TRANSPORT_FILE,
+        {
+            "version": "novella.bootstrap_preview_transport.v1",
+            "preview_id": body["preview_id"],
+            "preview_chars": body["preview_chars"],
+            "chunk_size": 20_000,
+            "chunk_count": 1,
+        },
+    )
+    debug = client.get(f"/api/v1/sessions/{session_id}/debug-dump")
+    assert debug.status_code == 200, debug.text
+    recovery = debug.json()["diagnostics"]["bootstrap"]["preview_transport"]
+    assert recovery["preview_id"] == body["preview_id"]
+    assert recovery["chunk_count"] == body["preview_chunk_count"]
+    assert recovery["recovery_start_chunk_index"] == 0
+    recovered_chunks = []
+    for chunk_index in range(recovery["chunk_count"]):
+        chunk_response = client.get(
+            f"/api/v1/sessions/{session_id}/bootstrap-preview-chunk",
+            params={"chunk_index": chunk_index, "preview_id": recovery["preview_id"]},
+        )
+        assert chunk_response.status_code == 200, chunk_response.text
+        recovered_chunks.append(chunk_response.json()["preview_chunk"])
+    assert "".join(recovered_chunks) == complete_preview
+
+    openapi = client.get("/openapi-actions.json").json()
+    chunk_action = openapi["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview-chunk"]["get"]
+    assert chunk_action["operationId"] == "getBootstrapPreviewChunk"
+    chunk_index_parameter = next(item for item in chunk_action["parameters"] if item["name"] == "chunk_index")
+    assert chunk_index_parameter["schema"]["minimum"] == 0
+
+
 def test_preview_chunk_rejects_stale_id_and_out_of_range_index():
     client = TestClient(app)
     session_id = _create_pending_session(client)
     bootstrap = _valid_bootstrap()
-    # Keep this transport test larger than the 20k inline limit even when the
+    # Keep this transport test larger than the inline limit even when the
     # human-facing preview becomes more concise.
     bootstrap["characters"]["pc_01"]["past_short"] = "Большое прошлое. " * 1800
 
@@ -129,7 +241,8 @@ def test_small_preview_keeps_legacy_single_response_behavior():
     assert body["next_preview_chunk_index"] is None
     assert body["must_show_to_user"] is True
     assert body["can_confirm"] is True
-    assert body["message_to_user"] == body["preview"] == body["user_visible_preview"]
+    assert "preview" not in body
+    assert "user_visible_preview" not in body
 
     openapi = client.get("/openapi-actions.json").json()
     chunk_path = openapi["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview-chunk"]["get"]
@@ -139,6 +252,8 @@ def test_small_preview_keeps_legacy_single_response_behavior():
     }
 
     preview_schema = openapi["components"]["schemas"]["BootstrapPreviewResponse"]
+    assert "preview" not in preview_schema["properties"]
+    assert "user_visible_preview" not in preview_schema["properties"]
     for field in (
         "preview_id",
         "preview_chars",
