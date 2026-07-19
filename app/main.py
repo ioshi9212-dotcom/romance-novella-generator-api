@@ -17,11 +17,6 @@ from app.bootstrap_diagnostics import (
 )
 from app.bootstrap_preview_transport import BootstrapPreviewTransportError
 from app.bootstrap_normalizer import normalize_bootstrap_json
-from app.bootstrap_staging import (
-    BootstrapStageError,
-    assemble_staged_bootstrap,
-    save_bootstrap_part as save_staged_bootstrap_part,
-)
 from app.bootstrap_source_fidelity import validate_bootstrap_source_fidelity
 from app.config import get_settings
 from app.directional_relationships import apply_directional_relationship_patches, prepare_directional_relationships, validate_directional_relationships
@@ -40,8 +35,6 @@ from app.models import (
     CreateSessionResponse,
     DebugSessionDumpResponse,
     LastSceneResponse,
-    SaveBootstrapPartRequest,
-    SaveBootstrapPartResponse,
     TurnPromptChunkResponse,
     TurnRequest,
     TurnResponse,
@@ -58,12 +51,6 @@ from app.validators import validate_bootstrap_result, validate_scene_response, v
 RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
 LAST_SCENE_OUTPUT_FILE = "last_scene_output.json"
 app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v9", servers=[{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}])
-
-
-class BootstrapSourceFidelityError(ValueError):
-    def __init__(self, errors: list[str]):
-        super().__init__("Bootstrap lost concrete source details.")
-        self.errors = errors
 
 
 class BootstrapValidationError(ValueError):
@@ -402,12 +389,12 @@ def _debug_dump(manager: SessionManager, session_id: str) -> dict[str, Any]:
         if isinstance(item, dict)
     ]
     bootstrap_compact = {
-        "draft_present": bootstrap_debug.get("draft_present"),
-        "progress": _debug_clip_dict(bootstrap_debug.get("progress"), 220, 12),
-        "staged_character_ids": list(bootstrap_debug.get("staged_character_ids") or [])[:20],
+        "flow": bootstrap_debug.get("flow"),
         "pending_bootstrap_present": bootstrap_debug.get("pending_bootstrap_present"),
         "pending_character_ids": list(bootstrap_debug.get("pending_character_ids") or [])[:20],
         "pending_preview_present": bootstrap_debug.get("pending_preview_present"),
+        "ready_to_confirm": bootstrap_debug.get("ready_to_confirm"),
+        "committed": bootstrap_debug.get("committed"),
         "last_error": _debug_clip_dict(bootstrap_debug.get("last_error"), 320, 8),
     }
     return {
@@ -931,119 +918,13 @@ def _prepare_bootstrap_preview_payload(
     errors.extend(validate_director_bible(normalized_bootstrap))
     if errors:
         raise BootstrapValidationError(errors)
-    fidelity_errors = validate_bootstrap_source_fidelity(normalized_bootstrap, user_request)
-    if fidelity_errors:
-        raise BootstrapSourceFidelityError(fidelity_errors)
+    # Source-fidelity heuristics are useful diagnostics, but they are not a
+    # structural validator. Partial questionnaires and freely worded Russian
+    # descriptions must never be trapped in an internal repair loop.
+    fidelity_warnings = validate_bootstrap_source_fidelity(normalized_bootstrap, user_request)
+    if fidelity_warnings:
+        normalized_bootstrap.setdefault("diagnostics", {})["source_fidelity_warnings"] = fidelity_warnings
     return normalized_bootstrap
-
-
-def _bootstrap_repair_plan(errors: list[str]) -> dict[str, Any]:
-    paths = [str(error).split(":", 1)[0] for error in errors]
-    sections: list[str] = []
-    if any(path.startswith("source_fidelity.protagonist") for path in paths):
-        sections.append("characters")
-    if any(path.startswith("source_fidelity.characters") for path in paths):
-        sections.append("characters")
-    if any(path.startswith("source_fidelity.story_plan") for path in paths):
-        sections.append("story_plan")
-    sections = list(dict.fromkeys(sections))
-    missing_roles = [
-        error.rsplit(" for ", 1)[-1].rstrip(".")
-        for error in errors
-        if error.startswith("source_fidelity.characters.missing_known:") and " for " in error
-    ]
-    steps = [
-        "Read source_request as the canon; never ask the user to repeat the questionnaire.",
-    ]
-    if "characters" in sections:
-        steps.append(
-            "Patch only characters: preserve the existing player card, add every missing explicit fact, "
-            "and create one playable card for every named role; invent only unspecified details."
-        )
-    if "story_plan" in sections:
-        steps.append(
-            "Patch story_plan with distinct story-specific acts while keeping outcomes open to player choices."
-        )
-    steps.append(
-        "Save only the listed sections with saveBootstrapPart, then call finalizeBootstrapPreview again; "
-        "the server derives protagonist, relationships, knowledge, npc_state and director runtime."
-    )
-    return {
-        "sections": sections,
-        "error_paths": paths,
-        "missing_known_roles": missing_roles,
-        "steps": steps,
-    }
-
-
-def _bootstrap_repair_response(
-    manager: SessionManager,
-    session_id: str,
-    errors: list[str],
-    *,
-    retry_action: str,
-    staged_progress: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    plan = _bootstrap_repair_plan(errors)
-    user_request = manager.storage.read_json(session_id, "user_request.json", default={}) or {}
-    if isinstance(user_request, dict):
-        raw_source = user_request.get("raw_start_text")
-        if not isinstance(raw_source, str) or not raw_source.strip():
-            raw_source = json.dumps(
-                {key: value for key, value in user_request.items() if key != "mode" and value not in (None, "", [], {})},
-                ensure_ascii=False,
-            )
-        raw_source = raw_source.strip()
-        plan["source_request"] = raw_source[:16000]
-        plan["source_request_truncated"] = len(raw_source) > 16000
-    repair_prompt = (
-        "Не показывай эти ошибки пользователю и не проси повторить анкету. "
-        "Используй repair_plan.source_request как канон. Исправь перечисленные секции, "
-        f"затем снова вызови {retry_action}. Ошибки: " + " | ".join(errors)
-    )
-    session = manager.storage.read_json(session_id, "session.json", default={}) or {}
-    recorded_error = _record_bootstrap_error(
-        manager,
-        session_id,
-        operation=retry_action,
-        status_code=200,
-        detail={
-            "code": "BOOTSTRAP_SOURCE_FIDELITY_REPAIR_REQUIRED",
-            "message": "Bootstrap must be repaired from the stored source request before preview.",
-            "errors": errors,
-        },
-        default_code="BOOTSTRAP_SOURCE_FIDELITY_REPAIR_REQUIRED",
-    )
-    return {
-        # This is an internal Action continuation, not a user-facing failure.
-        # Keeping message_to_user empty prevents clients that privilege this
-        # field from accidentally surfacing the repair diagnostics.
-        "message_to_user": "",
-        "session_id": session_id,
-        "status": "bootstrap_repair_required",
-        "must_show_to_user": False,
-        "wait_for_confirmation": False,
-        "next_user_action": "none; automatically repair the staged bootstrap and retry finalize",
-        "preview": "",
-        "user_visible_preview": "",
-        "can_confirm": False,
-        "preview_id": "not_created_repair_required",
-        "preview_chars": 0,
-        "preview_chunk_index": 0,
-        "preview_chunk_count": 1,
-        "has_more_preview_chunks": False,
-        "next_preview_chunk_index": None,
-        "diagnostics": {
-            "session_status": session.get("status"),
-            "retry_action": retry_action,
-            "staged_progress": staged_progress or {},
-            "error_id": recorded_error["error_id"],
-        },
-        "repair_required": True,
-        "repair_errors": errors,
-        "repair_plan": plan,
-        "repair_prompt": repair_prompt,
-    }
 
 
 @app.get("/health", operation_id="health")
@@ -1179,13 +1060,6 @@ def create_bootstrap_preview(session_id: str, request: BootstrapPreviewRequest) 
             response = manager.save_bootstrap_preview(session_id, normalized_bootstrap)
             _clear_bootstrap_error(manager, session_id)
             return response
-    except BootstrapSourceFidelityError as exc:
-        return _bootstrap_repair_response(
-            manager,
-            session_id,
-            exc.errors,
-            retry_action="createBootstrapPreview",
-        )
     except BootstrapValidationError as exc:
         detail = _record_bootstrap_error(
             manager,
@@ -1233,94 +1107,6 @@ def get_bootstrap_preview_chunk_action(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except BootstrapPreviewTransportError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-
-
-@app.post("/api/v1/sessions/{session_id}/bootstrap-part", response_model=SaveBootstrapPartResponse, dependencies=[Depends(require_api_key)], operation_id="saveBootstrapPart")
-def save_bootstrap_part_action(session_id: str, request: SaveBootstrapPartRequest) -> dict:
-    manager = SessionManager()
-    try:
-        with _session_request_context(manager, session_id):
-            return save_staged_bootstrap_part(
-                manager,
-                session_id,
-                section=request.section,
-                item_id=request.item_id,
-                value=request.value,
-                delete_fields=request.delete_fields,
-                replace=request.replace,
-            )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except BootstrapStageError as exc:
-        detail = _record_bootstrap_error(
-            manager,
-            session_id,
-            operation="saveBootstrapPart",
-            status_code=exc.status_code,
-            detail=exc.detail,
-            default_code="BOOTSTRAP_STAGE_FAILED",
-        )
-        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
-
-
-@app.post("/api/v1/sessions/{session_id}/bootstrap-preview-finalize", response_model=BootstrapPreviewResponse, dependencies=[Depends(require_api_key)], operation_id="finalizeBootstrapPreview")
-def finalize_bootstrap_preview(session_id: str) -> dict:
-    manager = SessionManager()
-    progress: dict[str, Any] | None = None
-    try:
-        with _session_request_context(manager, session_id):
-            staged_bootstrap, progress = assemble_staged_bootstrap(manager, session_id)
-            user_request = manager.storage.read_json(session_id, "user_request.json", default={})
-            normalized_bootstrap = _prepare_bootstrap_preview_payload(
-                staged_bootstrap,
-                user_request=user_request if isinstance(user_request, dict) else {},
-            )
-            response = manager.save_bootstrap_preview(session_id, normalized_bootstrap)
-            _clear_bootstrap_error(manager, session_id)
-            diagnostics = dict(response.get("diagnostics") or {})
-            diagnostics.update({"staged_bootstrap": True, "staged_progress": progress})
-            response["diagnostics"] = diagnostics
-            return response
-    except BootstrapSourceFidelityError as exc:
-        return _bootstrap_repair_response(
-            manager,
-            session_id,
-            exc.errors,
-            retry_action="finalizeBootstrapPreview",
-            staged_progress=progress,
-        )
-    except BootstrapValidationError as exc:
-        detail = _record_bootstrap_error(
-            manager,
-            session_id,
-            operation="finalizeBootstrapPreview",
-            status_code=422,
-            detail=exc.errors,
-            default_code="BOOTSTRAP_VALIDATION_FAILED",
-        )
-        raise HTTPException(status_code=422, detail=detail) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except BootstrapStageError as exc:
-        detail = _record_bootstrap_error(
-            manager,
-            session_id,
-            operation="finalizeBootstrapPreview",
-            status_code=exc.status_code,
-            detail=exc.detail,
-            default_code="BOOTSTRAP_STAGE_FAILED",
-        )
-        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
-    except ValueError as exc:
-        detail = _record_bootstrap_error(
-            manager,
-            session_id,
-            operation="finalizeBootstrapPreview",
-            status_code=409,
-            detail=str(exc),
-            default_code="BOOTSTRAP_PREVIEW_STATE_CONFLICT",
-        )
-        raise HTTPException(status_code=409, detail=detail) from exc
 
 
 @app.post("/api/v1/sessions/{session_id}/bootstrap-confirm", response_model=BootstrapConfirmResponse, dependencies=[Depends(require_api_key)], operation_id="confirmBootstrapPreview")

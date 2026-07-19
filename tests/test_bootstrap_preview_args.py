@@ -7,32 +7,18 @@ from app.models import BootstrapPreviewRequest
 from app.novella_openapi_actions import build_openapi_actions
 
 
-BOOTSTRAP_ROOT_FIELDS = {
-    "protagonist",
-    "characters",
-    "relationships",
-    "knowledge",
-    "story_plan",
-    "director_bible",
-    "current_state",
-    "npc_state",
-    "future_locks",
-    "continuity",
-    "scene_history",
-    "turns",
-}
-
-
-def test_actions_schema_hides_spilled_bootstrap_fields_from_custom_gpt():
+def test_actions_schema_exposes_only_nested_bootstrap_json():
     contract = build_openapi_actions("https://example.invalid")
-    assert "BootstrapPreviewRequest" not in contract["components"]["schemas"]
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in contract["paths"]
-    schema = contract["components"]["schemas"]["SaveBootstrapPartRequest"]
-    assert set(schema["required"]) == {"section", "value"}
-    assert BOOTSTRAP_ROOT_FIELDS.isdisjoint(schema["properties"])
+    schema = contract["components"]["schemas"]["BootstrapPreviewRequest"]
+
+    assert set(schema["required"]) == {"bootstrap_json"}
+    assert set(schema["properties"]) == {"bootstrap_json"}
+    operation = contract["paths"]["/api/v1/sessions/{session_id}/bootstrap-preview"]["post"]
+    request_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert request_schema == {"$ref": "#/components/schemas/BootstrapPreviewRequest"}
 
 
-def test_request_folds_spilled_fields_back_inside_bootstrap_json():
+def test_backend_folds_legacy_spilled_fields_back_inside_bootstrap_json():
     request = BootstrapPreviewRequest(
         bootstrap_json={"protagonist": {"id": "hero"}},
         characters={"hero": {"id": "hero"}},
@@ -50,7 +36,7 @@ def test_request_folds_spilled_fields_back_inside_bootstrap_json():
     }
 
 
-def test_request_allows_identical_duplicate_but_rejects_conflict():
+def test_backend_allows_identical_duplicate_but_rejects_conflict():
     identical = BootstrapPreviewRequest(
         bootstrap_json={"characters": {"hero": {"id": "hero"}}},
         characters={"hero": {"id": "hero"}},
@@ -64,6 +50,6 @@ def test_request_allows_identical_duplicate_but_rejects_conflict():
         )
 
 
-def test_request_still_rejects_unknown_top_level_garbage():
+def test_backend_still_rejects_unknown_top_level_garbage():
     with pytest.raises(ValidationError):
         BootstrapPreviewRequest(bootstrap_json={}, unrelated_field="nope")

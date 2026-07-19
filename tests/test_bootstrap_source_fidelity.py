@@ -161,7 +161,7 @@ def test_complete_cast_and_specific_profile_pass_source_fidelity():
     assert validate_bootstrap_source_fidelity(data, _source_request()) == []
 
 
-def test_staged_finalize_returns_private_repair_plan_instead_of_preview_error():
+def test_source_fidelity_heuristics_warn_but_do_not_block_preview():
     client = TestClient(app)
     created = client.post(
         "/api/v1/sessions",
@@ -176,84 +176,31 @@ def test_staged_finalize_returns_private_repair_plan_instead_of_preview_error():
         for index, goal in enumerate(("старт", "развитие", "выбор"), start=1)
     ]
 
-    for section in ("characters", "story_plan", "current_state"):
-        saved = client.post(
-            f"/api/v1/sessions/{session_id}/bootstrap-part",
-            json={"section": section, "value": bootstrap.get(section, {})},
-        )
-        assert saved.status_code == 200, saved.text
-
-    finalized = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview-finalize")
-
-    assert finalized.status_code == 200, finalized.text
-    body = finalized.json()
-    assert body["status"] == "bootstrap_repair_required"
-    assert body["repair_required"] is True
-    assert body["must_show_to_user"] is False
-    assert body["wait_for_confirmation"] is False
-    assert body["can_confirm"] is False
-    assert body["preview"] == ""
-    assert body["message_to_user"] == ""
-    assert body["diagnostics"]["retry_action"] == "finalizeBootstrapPreview"
-    assert body["repair_plan"]["sections"] == ["characters"]
-    assert "старший брат" in body["repair_plan"]["missing_known_roles"]
-    assert any("source_fidelity" in error for error in body["repair_errors"])
-    assert not any("story_plan" in error for error in body["repair_errors"])
-    assert _source_request()["raw_start_text"].strip() in body["repair_plan"]["source_request"]
-    assert "не проси повторить анкету" in body["repair_prompt"]
-    storage = SessionManager().storage
-    assert not (storage.session_dir(session_id) / "pending_bootstrap.json").exists()
-    session = client.get(f"/api/v1/sessions/{session_id}").json()
-    assert session["last_error"]["code"] == "BOOTSTRAP_SOURCE_FIDELITY_REPAIR_REQUIRED"
-    assert session["last_error"]["operation"] == "finalizeBootstrapPreview"
-    assert any(
-        item["path"].startswith("source_fidelity.characters")
-        for item in session["last_error"]["errors"]
+    preview = client.post(
+        f"/api/v1/sessions/{session_id}/bootstrap-preview",
+        json={"bootstrap_json": bootstrap},
     )
-    debug = client.get(f"/api/v1/sessions/{session_id}/debug-dump")
-    assert debug.status_code == 200, debug.text
-    assert debug.json()["diagnostics"]["bootstrap"]["last_error"]["error_id"] == body["diagnostics"]["error_id"]
+
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["status"] == "bootstrap_review_pending"
+    assert body["must_show_to_user"] is True
+    assert body["wait_for_confirmation"] is True
+    assert body["can_confirm"] is True
+    assert "Черновик новеллы" in body["preview"]
+    assert body["diagnostics"]["source_fidelity_warning_count"] > 0
+    assert "repair_required" not in body
+
+    storage = SessionManager().storage
+    pending = storage.read_json(session_id, "pending_bootstrap.json")
+    warnings = (pending.get("diagnostics") or {}).get("source_fidelity_warnings") or []
+    assert any("source_fidelity.characters" in warning for warning in warnings)
+    session = client.get(f"/api/v1/sessions/{session_id}").json()
+    assert "last_error" not in session
 
     confirm = client.post(
         f"/api/v1/sessions/{session_id}/bootstrap-confirm",
         json={"confirmation_text": "подтверждаю"},
     )
-    assert confirm.status_code == 409
-
-    player_patch = {
-        "age": 21,
-        "past_short": "Рано потеряла родителей, выросла с бабушкой и теперь живёт со старшим братом.",
-        "appearance": {
-            "height": "невысокая",
-            "build": "миниатюрная",
-            "hair": "кудрявые русые волосы",
-            "eyes": "зелёные с янтарным оттенком",
-            "face": "много веснушек",
-            "style": "нежная и удобная одежда",
-        },
-    }
-    repaired_cards = {
-        "pc_01": player_patch,
-        "older_brother": {"name": "Adrian Vale", "role": "older brother", "cast_status": "known_core"},
-        "best_friend": {"name": "Nora Bell", "role": "best friend", "cast_status": "known_core"},
-        "childhood_friend": {"name": "Theo Grant", "role": "childhood friend", "cast_status": "known_core"},
-        "friends_mother": {"name": "Evelyn Grant", "role": "childhood friend's mother", "cast_status": "known_support"},
-        "red_haired_man": {"name": "Rowan Blake", "role": "red-haired future lead", "cast_status": "hidden_core"},
-        "dark_haired_man": {"name": "Silas Reed", "role": "dark-haired future lead", "cast_status": "hidden_core"},
-        "company_woman": {"name": "Claire West", "role": "future company member", "cast_status": "hidden_core"},
-    }
-    for item_id, value in repaired_cards.items():
-        saved = client.post(
-            f"/api/v1/sessions/{session_id}/bootstrap-part",
-            json={"section": "characters", "item_id": item_id, "value": value},
-        )
-        assert saved.status_code == 200, saved.text
-
-    retried = client.post(f"/api/v1/sessions/{session_id}/bootstrap-preview-finalize")
-
-    assert retried.status_code == 200, retried.text
-    assert retried.json()["status"] == "bootstrap_review_pending"
-    assert retried.json()["repair_required"] is False
-    assert "невысокая" in retried.json()["preview"]
-    assert "Adrian Vale" in retried.json()["preview"]
-    assert "last_error" not in client.get(f"/api/v1/sessions/{session_id}").json()
+    assert confirm.status_code == 200, confirm.text
+    assert confirm.json()["status"] == "active"

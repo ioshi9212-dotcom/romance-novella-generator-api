@@ -13,7 +13,7 @@ GitHub = код, правила, схемы и промпты
 ## Что изменилось в v9
 
 - Добавлен обязательный launch-flow с preview перед первой сценой.
-- Канонический старт собирается малыми вызовами `saveBootstrapPart` и завершается через `finalizeBootstrapPreview`; legacy endpoint `createBootstrapPreview` работает для старых клиентов, но больше не публикуется в Custom GPT Actions.
+- Канонический старт передаётся одним `createBootstrapPreview`: GPT присылает цельный `bootstrap_json`, а Railway достраивает технический state и возвращает preview.
 - `confirmBootstrapPreview` после явного подтверждения пользователя раскладывает персонажей/знания/отношения по state-файлам и активирует сессию.
 - Первая сцена пишется только после подтверждения preview.
 - `story_plan.json` усилен: цель новеллы, цель героини, центральный конфликт, центральный вопрос, opening intent, character_arcs, relationship_focus, open_threads.
@@ -51,15 +51,13 @@ GPT calls POST /api/v1/sessions with the exact answer in raw_start_text
 ↓
 API returns bootstrap_prompt, session remains bootstrap_pending
 ↓
-GPT stages complete character cards, story_plan, current_state and authored director_bible via saveBootstrapPart
+GPT builds one bootstrap_json and calls POST /api/v1/sessions/{session_id}/bootstrap-preview
 ↓
-GPT calls POST /api/v1/sessions/{session_id}/bootstrap-preview-finalize
-↓
-API derives technical runtime state, validates source fidelity and returns a spoiler-free preview
+API derives technical runtime state, performs structural validation and returns a spoiler-free preview; source-fidelity heuristics are diagnostic warnings only
 ↓
 User confirms or asks edits
 ↓
-If edits: GPT patches only affected staged sections and finalizes again
+If edits: GPT sends one updated bootstrap_json to the same preview endpoint
 ↓
 If confirmed: GPT calls POST /api/v1/sessions/{session_id}/bootstrap-confirm
 ↓
@@ -68,6 +66,8 @@ API writes state files and session becomes active
 GPT calls POST /api/v1/sessions/{session_id}/turn with player_input="(начать первую сцену)"
 ↓
 API returns current state, active/nearby cards and only eligible event-driven entrance candidates
+↓
+An unknown future person is represented only by a short seed; one complete card may be created atomically when that person actually enters a scene
 ↓
 GPT sends flat scene fields without rendered_text to apply-turn-result
 ↓
@@ -106,7 +106,7 @@ DATA_DIR/
           <a>__<b>.json
 ```
 
-Один персонаж = одна полная поведенческая карточка в `characters/<character_id>.json`; в сценический prompt попадает её компактная версия только тогда, когда персонаж нужен текущей сцене.
+Один уже известный или появившийся персонаж = одна полная поведенческая карточка в `characters/<character_id>.json`; в сценический prompt попадает её компактная версия только тогда, когда персонаж нужен текущей сцене. Неизвестные будущие люди остаются короткими seeds в `future_locks.json` до фактического появления.
 
 Знания = субъективная память конкретного персонажа в `state/knowledge/<character_id>.json`: что видел, слышал, как понял, что запомнил, где может ошибаться.
 
@@ -144,16 +144,15 @@ GET  /api/v1/sessions/latest
 GET  /api/v1/sessions/{session_id}
 GET  /api/v1/sessions/{session_id}/memory
 POST /api/v1/sessions/{session_id}/bootstrap-preview
-POST /api/v1/sessions/{session_id}/bootstrap-parts
-POST /api/v1/sessions/{session_id}/bootstrap-preview/finalize
 GET  /api/v1/sessions/{session_id}/bootstrap-preview-chunk
 POST /api/v1/sessions/{session_id}/bootstrap-confirm
-POST /api/v1/sessions/{session_id}/bootstrap-result   # legacy/direct save, не основной GPT-flow
 GET  /api/v1/sessions/{session_id}/scene-contract
 POST /api/v1/sessions/{session_id}/turn
 POST /api/v1/sessions/{session_id}/advance-time
 GET  /api/v1/sessions/{session_id}/turn-prompt-chunk
 POST /api/v1/sessions/{session_id}/apply-turn-result
+GET  /api/v1/sessions/{session_id}/last-scene
+GET  /api/v1/sessions/{session_id}/debug-dump
 ```
 
 Каноническая Action-схема доступна у запущенного API по `GET /openapi-actions.json`.

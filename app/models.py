@@ -4,11 +4,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SessionMode = Literal["debug_stub", "gpt_actions"]
 TimeSkipMode = Literal["nearest_event", "duration"]
 TimeSkipUnit = Literal["hours", "days", "weeks", "months"]
-BootstrapPartSection = Literal[
-    "protagonist", "characters", "relationships", "knowledge",
-    "story_plan", "director_bible", "current_state", "npc_state",
-    "future_locks", "continuity",
-]
 
 BOOTSTRAP_ROOT_FIELDS = (
     "protagonist",
@@ -99,35 +94,6 @@ class BootstrapPreviewRequest(BaseModel):
         self.bootstrap_json = merged
         return self
 
-class SaveBootstrapPartRequest(BaseModel):
-    section: BootstrapPartSection
-    item_id: str | None = Field(
-        default=None,
-        description="Entry id for a map section. Normal setup uses it once per characters card.",
-    )
-    value: dict[str, Any] = Field(
-        ...,
-        description="One character card, story_plan, current_state, or an optional advanced section. Keep this call small.",
-    )
-    delete_fields: list[str] = Field(
-        default_factory=list,
-        description="Explicit dotted field paths to delete after merging value, for example behavior.stress_response.",
-    )
-    replace: bool = Field(
-        default=False,
-        description="Replace the selected object instead of safely deep-merging it. Use only when full replacement is intentional.",
-    )
-
-
-class SaveBootstrapPartResponse(BaseModel):
-    session_id: str
-    status: str
-    section: BootstrapPartSection
-    item_id: str | None = None
-    stored: bool = True
-    progress: dict[str, Any] = Field(default_factory=dict)
-
-
 class BootstrapPreviewResponse(BaseModel):
     message_to_user: str = Field(
         ...,
@@ -148,10 +114,6 @@ class BootstrapPreviewResponse(BaseModel):
     has_more_preview_chunks: bool = False
     next_preview_chunk_index: int | None = Field(default=None, ge=0)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
-    repair_required: bool = False
-    repair_errors: list[str] = Field(default_factory=list)
-    repair_plan: dict[str, Any] = Field(default_factory=dict)
-    repair_prompt: str | None = None
 
 
 class BootstrapPreviewChunkResponse(BaseModel):

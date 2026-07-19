@@ -10,17 +10,11 @@ BOOTSTRAP_PREVIEW_INLINE_LIMIT = 20000
 PREVIEW_TEXT_FILE = "pending_setup_preview.md"
 PREVIEW_TRANSPORT_FILE = "pending_setup_preview_transport.json"
 
-BOOTSTRAP_STAGING_TRANSPORT_RULES = """
-ТРАНСПОРТ BOOTSTRAP ЧЕРЕЗ ACTIONS — ОБЯЗАТЕЛЬНО
-- Основной путь: saveBootstrapPart небольшими вызовами, затем finalizeBootstrapPreview.
-- В saveBootstrapPart передавай ровно section, value и item_id только для одной записи map-раздела.
-- Повторная запись одного item_id глубоко объединяется с черновиком и не стирает пропущенные поля. Для удаления передай delete_fields с точными dotted paths; replace=true используй только для намеренной полной замены.
-- Обязательное ядро: одна полная карточка игрока и карточки значимых NPC через characters+item_id+value; затем story_plan, current_state и придуманный GPT director_bible через section+value.
-- Не дублируй игрока в protagonist. Не отправляй пустые relationships, knowledge, npc_state, future_locks или continuity: сервер выводит их из ядра. Director_bible не пустой технический раздел, а авторский скрытый лор и режиссура.
-- Не передавай protagonist, characters, relationships, knowledge, story_plan, director_bible, current_state, npc_state, future_locks или continuity как отдельные kwargs любого Action.
-- scene_history и turns не отправляй: staged backend сам создаёт оба пустых списка.
-- В finalizeBootstrapPreview передавай только session_id, без body и без дополнительных kwargs.
-- createBootstrapPreview — legacy-совместимость для старых импортов, не основной flow; если старый импорт всё же вызывает его, единственное поле body — bootstrap_json.
+BOOTSTRAP_PREVIEW_TRANSPORT_RULES = """
+ТРАНСПОРТ BOOTSTRAP ЧЕРЕЗ ACTIONS
+- Создай один цельный bootstrap и передай его единственным полем bootstrap_json в createBootstrapPreview.
+- Не разворачивай protagonist, characters, story_plan и другие корневые разделы в отдельные Action kwargs.
+- scene_history и turns передай пустыми списками. Технические relationships, knowledge, npc_state и continuity можно оставить пустыми: сервер их достроит.
 - Если preview разбит на части, дочитай getBootstrapPreviewChunk по порядку, склей без изменений и только затем покажи пользователю.
 - Не подтверждай preview и не запускай сцену, пока пользователь не увидел полный склеенный текст и явно его не подтвердил.
 """.strip()
@@ -165,7 +159,7 @@ def get_bootstrap_preview_chunk(
                 "code": "stale_bootstrap_preview_id",
                 "expected_preview_id": current_preview_id,
                 "received_preview_id": expected_preview_id,
-                "recovery": "Use the preview_id returned by the latest createBootstrapPreview or finalizeBootstrapPreview response.",
+                "recovery": "Use the preview_id returned by the latest createBootstrapPreview response.",
             },
             status_code=409,
         )

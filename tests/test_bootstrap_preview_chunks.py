@@ -88,7 +88,9 @@ def test_preview_chunk_rejects_stale_id_and_out_of_range_index():
     client = TestClient(app)
     session_id = _create_pending_session(client)
     bootstrap = _valid_bootstrap()
-    bootstrap["characters"]["pc_01"]["past_short"] = "Большое прошлое. " * 900
+    # Keep this transport test larger than the 20k inline limit even when the
+    # human-facing preview becomes more concise.
+    bootstrap["characters"]["pc_01"]["past_short"] = "Большое прошлое. " * 1800
 
     preview = client.post(
         f"/api/v1/sessions/{session_id}/bootstrap-preview",

@@ -157,7 +157,9 @@ def test_preview_shows_known_cast_and_never_leaks_hidden_core():
     preview = build_setup_preview(data)
 
     assert "Хлоя" in preview
-    assert "неудобный паттерн" in preview.lower()
+    assert "Забота и конфликт" in preview
+    assert "Собственная цель" in preview
+    assert "inner_logic" not in preview
     assert "Адриан" not in preview
     assert "Adrian Vale" not in preview
     assert "hidden_01" not in preview

@@ -533,7 +533,31 @@ class StateUpdater:
                 npc_state[character_id] = build_initial_npc_runtime(card, npc_state.get(character_id))
                 ensure_player_relationship(character_id, card)
 
-            applied["characters"].append({"character_id": character_id, "operation": "introduce_complete_card"})
+            source_seed_id = str(patch.get("source_seed_id") or "").strip()
+            operation = "introduce_complete_card"
+            if source_seed_id:
+                seeds = future_locks.get("hidden_character_seeds")
+                seeds = seeds if isinstance(seeds, list) else []
+                future_locks["hidden_character_seeds"] = [
+                    seed
+                    for seed in seeds
+                    if not (isinstance(seed, dict) and str(seed.get("id") or "") == source_seed_id)
+                ]
+                used = future_locks.get("used_character_seeds")
+                used = used if isinstance(used, list) else []
+                used.append({
+                    "seed_id": source_seed_id,
+                    "character_id": character_id,
+                    "introduced_turn": turn_number,
+                })
+                future_locks["used_character_seeds"] = used[-20:]
+                operation = "introduce_complete_card_from_seed"
+
+            applied["characters"].append({
+                "character_id": character_id,
+                "operation": operation,
+                **({"source_seed_id": source_seed_id} if source_seed_id else {}),
+            })
 
         self.storage.write_json(session_id, "npc_state.json", npc_state)
         self.storage.write_json(session_id, "future_locks.json", future_locks)

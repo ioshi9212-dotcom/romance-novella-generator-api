@@ -377,13 +377,13 @@
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["id", "role", "known_to_player", "introduced", "generate_full_card_on_first_appearance"],
+            "required": ["id", "role"],
             "properties": {
               "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
               "role": {"type": "string", "minLength": 1},
-              "known_to_player": {"const": false},
-              "introduced": {"const": false},
-              "generate_full_card_on_first_appearance": {"type": "boolean"},
+              "known_to_player": {"const": false, "default": false},
+              "introduced": {"const": false, "default": false},
+              "generate_full_card_on_first_appearance": {"type": "boolean", "default": true},
               "notes_for_engine": {"type": "string"}
             }
           }
@@ -391,7 +391,7 @@
         "hidden_character_ids": {"type": "array", "items": {"type": "string"}},
         "do_not_reveal_yet": {"type": "array", "items": {"type": "string"}}
       },
-      "description": "Engine-only reveal locks. Important hidden_core characters already have full cards in characters but must not appear in preview or scene until unlocked."
+      "description": "Engine-only reveal locks. New sessions keep unknown future people as short seeds and create a full card only on actual appearance; hidden_core remains supported for older sessions."
     },
     "continuity": {"type": "object"},
     "scene_history": {"type": "array", "maxItems": 0, "items": {"type": "object", "additionalProperties": true}},

@@ -239,9 +239,9 @@ def test_openapi_actions_exposes_full_v9_flow():
     paths = response.json()["paths"]
     assert "/api/v1/start-questionnaire" in paths
     assert "/api/v1/sessions" in paths
-    assert "/api/v1/sessions/{session_id}/bootstrap-part" in paths
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview-finalize" in paths
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview" in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-part" not in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview-finalize" not in paths
     assert "/api/v1/sessions/{session_id}/bootstrap-confirm" in paths
     assert "/api/v1/sessions/{session_id}/turn" in paths
     assert "/api/v1/sessions/{session_id}/turn-prompt-chunk" in paths

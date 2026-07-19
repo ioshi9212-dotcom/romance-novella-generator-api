@@ -221,11 +221,12 @@ def test_openapi_actions_use_compact_flat_turn_contract_and_api_key():
     ]["responses"]["200"]["content"]["application/json"]["schema"]
     assert turn_response_ref == {"$ref": "#/components/schemas/TurnResponse"}
 
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in contract["paths"]
-    staged_request_ref = contract["paths"][
-        "/api/v1/sessions/{session_id}/bootstrap-part"
+    assert "/api/v1/sessions/{session_id}/bootstrap-part" not in contract["paths"]
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview-finalize" not in contract["paths"]
+    preview_request_ref = contract["paths"][
+        "/api/v1/sessions/{session_id}/bootstrap-preview"
     ]["post"]["requestBody"]["content"]["application/json"]["schema"]
-    assert staged_request_ref == {"$ref": "#/components/schemas/SaveBootstrapPartRequest"}
+    assert preview_request_ref == {"$ref": "#/components/schemas/BootstrapPreviewRequest"}
     assert "/api/v1/sessions/{session_id}/last-scene" in contract["paths"]
 
 
@@ -264,11 +265,10 @@ def test_custom_gpt_instructions_fit_editor_limit_and_keep_critical_flow():
         "no_major_player_character_choice",
         "new_or_updated_characters",
         "В POV не игрока",
-        "saveBootstrapPart",
-        "finalizeBootstrapPreview",
+        "createBootstrapPreview",
         "mode — только createSession/processTurn",
-        "hidden_core",
-        "скрытая полная карточка",
+        "hidden_character_seeds",
+        "source_seed_id",
         "без обёртки scene_response",
     ):
         assert marker in instructions

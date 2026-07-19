@@ -377,6 +377,14 @@ def validate_scene_state_invariants(data: dict[str, Any], bundle: dict[str, Any]
         for card in (updates.get("new_or_updated_characters") or [])
         if isinstance(card, dict) and card.get("id")
     }
+    future_locks = bundle.get("future_locks") if isinstance(bundle.get("future_locks"), dict) else {}
+    seed_ids = {
+        str(seed.get("id"))
+        for seed in (future_locks.get("hidden_character_seeds") or [])
+        if isinstance(seed, dict) and seed.get("id")
+    }
+    used_seed_ids: list[str] = []
+    seeded_character_ids: list[tuple[str, str]] = []
 
     for index, card in enumerate(updates.get("new_or_updated_characters") or []):
         if not isinstance(card, dict):
@@ -384,8 +392,20 @@ def validate_scene_state_invariants(data: dict[str, Any], bundle: dict[str, Any]
         character_id = str(card.get("id") or "").strip()
         if not character_id or character_id in existing_characters:
             continue
+        source_seed_id = str(card.get("source_seed_id") or "").strip()
+        if source_seed_id:
+            used_seed_ids.append(source_seed_id)
+            seeded_character_ids.append((character_id, source_seed_id))
+            if source_seed_id not in seed_ids:
+                errors.append(
+                    f"proposed_updates.new_or_updated_characters[{index}].source_seed_id references an unavailable seed: {source_seed_id}"
+                )
         cast_status = str(card.get("cast_status") or "known_support").strip()
         if cast_status == "background":
+            if source_seed_id:
+                errors.append(
+                    f"proposed_updates.new_or_updated_characters[{index}].cast_status cannot be background when source_seed_id is used"
+                )
             continue
         if cast_status not in {"known_core", "known_support"}:
             errors.append(
@@ -416,6 +436,11 @@ def validate_scene_state_invariants(data: dict[str, Any], bundle: dict[str, Any]
         _validate_not_placeholder(personality.get("speech"), f"{location}.personality.speech", errors)
         _validate_character_profile(character_id, candidate, errors)
 
+    if len(used_seed_ids) != len(set(used_seed_ids)):
+        errors.append("proposed_updates.new_or_updated_characters cannot consume one source_seed_id more than once")
+    if len(used_seed_ids) > 1:
+        errors.append("proposed_updates.new_or_updated_characters may consume at most one future character seed per scene")
+
     characters = {
         **existing_characters,
         **{
@@ -439,7 +464,6 @@ def validate_scene_state_invariants(data: dict[str, Any], bundle: dict[str, Any]
         for item in (director_patches.get("reveal_updates") or [])
         if isinstance(item, dict) and item.get("id")
     }
-    future_locks = bundle.get("future_locks") if isinstance(bundle.get("future_locks"), dict) else {}
     hidden_ids = {str(item) for item in (future_locks.get("hidden_character_ids") or [])}
     next_turn = int(((bundle.get("current_state") or {}).get("turn_number", 0)) or 0) + 1
 
@@ -519,6 +543,27 @@ def validate_scene_state_invariants(data: dict[str, Any], bundle: dict[str, Any]
         if isinstance(witness, dict):
             character_id = witness.get("character_id") or witness.get("id")
         validate_character_ref(character_id, f"witnesses[{index}]")
+
+    active_after_scene = {
+        str(character_id)
+        for character_id in (scene_patch.get("active_character_ids") or [])
+        if character_id
+    }
+    witness_ids = {
+        str(
+            witness.get("character_id") or witness.get("id")
+            if isinstance(witness, dict)
+            else witness
+        )
+        for witness in (data.get("witnesses") or [])
+        if witness
+    }
+    for character_id, source_seed_id in seeded_character_ids:
+        if character_id not in active_after_scene and character_id not in witness_ids:
+            errors.append(
+                "proposed_updates.new_or_updated_characters "
+                f"cannot consume source_seed_id={source_seed_id!r} unless {character_id!r} actually appears in active_character_ids or witnesses"
+            )
 
     for index, patch in enumerate(updates.get("knowledge_patches") or []):
         if isinstance(patch, dict):

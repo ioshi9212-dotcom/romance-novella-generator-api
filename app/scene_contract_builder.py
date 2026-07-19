@@ -288,6 +288,64 @@ def _scene_candidates(
     return selected
 
 
+def _character_creation_request(future_locks: Any, *, turn_number: int) -> dict[str, Any] | None:
+    """Offer at most one eligible seed without inventing or loading a card.
+
+    A seed describes a possible story function, not a pre-authored person. The
+    scene writer may ignore it when the causal entry condition does not fit the
+    current scene; it remains stored for a later turn.
+    """
+    if not isinstance(future_locks, dict):
+        return None
+    seeds = future_locks.get("hidden_character_seeds")
+    if not isinstance(seeds, list):
+        return None
+
+    next_turn = turn_number + 1
+    eligible: list[tuple[int, int, dict[str, Any]]] = []
+    for index, raw_seed in enumerate(seeds):
+        if not isinstance(raw_seed, dict):
+            continue
+        seed_id = str(raw_seed.get("id") or "").strip()
+        if not seed_id or raw_seed.get("introduced") is True:
+            continue
+        if str(raw_seed.get("status") or "available") in {"used", "blocked", "discarded"}:
+            continue
+        try:
+            earliest_turn = int(raw_seed.get("earliest_turn", 2) or 2)
+        except (TypeError, ValueError):
+            earliest_turn = 2
+        if earliest_turn > next_turn:
+            continue
+        try:
+            priority = int(raw_seed.get("priority", 50) or 50)
+        except (TypeError, ValueError):
+            priority = 50
+        eligible.append((-priority, index, raw_seed))
+
+    if not eligible:
+        return None
+    _, _, seed = sorted(eligible, key=lambda item: (item[0], item[1]))[0]
+    seed_id = str(seed.get("id"))
+    return {
+        "seed_id": seed_id,
+        "role": _clip_text(seed.get("role"), 180),
+        "story_function": _clip_text(seed.get("story_function") or seed.get("purpose"), 260),
+        "entry_condition": _clip_text(seed.get("entry_condition") or seed.get("condition"), 300),
+        "notes_for_engine": _clip_text(seed.get("notes_for_engine"), 320),
+        "optional": True,
+        "instructions": {
+            "create_only_if_causally_present": True,
+            "do_not_name_or_describe_until_written_into_scene": True,
+            "on_actual_appearance": (
+                "Create one complete known_core/known_support card in proposed_updates.new_or_updated_characters; "
+                f"set source_seed_id={seed_id!r}. The server will create knowledge/runtime/relationship state and remove only this seed atomically."
+            ),
+            "if_not_used": "Return no card for this seed; it stays available for a later scene.",
+        },
+    }
+
+
 def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None) -> dict[str, Any]:
     current_state = bundle.get("current_state", {})
     characters = bundle.get("characters", {})
@@ -314,6 +372,10 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
         and int(maintenance_state.get("state_compaction_cleanup_completed_turn") or 0) != turn_number
     )
     director_guidance = build_director_guidance(bundle)
+    character_creation_request = _character_creation_request(
+        future_locks,
+        turn_number=turn_number,
+    )
 
     focus_ids: list[str] = []
     for character_id in [player_id, *active_ids, *nearby_ids]:
@@ -464,8 +526,10 @@ def build_scene_contract(bundle: dict[str, Any], player_input: str | None = None
                 "not_present_until_written": "candidate_not_present_yet не слышит и не видит сцену до фактического появления",
                 "first_scene_cast_limit": "на первом ходу можно ввести не более одного нового значимого персонажа",
                 "hidden_reveal_protocol": "для hidden_before_scene нужны matching reveal_id, director_bible reveal_update и scene_state_patch",
+                "seed_creation_protocol": "character_creation_request — необязательное разрешение создать ровно одну полную карточку только при фактическом причинном входе",
             },
         },
+        "character_creation_request": character_creation_request,
         "story_compass": {
             "genre": story_plan.get("genre"),
             "tone": story_plan.get("tone"),

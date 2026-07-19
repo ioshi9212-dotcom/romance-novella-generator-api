@@ -86,12 +86,22 @@ def _compact_contract(contract: dict[str, Any]) -> dict[str, Any]:
         "time_skip_request": _compact_dict(contract.get("time_skip_request", {}) if isinstance(contract.get("time_skip_request"), dict) else {}, 900),
         "npc_runtime": _compact_dict(contract.get("npc_runtime", {}) if isinstance(contract.get("npc_runtime"), dict) else {}, 420),
         "scene_candidates": _compact_dict(contract.get("scene_candidates", {}) if isinstance(contract.get("scene_candidates"), dict) else {}, 420),
+        "character_creation_request": _compact_dict(
+            contract.get("character_creation_request", {})
+            if isinstance(contract.get("character_creation_request"), dict)
+            else {},
+            520,
+        ) or None,
         "visible_relationship_pair_ids": contract.get("visible_relationship_pair_ids", []),
         "player_input_rules": contract.get("player_input_rules", {}),
         "maintenance": contract.get("maintenance", {}),
         "future_locks": {
             "do_not_reveal_yet": _clip_list((contract.get("future_locks") or {}).get("do_not_reveal_yet", []), 5, 180),
-            "hidden_character_seeds": _clip_list((contract.get("future_locks") or {}).get("hidden_character_seeds", []), 5, 180),
+            "pending_character_seed_count": len(
+                (contract.get("future_locks") or {}).get("hidden_character_seeds", [])
+                if isinstance((contract.get("future_locks") or {}).get("hidden_character_seeds"), list)
+                else []
+            ),
         },
         "continuity": _compact_dict(contract.get("continuity", {}) if isinstance(contract.get("continuity"), dict) else {}, 260),
         "memory_chunks": [_compact_dict(i, 220) for i in (contract.get("memory_chunks", []) or [])[-3:] if isinstance(i, dict)],

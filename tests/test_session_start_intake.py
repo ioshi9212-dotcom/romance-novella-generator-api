@@ -60,7 +60,7 @@ def test_random_choice_starts_bootstrap_and_is_preserved_as_the_source_request()
     body = response.json()
     assert body["status"] == "bootstrap_pending"
     assert "Рандом" in body["bootstrap_prompt"]
-    assert "Недостающие" in body["bootstrap_prompt"]
+    assert "всё неуказанное придумай" in body["bootstrap_prompt"]
     stored = SessionManager().storage.read_json(body["session_id"], "user_request.json")
     assert stored["raw_start_text"] == "Рандом"
 
@@ -84,7 +84,7 @@ def test_custom_gpt_passes_the_exact_questionnaire_answer_to_create_session():
     assert "Незаполненные пункты не являются ошибкой" in instructions
 
 
-def test_setup_preview_shows_the_exact_user_questionnaire_text():
+def test_setup_preview_reviews_structured_canon_without_echoing_raw_questionnaire():
     raw_start_text = (
         "Героине 21 год, у неё зелёно-янтарные глаза.\n"
         "Характер: гиперзабота, мягкий юмор, не умеет отказывать.\n"
@@ -96,8 +96,15 @@ def test_setup_preview_shows_the_exact_user_questionnaire_text():
             "pc_01": {
                 "id": "pc_01",
                 "name": "Mira Vale",
+                "display_name": "Мира Вейл",
                 "role": "player_character",
                 "cast_status": "player",
+                "age": 21,
+                "appearance": {"eyes": "зелёно-янтарные"},
+                "personality": {
+                    "core": ["гиперзабота", "мягкий юмор"],
+                    "flaws": ["не умеет отказывать"],
+                },
             }
         },
         "current_state": {"player_character_id": "pc_01"},
@@ -107,5 +114,7 @@ def test_setup_preview_shows_the_exact_user_questionnaire_text():
 
     preview = build_setup_preview(bootstrap, user_request={"raw_start_text": raw_start_text})
 
-    assert "### Исходная анкета пользователя" in preview
-    assert raw_start_text in preview
+    assert "### Исходная анкета пользователя" not in preview
+    assert raw_start_text not in preview
+    for fact in ("21", "зелёно-янтарные", "гиперзабота", "мягкий юмор", "не умеет отказывать"):
+        assert fact in preview

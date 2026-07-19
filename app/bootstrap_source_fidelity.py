@@ -179,6 +179,12 @@ def _validate_cast(data: dict[str, Any], source: str, errors: list[str]) -> None
         for card in characters.values()
         if isinstance(card, dict) and card.get("cast_status") == "hidden_core"
     ]
+    future_locks = data.get("future_locks") if isinstance(data.get("future_locks"), dict) else {}
+    hidden_seeds = [
+        seed
+        for seed in (future_locks.get("hidden_character_seeds") or [])
+        if isinstance(seed, dict)
+    ]
 
     expected_known = [
         expectation
@@ -203,10 +209,11 @@ def _validate_cast(data: dict[str, Any], source: str, errors: list[str]) -> None
             )
 
     expected_hidden_count = sum(marker in source for marker in _HIDDEN_SOURCE_MARKERS)
-    if expected_hidden_count and len(hidden_cards) < expected_hidden_count:
+    hidden_future_count = len(hidden_cards) + len(hidden_seeds)
+    if expected_hidden_count and hidden_future_count < expected_hidden_count:
         errors.append(
             "source_fidelity.characters.hidden_count: user explicitly described "
-            f"{expected_hidden_count} future significant characters, but bootstrap contains {len(hidden_cards)} hidden_core cards."
+            f"{expected_hidden_count} future significant characters, but bootstrap contains {hidden_future_count} seeds/legacy hidden cards."
         )
 
 
@@ -243,12 +250,11 @@ def validate_bootstrap_source_fidelity(
     data: dict[str, Any],
     user_request: dict[str, Any] | None,
 ) -> list[str]:
-    """Reject a structurally valid bootstrap that lost concrete user input.
+    """Report high-confidence signs that a bootstrap lost concrete user input.
 
-    The normalizer and repair layer may invent safe defaults for small omissions.
-    This guard catches only high-confidence losses such as an explicit age,
-    appearance fact, named starting role, or a generic story plan. It must not
-    reject details that were absent from the questionnaire and invented later.
+    These heuristics are diagnostics, not a preview gate. They catch explicit
+    age/appearance facts, named starting roles and generic story-plan fallbacks;
+    they must not reject details that were absent and invented later.
     """
 
     if not isinstance(data, dict):

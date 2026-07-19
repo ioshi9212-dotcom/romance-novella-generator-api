@@ -553,6 +553,32 @@ def _normalize_current_state(current_state: Any, story_plan: dict[str, Any], pro
     }
 
 
+def _normalize_future_locks(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    normalized = dict(source)
+    seeds: list[dict[str, Any]] = []
+    for index, raw_seed in enumerate(_as_list(source.get("hidden_character_seeds"))):
+        if not isinstance(raw_seed, dict):
+            continue
+        seeds.append(
+            {
+                **raw_seed,
+                "id": _safe_id(raw_seed.get("id"), f"future_seed_{index + 1}"),
+                "role": _as_str(raw_seed.get("role"), "future significant character"),
+                "known_to_player": False,
+                "introduced": False,
+                "generate_full_card_on_first_appearance": True,
+            }
+        )
+    normalized["hidden_character_seeds"] = seeds
+    normalized["do_not_reveal_yet"] = [
+        str(item).strip()
+        for item in _as_list(source.get("do_not_reveal_yet"))
+        if str(item).strip()
+    ]
+    return normalized
+
+
 def normalize_bootstrap_json(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         data = {}
@@ -613,10 +639,11 @@ def normalize_bootstrap_json(data: dict[str, Any]) -> dict[str, Any]:
         "current_state": current_state,
         "npc_state": data.get("npc_state") if isinstance(data.get("npc_state"), dict) else {},
         "director_bible": data.get("director_bible") if isinstance(data.get("director_bible"), dict) else {},
-        "future_locks": data.get("future_locks") if isinstance(data.get("future_locks"), dict) else {"hidden_character_seeds": [], "do_not_reveal_yet": []},
+        "future_locks": _normalize_future_locks(data.get("future_locks")),
         "continuity": data.get("continuity") if isinstance(data.get("continuity"), dict) else {},
         "scene_history": data.get("scene_history") if isinstance(data.get("scene_history"), list) else [],
         "turns": data.get("turns") if isinstance(data.get("turns"), list) else [],
+        "diagnostics": data.get("diagnostics") if isinstance(data.get("diagnostics"), dict) else {},
     }
     prepare_director_bible(normalized)
     prepare_time_skip_state(normalized)

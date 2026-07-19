@@ -157,12 +157,14 @@ def test_debug_dump_is_bounded_and_contains_transport_state_not_full_cards():
     assert "last_scene_available" in body["pending_turn"]
 
 
-def test_actions_use_flat_apply_payload_and_hide_legacy_full_bootstrap_action():
+def test_actions_use_flat_apply_payload_and_publish_single_bootstrap_preview_action():
     contract = build_openapi_actions("https://example.invalid")
     paths = contract["paths"]
     schema = contract["components"]["schemas"]["ApplyTurnResultRequest"]
 
-    assert "/api/v1/sessions/{session_id}/bootstrap-preview" not in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview" in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-part" not in paths
+    assert "/api/v1/sessions/{session_id}/bootstrap-preview-finalize" not in paths
     assert "/api/v1/sessions/{session_id}/last-scene" in paths
     assert "scene_response" not in schema["required"]
     assert "scene_response" not in schema["properties"]

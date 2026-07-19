@@ -106,40 +106,20 @@ CREATE_SESSION_SCHEMA = _schema_obj(
     additional_properties=False,
 )
 
-SAVE_BOOTSTRAP_PART_SCHEMA = _schema_obj(
+BOOTSTRAP_PREVIEW_REQUEST_SCHEMA = _schema_obj(
     {
-        "section": {
-            "type": "string",
-            "enum": [
-                "protagonist", "characters", "relationships", "knowledge",
-                "story_plan", "director_bible", "current_state", "npc_state",
-                "future_locks", "continuity",
-            ],
-            "description": "Bootstrap root section to stage.",
-        },
-        "item_id": {
-            "type": ["string", "null"],
-            "description": "For map sections, send one entry id. Normal setup uses it once per characters card.",
-        },
-        "value": {
+        "bootstrap_json": {
             "type": "object",
             "properties": {},
             "additionalProperties": True,
-            "description": "One complete character card, story_plan, current_state, or authored director_bible matching the same-named BootstrapPayload section. Do not send the full bootstrap here.",
-        },
-        "delete_fields": {
-            "type": "array",
-            "items": {"type": "string"},
-            "default": [],
-            "description": "Explicit dotted field paths to delete after deep merge.",
-        },
-        "replace": {
-            "type": "boolean",
-            "default": False,
-            "description": "Replace instead of deep merge. Use only for an intentional full replacement.",
+            "description": (
+                "One complete bootstrap object created from bootstrap_prompt. Keep every root section "
+                "inside this object. Partial user input is valid; invent unspecified story details."
+            ),
         },
     },
-    required=["section", "value"],
+    required=["bootstrap_json"],
+    additional_properties=False,
 )
 
 
@@ -405,13 +385,6 @@ BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA = _schema_obj(
         "has_more_preview_chunks": {"type": "boolean"},
         "next_preview_chunk_index": {"type": ["integer", "null"], "minimum": 0},
         "diagnostics": _loose_obj(),
-        "repair_required": {
-            "type": "boolean",
-            "description": "When true, do not show message_to_user. Apply repair_plan and retry the action in diagnostics.retry_action.",
-        },
-        "repair_errors": {"type": "array", "items": {"type": "string"}},
-        "repair_plan": _loose_obj(),
-        "repair_prompt": {"type": ["string", "null"]},
     },
     required=[
         "message_to_user",
@@ -429,10 +402,6 @@ BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA = _schema_obj(
         "preview_chunk_count",
         "has_more_preview_chunks",
         "next_preview_chunk_index",
-        "repair_required",
-        "repair_errors",
-        "repair_plan",
-        "repair_prompt",
     ],
     additional_properties=True,
 )
@@ -472,20 +441,6 @@ BOOTSTRAP_PREVIEW_CHUNK_RESPONSE_SCHEMA = _schema_obj(
     ],
     additional_properties=True,
 )
-
-SAVE_BOOTSTRAP_PART_RESPONSE_SCHEMA = _schema_obj(
-    {
-        "session_id": {"type": "string"},
-        "status": {"type": "string"},
-        "section": {"type": "string"},
-        "item_id": {"type": ["string", "null"]},
-        "stored": {"type": "boolean"},
-        "progress": _loose_obj(),
-    },
-    required=["session_id", "status", "section", "item_id", "stored", "progress"],
-    additional_properties=True,
-)
-
 
 BOOTSTRAP_CONFIRM_RESPONSE_SCHEMA = _schema_obj(
     {
@@ -638,10 +593,10 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
         "openapi": "3.1.0",
         "info": {
             "title": "Romance Novella Generator API",
-            "version": "gpt-actions-v9.1-resilient-turn-delivery",
+            "version": "gpt-actions-v9.2-playable-bootstrap",
             "description": (
                 "Custom GPT Actions schema for generated novella sessions. "
-                "Use questionnaire, staged bootstrap parts, chunked preview-confirm launch flow, chunked processTurn, "
+                "Use questionnaire, one bootstrap preview call, preview-confirm launch flow, chunked processTurn, "
                 "then flat applyTurnResult with the exact turn_id. Railway renders and retains the visible scene; "
                 "getLastScene recovers a lost Action response without creating a new turn."
             ),
@@ -660,10 +615,9 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 **_load_actions_component_schemas(),
                 "CreateSessionRequest": CREATE_SESSION_SCHEMA,
                 "CreateSessionResponse": CREATE_SESSION_RESPONSE_SCHEMA,
+                "BootstrapPreviewRequest": BOOTSTRAP_PREVIEW_REQUEST_SCHEMA,
                 "BootstrapPreviewResponse": BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA,
                 "BootstrapPreviewChunkResponse": BOOTSTRAP_PREVIEW_CHUNK_RESPONSE_SCHEMA,
-                "SaveBootstrapPartRequest": SAVE_BOOTSTRAP_PART_SCHEMA,
-                "SaveBootstrapPartResponse": SAVE_BOOTSTRAP_PART_RESPONSE_SCHEMA,
                 "BootstrapConfirmRequest": BOOTSTRAP_CONFIRM_SCHEMA,
                 "BootstrapConfirmResponse": BOOTSTRAP_CONFIRM_RESPONSE_SCHEMA,
                 "TurnRequest": TURN_SCHEMA,
@@ -748,32 +702,19 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                     },
                 }
             },
-            "/api/v1/sessions/{session_id}/bootstrap-part": {
+            "/api/v1/sessions/{session_id}/bootstrap-preview": {
                 "post": {
-                    "operationId": "saveBootstrapPart",
-                    "summary": "Stage one complete character card or one authorial section. Normal flow writes characters, story_plan, current_state and director_bible; technical runtime sections are derived.",
-                    "parameters": [_session_id_param()],
-                    "requestBody": _request_body({"$ref": "#/components/schemas/SaveBootstrapPartRequest"}),
-                    "responses": {
-                        "200": _json_response("Bootstrap part stored.", {"$ref": "#/components/schemas/SaveBootstrapPartResponse"}),
-                        "409": _json_response("Session cannot accept bootstrap parts.", _loose_obj()),
-                        "422": _json_response("Invalid bootstrap part.", _loose_obj()),
-                    },
-                }
-            },
-            "/api/v1/sessions/{session_id}/bootstrap-preview-finalize": {
-                "post": {
-                    "operationId": "finalizeBootstrapPreview",
+                    "operationId": "createBootstrapPreview",
                     "summary": (
-                        "Preserve authored characters/story/director state, build missing technical runtime state, then create the visible preview. "
-                        "If status=bootstrap_repair_required, "
-                        "do not show the response or ask the user again: apply repair_plan with saveBootstrapPart and retry."
+                        "Submit one complete bootstrap object, let Railway normalize technical state, "
+                        "and create the spoiler-free preview. Partial questionnaires are valid."
                     ),
                     "parameters": [_session_id_param()],
+                    "requestBody": _request_body({"$ref": "#/components/schemas/BootstrapPreviewRequest"}),
                     "responses": {
-                        "200": _json_response("Bootstrap preview created from staged parts.", {"$ref": "#/components/schemas/BootstrapPreviewResponse"}),
-                        "409": _json_response("Staged bootstrap is incomplete or session status is wrong.", _loose_obj()),
-                        "422": _json_response("Assembled bootstrap is invalid.", _loose_obj()),
+                        "200": _json_response("Bootstrap preview created.", {"$ref": "#/components/schemas/BootstrapPreviewResponse"}),
+                        "409": _json_response("Session cannot accept a preview.", _loose_obj()),
+                        "422": _json_response("Bootstrap is structurally invalid.", _loose_obj()),
                     },
                 }
             },

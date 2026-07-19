@@ -2,12 +2,12 @@ from pathlib import Path
 from typing import Any
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
-from app.bootstrap_preview_transport import BOOTSTRAP_STAGING_TRANSPORT_RULES, build_bootstrap_preview_response, get_bootstrap_preview_chunk
+from app.bootstrap_preview_transport import BOOTSTRAP_PREVIEW_TRANSPORT_RULES, build_bootstrap_preview_response, get_bootstrap_preview_chunk
 from app.bootstrap_setup import build_bootstrap_prompt, build_setup_preview
 from app.bootstrapper import BASE_FILES, debug_stub_bootstrap
 from app.character_profiles import prepare_bootstrap_cast
 from app.config import get_settings
-from app.directional_relationships import BOOTSTRAP_DIRECTION_RULES, append_directional_preview, prepare_directional_relationships
+from app.directional_relationships import BOOTSTRAP_DIRECTION_RULES, prepare_directional_relationships
 from app.director_bible import prepare_director_bible
 from app.id_utils import new_session_id, now_iso
 from app.models import CreateSessionRequest
@@ -141,7 +141,7 @@ class SessionManager:
             + "\n\n"
             + BOOTSTRAP_DIRECTION_RULES
             + "\n\n"
-            + BOOTSTRAP_STAGING_TRANSPORT_RULES
+            + BOOTSTRAP_PREVIEW_TRANSPORT_RULES
         )
         (session_dir / "pending_bootstrap_prompt.md").write_text(prompt, encoding="utf-8")
         return {
@@ -222,12 +222,9 @@ class SessionManager:
             raise ValueError(f"Cannot create bootstrap preview for session status: {session.get('status')}")
 
         user_request = self.storage.read_json(session_id, "user_request.json", default={})
-        preview = append_directional_preview(
-            build_setup_preview(
-                bootstrap_json,
-                user_request=user_request if isinstance(user_request, dict) else {},
-            ),
+        preview = build_setup_preview(
             bootstrap_json,
+            user_request=user_request if isinstance(user_request, dict) else {},
         )
         self.storage.write_json(session_id, "pending_bootstrap.json", bootstrap_json)
         (self.storage.session_dir(session_id) / "pending_setup_preview.md").write_text(preview, encoding="utf-8")
@@ -248,6 +245,9 @@ class SessionManager:
                 "directional_relationships_enabled": True,
                 "director_bible_enabled": True,
                 "event_queue_count": len((bootstrap_json.get("director_bible") or {}).get("event_queue", [])),
+                "source_fidelity_warning_count": len(
+                    ((bootstrap_json.get("diagnostics") or {}).get("source_fidelity_warnings") or [])
+                ) if isinstance(bootstrap_json.get("diagnostics"), dict) else 0,
             },
         )
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 import uuid
 
-from app.bootstrap_staging import STAGED_BOOTSTRAP_FILE, bootstrap_stage_progress
 from app.id_utils import now_iso
 
 
@@ -130,23 +129,16 @@ def _clip(value: Any, *, text_limit: int = 500, item_limit: int = 100) -> Any:
 
 def bootstrap_debug_summary(manager: Any, session_id: str, session: dict[str, Any]) -> dict[str, Any]:
     session_dir = manager.storage.session_dir(session_id)
-    draft = manager.storage.read_json(session_id, STAGED_BOOTSTRAP_FILE, default={})
-    draft = draft if isinstance(draft, dict) else {}
-    staged_characters = draft.get("characters") if isinstance(draft.get("characters"), dict) else {}
     pending = manager.storage.read_json(session_id, "pending_bootstrap.json", default={})
     pending = pending if isinstance(pending, dict) else {}
     pending_characters = pending.get("characters") if isinstance(pending.get("characters"), dict) else {}
 
-    progress = bootstrap_stage_progress(draft)
-    if session.get("status") == "active":
-        progress = {**progress, "ready_to_finalize": True, "missing_sections": [], "committed": True}
-
     return {
-        "draft_present": (session_dir / STAGED_BOOTSTRAP_FILE).exists(),
-        "progress": progress,
-        "staged_character_ids": sorted(str(item) for item in staged_characters),
+        "flow": "single_preview",
         "pending_bootstrap_present": (session_dir / "pending_bootstrap.json").exists(),
         "pending_character_ids": sorted(str(item) for item in pending_characters),
         "pending_preview_present": (session_dir / "pending_setup_preview.md").exists(),
+        "ready_to_confirm": session.get("status") == "bootstrap_review_pending",
+        "committed": session.get("status") == "active",
         "last_error": _clip(session.get("last_error") or {}),
     }
