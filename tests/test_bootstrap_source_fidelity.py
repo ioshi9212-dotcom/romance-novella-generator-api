@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from app.bootstrap_source_fidelity import validate_bootstrap_source_fidelity
 from fastapi.testclient import TestClient
 
@@ -204,3 +206,74 @@ def test_source_fidelity_heuristics_warn_but_do_not_block_preview():
     )
     assert confirm.status_code == 200, confirm.text
     assert confirm.json()["status"] == "active"
+
+
+def test_preview_repairs_missing_emily_build_and_known_cast_flags_without_repair_loop():
+    client = TestClient(app)
+    created = client.post(
+        "/api/v1/sessions",
+        json={**_source_request(), "mode": "gpt_actions"},
+    )
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+
+    bootstrap = _valid_bootstrap()
+    protagonist_id = bootstrap["current_state"]["player_character_id"]
+    protagonist = bootstrap["characters"][protagonist_id]
+    protagonist["appearance"] = {
+        "height": "невысокая, миниатюрная и физически хрупкая",
+        "hair": "кудрявые русые волосы ниже лопаток",
+        "eyes": "зелёные с янтарным оттенком",
+        "face": "много веснушек",
+        "style": "нежная и удобная одежда",
+    }
+
+    template = next(card for cid, card in bootstrap["characters"].items() if cid != protagonist_id)
+    familiar_specs = (
+        ("ryan_01", "Ryan Harper", "Райан", "older brother"),
+        ("chloe_01", "Chloe Bennett", "Хлоя", "best friend"),
+        ("ethan_01", "Ethan Cole", "Итан", "childhood friend"),
+        ("grace_01", "Grace Cole", "Грейс", "childhood friend's mother"),
+    )
+    bootstrap["characters"] = {protagonist_id: protagonist}
+    for character_id, name, display_name, role in familiar_specs:
+        card = deepcopy(template)
+        card.update({"id": character_id, "name": name, "display_name": display_name, "role": role})
+        card.pop("cast_status", None)
+        card.pop("known_to_player", None)
+        bootstrap["characters"][character_id] = card
+    bootstrap["future_locks"]["hidden_character_seeds"] = [
+        {
+            "id": seed_id,
+            "role": role,
+            "story_function": "будущая личная линия",
+            "entry_condition": "после первой сцены",
+            "known_to_player": False,
+            "introduced": False,
+            "generate_full_card_on_first_appearance": True,
+        }
+        for seed_id, role in (
+            ("red_seed", "red-haired future man"),
+            ("dark_seed", "dark-haired future man"),
+            ("woman_seed", "future woman from their company"),
+        )
+    ]
+
+    preview = client.post(
+        f"/api/v1/sessions/{session_id}/bootstrap-preview",
+        json={"bootstrap_json": bootstrap},
+    )
+
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["status"] == "bootstrap_review_pending"
+    pending = SessionManager().storage.read_json(session_id, "pending_bootstrap.json")
+    assert "миниатюрное" in pending["characters"][protagonist_id]["appearance"]["build"]
+    assert "хрупкое" in pending["characters"][protagonist_id]["appearance"]["build"]
+    assert pending["characters"]["ryan_01"]["cast_status"] == "known_core"
+    assert pending["characters"]["chloe_01"]["cast_status"] == "known_core"
+    assert pending["characters"]["ethan_01"]["cast_status"] == "known_core"
+    assert pending["characters"]["grace_01"]["cast_status"] == "known_support"
+    warnings = (pending.get("diagnostics") or {}).get("source_fidelity_warnings") or []
+    assert not [warning for warning in warnings if "appearance.build" in warning]
+    assert not [warning for warning in warnings if "characters.visible_count" in warning]
+    assert not [warning for warning in warnings if "characters.missing_known" in warning]

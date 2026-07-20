@@ -178,7 +178,14 @@ def _extract_appearance_fields(text: str) -> dict[str, str]:
         result["height"] = height_match.group(1).strip()
 
     lower = source.lower()
+    if "height" not in result and "невысок" in lower:
+        result["height"] = "невысокий рост"
+
     build_bits: list[str] = []
+    if "миниатюр" in lower:
+        build_bits.append("миниатюрное")
+    if "хрупк" in lower:
+        build_bits.append("хрупкое")
     if "стройн" in lower:
         build_bits.append("стройное")
     if "обычн" in lower:

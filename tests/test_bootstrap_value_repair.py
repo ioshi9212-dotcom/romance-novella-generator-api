@@ -41,3 +41,21 @@ def test_scene_state_uses_opening_intent_when_scene_goal_is_generic():
     normalized = normalize_bootstrap_json(bootstrap)
 
     assert normalized["current_state"]["scene_state"] == bootstrap["story_plan"]["opening_scene_intent"]
+
+
+def test_normalizer_extracts_emily_build_when_model_merged_it_into_height():
+    bootstrap = _valid_bootstrap()
+    bootstrap["characters"]["pc_01"]["appearance"] = {
+        "height": "невысокая, миниатюрная и физически хрупкая",
+        "hair": "кудрявые русые волосы ниже лопаток",
+        "eyes": "зелёно-янтарные глаза",
+        "face": "множество веснушек",
+        "style": "нежная удобная одежда",
+    }
+
+    normalized = normalize_bootstrap_json(bootstrap)
+    appearance = normalized["characters"]["pc_01"]["appearance"]
+
+    assert appearance["height"] == "невысокая, миниатюрная и физически хрупкая"
+    assert "миниатюрное" in appearance["build"]
+    assert "хрупкое" in appearance["build"]

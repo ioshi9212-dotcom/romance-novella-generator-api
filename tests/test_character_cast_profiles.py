@@ -165,6 +165,29 @@ def test_preview_shows_known_cast_and_never_leaks_hidden_core():
     assert "hidden_01" not in preview
 
 
+def test_familiar_roles_are_visible_when_model_omits_cast_flags():
+    raw = _bootstrap()
+    chloe = raw["characters"]["chloe_01"]
+    chloe.pop("cast_status")
+    chloe.pop("known_to_player", None)
+    ryan = deepcopy(chloe)
+    ryan.update({"id": "ryan_01", "name": "Ryan Harper", "display_name": "Райан", "role": "older brother"})
+    ethan = deepcopy(chloe)
+    ethan.update({"id": "ethan_01", "name": "Ethan Cole", "display_name": "Итан", "role": "childhood friend"})
+    raw["characters"]["ryan_01"] = ryan
+    raw["characters"]["ethan_01"] = ethan
+
+    data = normalize_bootstrap_json(raw)
+    prepare_bootstrap_cast(data)
+
+    assert data["characters"]["chloe_01"]["cast_status"] == "known_core"
+    assert data["characters"]["ryan_01"]["cast_status"] == "known_core"
+    assert data["characters"]["ethan_01"]["cast_status"] == "known_core"
+    preview = build_setup_preview(data)
+    assert all(name in preview for name in ("Хлоя", "Райан", "Итан"))
+    assert "Адриан" not in preview
+
+
 
 def test_user_written_behavior_is_preserved():
     raw = _bootstrap()

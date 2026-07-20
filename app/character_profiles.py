@@ -324,10 +324,71 @@ def infer_cast_status(card: dict[str, Any], *, is_player: bool = False) -> str:
     role = str(card.get("role") or "").lower()
     if any(word in role for word in ("background", "minor", "extra", "фон", "эпизод")):
         return "background"
+    # In the playable bootstrap contract, future strangers are seeds (or carry
+    # generate_full_card_on_first_appearance). A full character card with an
+    # unmistakably familiar role therefore remains visible even if the model
+    # forgot the purely technical cast_status/known_to_player flags.
+    if any(
+        phrase in role
+        for phrase in (
+            "friend's mother",
+            "friend mother",
+            "mother of friend",
+            "мать друга",
+            "coworker",
+            "colleague",
+            "manager",
+            "boss",
+            "neighbor",
+            "neighbour",
+            "коллег",
+            "началь",
+            "управля",
+            "сосед",
+        )
+    ):
+        return "known_support"
+    if any(
+        word in role
+        for word in (
+            "best friend",
+            "childhood friend",
+            "close friend",
+            "family",
+            "brother",
+            "sister",
+            "mother",
+            "father",
+            "partner",
+            "spouse",
+            "boyfriend",
+            "girlfriend",
+            "лучшая подруга",
+            "друг детства",
+            "брат",
+            "сестр",
+            "мать",
+            "отец",
+            "родствен",
+            "партн",
+        )
+    ):
+        return "known_core"
     if bool(card.get("known_to_player")):
         return "known_core" if any(
             word in role
-            for word in ("friend", "family", "brother", "sister", "love", "romance", "partner", "подруг", "брат", "сестр", "парень")
+            for word in (
+                "friend",
+                "family",
+                "love",
+                "romance",
+                "partner",
+                "подруг",
+                "друг",
+                "брат",
+                "сестр",
+                "парень",
+            )
         ) else "known_support"
     return "hidden_core"
 
