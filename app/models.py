@@ -1,235 +1,212 @@
+from __future__ import annotations
+
+from enum import StrEnum
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SessionMode = Literal["debug_stub", "gpt_actions"]
-TimeSkipMode = Literal["nearest_event", "duration"]
-TimeSkipUnit = Literal["hours", "days", "weeks", "months"]
+from pydantic import BaseModel, Field, model_validator
 
-BOOTSTRAP_ROOT_FIELDS = (
-    "protagonist",
-    "characters",
-    "relationships",
-    "knowledge",
-    "story_plan",
-    "director_bible",
-    "current_state",
-    "npc_state",
-    "future_locks",
-    "continuity",
-    "scene_history",
-    "turns",
-)
+
+class SessionStatus(StrEnum):
+    QUESTIONNAIRE = "questionnaire"
+    CLARIFICATION = "clarification"
+    BUILDING = "building"
+    REVIEW_PENDING = "review_pending"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class TurnMode(StrEnum):
+    PLAY = "play"
+    TECHNICAL = "technical"
+    AUDIT = "audit"
+
+
+class BootstrapPartType(StrEnum):
+    PROFILE = "profile"
+    LORE = "lore"
+    HIDDEN_CANON = "hidden_canon"
+    PLOT = "plot"
+    CURRENT = "current"
+    CHARACTER = "character"
+    REVIEW = "review"
+
 
 class CreateSessionRequest(BaseModel):
-    title: str | None = None
-    genre: str = Field(default="")
-    language: str = Field(default="ru")
-    tone: str | None = None
-    setting_request: str = Field(default="")
-    protagonist_request: str = Field(default="")
-    romance_request: str | None = None
-    rating: str | None = None
-    avoid: list[str] = Field(default_factory=list)
-    extra: dict[str, Any] = Field(default_factory=dict)
-    raw_start_text: str | None = Field(
-        default=None,
-        description=(
-            "Exact complete user questionnaire answer. Partial answers are valid; "
-            "bootstrap must generate every unspecified detail."
-        ),
-    )
-    mode: SessionMode = "gpt_actions"
+    title: str | None = Field(default=None, max_length=160)
 
-class CreateSessionResponse(BaseModel):
-    session_id: str | None = None
-    status: str
-    mode: SessionMode
-    bootstrap_prompt: str | None = None
-    questionnaire: str | None = None
-    files_created: list[str] = Field(default_factory=list)
 
-class BootstrapResultRequest(BaseModel):
-    bootstrap_json: dict[str, Any]
+class SessionSummary(BaseModel):
+    session_id: str
+    resume_code: str
+    title: str
+    status: SessionStatus
+    schema_version: int
+    state_version: int
+    turn_number: int
+    created_at: str
+    updated_at: str
+    pending_turn_id: str | None = None
+    bootstrap_missing: list[str] = Field(default_factory=list)
+    bootstrap_warnings: list[str] = Field(default_factory=list)
+    review: dict[str, Any] | None = None
+    current_summary: dict[str, Any] | None = None
 
-class BootstrapPreviewRequest(BaseModel):
-    # Canonical callers send only bootstrap_json. Known root fields are declared
-    # as compatibility inputs because Custom GPT may close bootstrap_json early
-    # and spill the remaining fields next to it.
-    model_config = ConfigDict(extra="forbid")
 
-    bootstrap_json: dict[str, Any] = Field(
-        ...,
-        description="Entire bootstrap payload. Keep every bootstrap root field inside this object.",
-    )
-    protagonist: dict[str, Any] | None = None
-    characters: dict[str, Any] | None = None
-    relationships: dict[str, Any] | None = None
-    knowledge: dict[str, Any] | None = None
-    story_plan: dict[str, Any] | None = None
-    director_bible: dict[str, Any] | None = None
-    current_state: dict[str, Any] | None = None
-    npc_state: dict[str, Any] | None = None
-    future_locks: dict[str, Any] | None = None
-    continuity: dict[str, Any] | None = None
-    scene_history: list[Any] | None = None
-    turns: list[Any] | None = None
+class QuestionnaireRequest(BaseModel):
+    phase: Literal["initial", "clarification"]
+    raw_answers: str = Field(min_length=1, max_length=30000)
+    normalized: dict[str, Any] = Field(default_factory=dict)
+    unknown_fields: list[str] = Field(default_factory=list)
+    contradictions: list[str] = Field(default_factory=list)
+
+
+class BootstrapPartRequest(BaseModel):
+    part_type: BootstrapPartType
+    part_id: str | None = Field(default=None, max_length=80)
+    content: dict[str, Any]
 
     @model_validator(mode="after")
-    def fold_spilled_bootstrap_fields(self) -> "BootstrapPreviewRequest":
-        merged = dict(self.bootstrap_json or {})
-        conflicts: list[str] = []
-        for field_name in BOOTSTRAP_ROOT_FIELDS:
-            value = getattr(self, field_name)
-            if value is None:
-                continue
-            if field_name in merged and merged[field_name] != value:
-                conflicts.append(field_name)
-                continue
-            merged[field_name] = value
-        if conflicts:
-            raise ValueError(
-                "Conflicting bootstrap fields inside and outside bootstrap_json: "
-                + ", ".join(sorted(conflicts))
-            )
-        self.bootstrap_json = merged
+    def character_requires_id(self) -> "BootstrapPartRequest":
+        if self.part_type == BootstrapPartType.CHARACTER and not self.part_id:
+            raise ValueError("part_id is required for character")
+        if self.part_type != BootstrapPartType.CHARACTER and self.part_id:
+            raise ValueError("part_id is only allowed for character")
         return self
 
-class BootstrapPreviewResponse(BaseModel):
-    message_to_user: str = Field(
-        ...,
-        description="Full preview when has_more_preview_chunks=false; otherwise chunk 0. For chunked previews, fetch every remaining chunk and concatenate before showing anything to the user.",
-    )
-    session_id: str
-    status: str
-    must_show_to_user: bool = True
-    wait_for_confirmation: bool = True
-    next_user_action: str = "Напиши `подтверждаю`, если всё подходит, или скажи, что изменить."
-    can_confirm: bool = True
-    preview_id: str
-    preview_chars: int = Field(ge=0)
-    preview_chunk_index: int = Field(default=0, ge=0)
-    preview_chunk_count: int = Field(default=1, ge=1)
-    has_more_preview_chunks: bool = False
-    next_preview_chunk_index: int | None = Field(default=None, ge=0)
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+class BootstrapSaveResponse(BaseModel):
+    status: Literal["saved"]
+    part_type: BootstrapPartType
+    part_id: str | None = None
+    size_chars: int
+    warnings: list[str] = Field(default_factory=list)
 
 
-class BootstrapPreviewChunkResponse(BaseModel):
-    session_id: str
-    status: str
-    preview_id: str
-    preview_chars: int = Field(ge=0)
-    chunk_index: int = Field(ge=0)
-    chunk_count: int = Field(ge=1)
-    preview_chunk: str = Field(..., description="One ordered preview fragment. Do not show it alone; concatenate all chunks in numeric order.")
-    has_more: bool
-    next_chunk_index: int | None = Field(default=None, ge=0)
-    must_show_to_user: bool = False
-    ready_to_show_full_preview: bool = False
-    can_confirm: bool = False
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
-
-class BootstrapConfirmRequest(BaseModel):
-    confirmation_text: str = Field(..., min_length=1, description="Exact latest user confirmation message, e.g. подтверждаю / ок / сохраняй / запускай / подходит / начинаем.")
-
-class BootstrapConfirmResponse(BaseModel):
-    session_id: str
-    status: str
-    committed: bool = True
-    files_created: list[str] = Field(default_factory=list)
-
-class TurnRequest(BaseModel):
-    player_input: str = Field(..., min_length=1, description="Exact latest player input. Whitespace-only values are rejected by the route.")
-    mode: SessionMode = "gpt_actions"
+class BootstrapValidationResponse(BaseModel):
+    ready: bool
+    missing: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    character_ids: list[str] = Field(default_factory=list)
 
 
-class AdvanceTimeRequest(BaseModel):
-    player_input: str = Field(..., min_length=1, description="Exact latest user request that selected time skip.")
-    skip_mode: TimeSkipMode = "nearest_event"
-    unit: TimeSkipUnit | None = None
-    amount: int | None = Field(default=None, ge=1, le=365)
+class PrepareTurnRequest(BaseModel):
+    user_input: str = Field(default="", max_length=30000)
+    mode: TurnMode = TurnMode.PLAY
+    replace_pending: bool = False
 
-class TurnResponse(BaseModel):
-    session_id: str
-    status: str
-    scene: str | None = None
-    scene_prompt: str | None = None
-    scene_prompt_chunk: str | None = Field(default=None, description="First prompt chunk. If prompt_chunk_count > 1, call getTurnPromptChunk for the rest.")
-    prompt_chunk_index: int = 0
-    prompt_chunk_count: int = 1
-    has_more_prompt_chunks: bool = False
-    next_prompt_chunk_index: int | None = None
-    turn_id: str | None = Field(default=None, description="Pending turn id. Pass this value to applyTurnResult.")
-    expected_turn_number: int | None = None
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    @model_validator(mode="after")
+    def play_requires_input(self) -> "PrepareTurnRequest":
+        if self.mode == TurnMode.PLAY and not self.user_input.strip():
+            raise ValueError("user_input is required in play mode")
+        return self
 
 
-class TurnPromptChunkResponse(BaseModel):
+class ContextChunk(BaseModel):
+    chunk_index: int
+    sections: list[dict[str, Any]]
+
+
+class PrepareTurnResponse(BaseModel):
+    status: Literal["prepared"]
     session_id: str
     turn_id: str
-    chunk_index: int
-    chunk_count: int
-    scene_prompt_chunk: str
+    mode: TurnMode
+    base_state_version: int
+    input_hash: str
+    chunk: ContextChunk
     has_more: bool
     next_chunk_index: int | None = None
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    total_chunks: int
+    warnings: list[str] = Field(default_factory=list)
 
 
-class DebugSessionDumpResponse(BaseModel):
+class CharacterPatch(BaseModel):
+    character_id: str = Field(min_length=1, max_length=80)
+    changes: dict[str, Any] = Field(default_factory=dict)
+
+
+class NewCharacter(BaseModel):
+    character_id: str = Field(min_length=1, max_length=80)
+    card: dict[str, Any]
+    starting_knowledge: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class KnowledgeEvent(BaseModel):
+    character_id: str = Field(min_length=1, max_length=80)
+    fact: str = Field(min_length=1, max_length=4000)
+    status: Literal[
+        "fact",
+        "heard_fragment",
+        "incomplete_version",
+        "mistaken_version",
+        "suspicion",
+        "lie_believed",
+        "corrected",
+        "refuted",
+        "unknown",
+    ]
+    source: str = Field(min_length=1, max_length=2000)
+    replaces_entry_id: str | None = Field(default=None, max_length=120)
+
+
+class RelationshipEvent(BaseModel):
+    from_character_id: str = Field(min_length=1, max_length=80)
+    to_character_id: str = Field(min_length=1, max_length=80)
+    metric: str = Field(min_length=1, max_length=80)
+    delta: int = Field(ge=-25, le=25)
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def different_characters(self) -> "RelationshipEvent":
+        if self.from_character_id == self.to_character_id:
+            raise ValueError("relationship event requires two different characters")
+        return self
+
+
+class PlotlinePatch(BaseModel):
+    plotline_id: str = Field(min_length=1, max_length=80)
+    changes: dict[str, Any] = Field(default_factory=dict)
+
+
+class CommitTurnRequest(BaseModel):
+    scene_text: str = Field(default="", max_length=20000)
+    scene_summary: str = Field(default="", max_length=5000)
+    current_patch: dict[str, Any] = Field(default_factory=dict)
+    time_advance_minutes: int = Field(default=0, ge=0, le=525600)
+    character_patches: list[CharacterPatch] = Field(default_factory=list, max_length=50)
+    new_characters: list[NewCharacter] = Field(default_factory=list, max_length=20)
+    knowledge_events: list[KnowledgeEvent] = Field(default_factory=list, max_length=100)
+    relationship_events: list[RelationshipEvent] = Field(default_factory=list, max_length=100)
+    plotline_patches: list[PlotlinePatch] = Field(default_factory=list, max_length=50)
+    chronology_event: dict[str, Any] | None = None
+    audit_updates: dict[str, Any] = Field(default_factory=dict)
+
+
+class TurnReceipt(BaseModel):
+    status: Literal["committed"]
     session_id: str
-    status: str
-    server: dict[str, Any]
-    session: dict[str, Any]
-    current_state: dict[str, Any]
-    story_plan: dict[str, Any]
-    characters: dict[str, Any]
-    knowledge: dict[str, Any]
-    relationships: dict[str, Any]
-    history: dict[str, Any]
-    pending_turn: dict[str, Any]
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
-
-class ApplyTurnResultRequest(BaseModel):
-    # Canonical v9.1 Actions send the scene fields flat beside turn_id. Keep the
-    # old scene_response wrapper optional so already-imported GPTs can recover
-    # without losing their pending turn.
-    model_config = ConfigDict(extra="allow")
-
-    turn_id: str | None = Field(default=None, description="turn_id returned by processTurn. Required for normal gpt_actions flow.")
-    scene_response: dict[str, Any] | None = Field(default=None, description="Legacy wrapper; new Actions send scene fields flat.")
-    response_version: str | None = None
-    player_input: str | None = None
-    scene: dict[str, Any] | None = None
-    summary: str | None = None
-    important_facts: list[Any] | None = None
-    witnesses: list[Any] | None = None
-    rendered_text: str | None = None
-    proposed_updates: dict[str, Any] | None = None
-    safety_checks: dict[str, Any] | None = None
-    time_skip_result: dict[str, Any] | None = None
-    metadata: dict[str, Any] | None = None
-    diagnostics: dict[str, Any] | None = None
-
-class ApplyTurnResultResponse(BaseModel):
-    session_id: str
-    status: str
     turn_id: str
-    message_to_user: str = Field(..., description="MANDATORY FINAL ANSWER TEXT after saving a turn. Output this exact text to the user.")
-    must_show_to_user: bool = True
-    replayed: bool = False
-    saved_turn_number: int
-    applied: dict[str, Any]
-    rejected: list[dict[str, Any]]
-    next_builder_hints: dict[str, Any]
+    mode: TurnMode
+    base_state_version: int
+    new_state_version: int
+    turn_number: int
+    scene_number: int | None = None
+    changed_files: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    committed_at: str
 
 
-class LastSceneResponse(BaseModel):
-    session_id: str
-    available: bool
-    turn_id: str | None = None
-    saved_turn_number: int | None = None
-    message_to_user: str = ""
-    must_show_to_user: bool = False
-    recovered_from: str
-    summary: str | None = None
-    body_excerpt: str | None = None
+class AbortTurnRequest(BaseModel):
+    reason: str = Field(default="replaced by user request", max_length=1000)
+
+
+class AbortTurnResponse(BaseModel):
+    status: Literal["aborted", "already_committed", "already_aborted"]
+    turn_id: str
+
+
+class ErrorResponse(BaseModel):
+    detail: str
+    code: str | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)

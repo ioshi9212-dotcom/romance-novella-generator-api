@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "scene_packet.schema.json",
+  "title": "Frozen scene packet",
+  "type": "object",
+  "required": ["base_state_version", "turn_number", "mode", "chunks"],
+  "properties": {
+    "base_state_version": {"type": "integer", "minimum": 1},
+    "turn_number": {"type": "integer", "minimum": 0},
+    "mode": {"enum": ["play", "technical", "audit"]},
+    "character_ids": {"type": "array", "items": {"type": "string"}},
+    "location_id": {"type": ["string", "null"]},
+    "audit_due": {"type": "boolean"},
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {"type": "array", "items": {"type": "object"}}
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

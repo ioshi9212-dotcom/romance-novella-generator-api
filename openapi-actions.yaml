@@ -1,0 +1,631 @@
+openapi: 3.0.3
+info:
+  title: Novel Runtime Actions
+  version: 1.0.0
+  description: Persistent file-backed sessions for a Custom GPT novella director.
+servers:
+  - url: https://web-production-4310e.up.railway.app
+security:
+  - bearerAuth: []
+paths:
+  /v1/sessions:
+    post:
+      operationId: createSession
+      summary: Create an empty novel session
+      description: Creates a session before the questionnaire. It never copies lore or characters from another session.
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "200":
+          description: New session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummary"
+    get:
+      operationId: listSessions
+      summary: List recent novel sessions
+      description: Returns compact session metadata for choosing which novel to resume.
+      x-openai-isConsequential: false
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Recent sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionSummary"
+  /v1/sessions/{session_id}:
+    get:
+      operationId: getSessionStatus
+      summary: Resume a session
+      description: Returns phase, versions, pending turn, public bootstrap review, and a compact current summary.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummary"
+  /v1/sessions/{session_id}/questionnaire:
+    put:
+      operationId: saveQuestionnaire
+      summary: Save questionnaire answers
+      description: Stores the user's raw answers plus normalized fields. Initial and clarification phases are saved separately.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuestionnaireRequest"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummary"
+  /v1/sessions/{session_id}/bootstrap/parts:
+    post:
+      operationId: saveBootstrapPart
+      summary: Save one generated bootstrap part
+      description: Saves profile, lore, hidden canon, plot, current state, one character card, or the public review without echoing it.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapPartRequest"
+      responses:
+        "200":
+          description: Small save receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapSaveResponse"
+  /v1/sessions/{session_id}/bootstrap/validate:
+    post:
+      operationId: validateBootstrap
+      summary: Validate the generated project
+      description: Reports hard missing fields separately from optional warnings. It does not activate the story.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Bootstrap validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapValidation"
+  /v1/sessions/{session_id}/bootstrap/confirm:
+    post:
+      operationId: confirmBootstrap
+      summary: Activate a confirmed novel
+      description: Promotes a valid draft to canonical per-session state only after explicit user confirmation.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Active session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummary"
+  /v1/sessions/{session_id}/turns:
+    post:
+      operationId: prepareTurn
+      summary: Freeze context for one turn
+      description: Creates an immutable turn packet from the current version. Repeating the same request returns the same turn.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrepareTurnRequest"
+      responses:
+        "200":
+          description: Prepared turn and first context chunk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreparedTurn"
+  /v1/sessions/{session_id}/turns/{turn_id}/chunks/{chunk_index}:
+    get:
+      operationId: getTurnChunk
+      summary: Read another frozen context chunk
+      description: Reads the exact packet created by prepareTurn. It never recomputes context from live state.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/TurnId"
+        - name: chunk_index
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 2
+      responses:
+        "200":
+          description: Requested frozen chunk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreparedTurn"
+  /v1/sessions/{session_id}/turns/{turn_id}/commit:
+    post:
+      operationId: commitTurn
+      summary: Persist a scene and its state changes
+      description: Validates a typed result against the frozen base version, saves it transactionally, and returns an idempotent receipt.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/TurnId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommitTurnRequest"
+      responses:
+        "200":
+          description: Commit receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnReceipt"
+  /v1/sessions/{session_id}/turns/{turn_id}/abort:
+    post:
+      operationId: abortTurn
+      summary: Abort an uncommitted prepared turn
+      description: Closes a pending turn without changing story state. A committed turn cannot be aborted.
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/TurnId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 1000
+              additionalProperties: false
+      responses:
+        "200":
+          description: Abort status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  turn_id:
+                    type: string
+                required: [status, turn_id]
+                additionalProperties: false
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      description: Exact session ID returned by createSession or listSessions.
+      schema:
+        type: string
+        pattern: "^[a-zA-Z0-9_-]{1,100}$"
+    TurnId:
+      name: turn_id
+      in: path
+      required: true
+      description: Exact frozen turn ID returned by prepareTurn.
+      schema:
+        type: string
+        pattern: "^[a-zA-Z0-9_-]{1,100}$"
+  schemas:
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 160
+          nullable: true
+      additionalProperties: false
+    SessionSummary:
+      type: object
+      required:
+        - session_id
+        - resume_code
+        - title
+        - status
+        - schema_version
+        - state_version
+        - turn_number
+        - created_at
+        - updated_at
+      properties:
+        session_id:
+          type: string
+        resume_code:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        schema_version:
+          type: integer
+        state_version:
+          type: integer
+        turn_number:
+          type: integer
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        pending_turn_id:
+          type: string
+          nullable: true
+        bootstrap_missing:
+          type: array
+          items:
+            type: string
+        bootstrap_warnings:
+          type: array
+          items:
+            type: string
+        review:
+          type: object
+          nullable: true
+          additionalProperties: true
+        current_summary:
+          type: object
+          nullable: true
+          additionalProperties: true
+      additionalProperties: false
+    QuestionnaireRequest:
+      type: object
+      required: [phase, raw_answers]
+      properties:
+        phase:
+          type: string
+          enum: [initial, clarification]
+        raw_answers:
+          type: string
+          maxLength: 30000
+        normalized:
+          type: object
+          additionalProperties: true
+        unknown_fields:
+          type: array
+          items:
+            type: string
+        contradictions:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    BootstrapPartRequest:
+      type: object
+      required: [part_type, content]
+      properties:
+        part_type:
+          type: string
+          enum: [profile, lore, hidden_canon, plot, current, character, review]
+        part_id:
+          type: string
+          maxLength: 80
+          nullable: true
+        content:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    BootstrapSaveResponse:
+      type: object
+      required: [status, part_type, size_chars, warnings]
+      properties:
+        status:
+          type: string
+        part_type:
+          type: string
+        part_id:
+          type: string
+          nullable: true
+        size_chars:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    BootstrapValidation:
+      type: object
+      required: [ready, missing, errors, warnings, character_ids]
+      properties:
+        ready:
+          type: boolean
+        missing:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        character_ids:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    PrepareTurnRequest:
+      type: object
+      properties:
+        user_input:
+          type: string
+          maxLength: 30000
+          default: ""
+        mode:
+          type: string
+          enum: [play, technical, audit]
+          default: play
+        replace_pending:
+          type: boolean
+          default: false
+      additionalProperties: false
+    PreparedTurn:
+      type: object
+      required:
+        - status
+        - session_id
+        - turn_id
+        - mode
+        - base_state_version
+        - input_hash
+        - chunk
+        - has_more
+        - total_chunks
+        - warnings
+      properties:
+        status:
+          type: string
+        session_id:
+          type: string
+        turn_id:
+          type: string
+        mode:
+          type: string
+        base_state_version:
+          type: integer
+        input_hash:
+          type: string
+        chunk:
+          type: object
+          properties:
+            chunk_index:
+              type: integer
+            sections:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+          required: [chunk_index, sections]
+          additionalProperties: false
+        has_more:
+          type: boolean
+        next_chunk_index:
+          type: integer
+          nullable: true
+        total_chunks:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    CharacterPatch:
+      type: object
+      required: [character_id, changes]
+      properties:
+        character_id:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    NewCharacter:
+      type: object
+      required: [character_id, card]
+      properties:
+        character_id:
+          type: string
+        card:
+          type: object
+          additionalProperties: true
+        starting_knowledge:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: false
+    KnowledgeEvent:
+      type: object
+      required: [character_id, fact, status, source]
+      properties:
+        character_id:
+          type: string
+        fact:
+          type: string
+        status:
+          type: string
+          enum:
+            - fact
+            - heard_fragment
+            - incomplete_version
+            - mistaken_version
+            - suspicion
+            - lie_believed
+            - corrected
+            - refuted
+            - unknown
+        source:
+          type: string
+        replaces_entry_id:
+          type: string
+          nullable: true
+      additionalProperties: false
+    RelationshipEvent:
+      type: object
+      required: [from_character_id, to_character_id, metric, delta, reason]
+      properties:
+        from_character_id:
+          type: string
+        to_character_id:
+          type: string
+        metric:
+          type: string
+        delta:
+          type: integer
+          minimum: -25
+          maximum: 25
+        reason:
+          type: string
+      additionalProperties: false
+    PlotlinePatch:
+      type: object
+      required: [plotline_id, changes]
+      properties:
+        plotline_id:
+          type: string
+        changes:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    CommitTurnRequest:
+      type: object
+      properties:
+        scene_text:
+          type: string
+          maxLength: 20000
+          default: ""
+        scene_summary:
+          type: string
+          maxLength: 5000
+          default: ""
+        current_patch:
+          type: object
+          additionalProperties: true
+        time_advance_minutes:
+          type: integer
+          minimum: 0
+          maximum: 525600
+          default: 0
+        character_patches:
+          type: array
+          items:
+            $ref: "#/components/schemas/CharacterPatch"
+        new_characters:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewCharacter"
+        knowledge_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeEvent"
+        relationship_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/RelationshipEvent"
+        plotline_patches:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlotlinePatch"
+        chronology_event:
+          type: object
+          nullable: true
+          additionalProperties: true
+        audit_updates:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    TurnReceipt:
+      type: object
+      required:
+        - status
+        - session_id
+        - turn_id
+        - mode
+        - base_state_version
+        - new_state_version
+        - turn_number
+        - changed_files
+        - warnings
+        - committed_at
+      properties:
+        status:
+          type: string
+        session_id:
+          type: string
+        turn_id:
+          type: string
+        mode:
+          type: string
+        base_state_version:
+          type: integer
+        new_state_version:
+          type: integer
+        turn_number:
+          type: integer
+        scene_number:
+          type: integer
+          nullable: true
+        changed_files:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        committed_at:
+          type: string
+      additionalProperties: false

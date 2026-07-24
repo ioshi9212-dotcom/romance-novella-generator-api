@@ -1,7 +1,9 @@
+.data/
+.pytest_cache/
+.coverage
+htmlcov/
 __pycache__/
 *.py[cod]
-.pytest_cache/
 .venv/
-
-# Local runtime sessions and test data.
-data/
+venv/
+.env
