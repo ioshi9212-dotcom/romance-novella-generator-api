@@ -8,6 +8,15 @@ def test_auth_is_required(client):
     assert response.status_code == 401
 
 
+def test_legacy_x_api_key_authentication(client):
+    response = client.post(
+        "/v1/sessions",
+        headers={"X-API-Key": "test-action-token"},
+        json={"title": "Совместимость"},
+    )
+    assert response.status_code == 200, response.text
+
+
 def test_create_list_and_resume(client, auth_headers):
     session_id = create_session(client, auth_headers, "Моя история")
     listed = client.get("/v1/sessions", headers=auth_headers)

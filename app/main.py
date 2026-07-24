@@ -4,7 +4,7 @@ import hmac
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -40,13 +40,18 @@ bearer = HTTPBearer(auto_error=False)
 
 def require_action_token(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> None:
     if not ACTION_TOKEN:
-        raise HTTPException(status_code=503, detail="ACTION_TOKEN is not configured")
-    if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-        or not hmac.compare_digest(credentials.credentials, ACTION_TOKEN)
+        raise HTTPException(status_code=503, detail="Action secret is not configured")
+    bearer_token = (
+        credentials.credentials
+        if credentials is not None and credentials.scheme.lower() == "bearer"
+        else ""
+    )
+    if not (
+        hmac.compare_digest(bearer_token, ACTION_TOKEN)
+        or hmac.compare_digest(x_api_key or "", ACTION_TOKEN)
     ):
         raise HTTPException(status_code=401, detail="Invalid action token")
 
