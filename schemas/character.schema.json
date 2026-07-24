@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "character.schema.json",
+  "title": "Character card",
+  "type": "object",
+  "required": ["id", "name"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{1,80}$"},
+    "name": {"type": "string", "minLength": 1},
+    "aliases": {"type": "array", "items": {"type": "string"}},
+    "appearance": {"type": "object"},
+    "voice": {"type": "object"},
+    "personality": {"type": "object"},
+    "goals": {"type": "object"},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "starting_knowledge": {"type": "array", "items": {"type": "object"}},
+    "initial_relationships": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}

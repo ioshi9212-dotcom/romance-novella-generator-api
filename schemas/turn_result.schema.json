@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "turn_result.schema.json",
+  "title": "Turn result",
+  "type": "object",
+  "properties": {
+    "scene_text": {"type": "string", "maxLength": 20000},
+    "scene_summary": {"type": "string", "maxLength": 5000},
+    "current_patch": {"type": "object"},
+    "time_advance_minutes": {"type": "integer", "minimum": 0, "maximum": 525600},
+    "character_patches": {"type": "array", "items": {"type": "object"}},
+    "new_characters": {"type": "array", "items": {"type": "object"}},
+    "knowledge_events": {"type": "array", "items": {"type": "object"}},
+    "relationship_events": {"type": "array", "items": {"type": "object"}},
+    "plotline_patches": {"type": "array", "items": {"type": "object"}},
+    "chronology_event": {"type": ["object", "null"]},
+    "audit_updates": {"type": "object"}
+  },
+  "additionalProperties": false
+}

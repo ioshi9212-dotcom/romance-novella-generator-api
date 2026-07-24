@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profile.schema.json",
+  "title": "Novel profile",
+  "type": "object",
+  "required": ["title", "genre", "tone", "pov_id", "boundaries", "start"],
+  "properties": {
+    "title": {"type": "string", "minLength": 1},
+    "genre": {"type": ["string", "array"]},
+    "tone": {"type": ["string", "array"]},
+    "pov_id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{1,80}$"},
+    "boundaries": {"type": ["object", "array"]},
+    "start": {"type": "object"},
+    "style": {"type": "object"},
+    "relationship_preferences": {"type": "array"}
+  },
+  "additionalProperties": true
+}
