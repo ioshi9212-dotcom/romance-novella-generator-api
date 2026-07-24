@@ -9,7 +9,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", ROOT_DIR / ".data")).resolve()
 SESSIONS_DIR = DATA_DIR / "sessions"
 RULES_DIR = ROOT_DIR / "rules"
 
-ACTION_TOKEN = os.getenv("ACTION_TOKEN", "").strip()
+ACTION_TOKEN = (os.getenv("ACTION_TOKEN") or os.getenv("API_KEY") or "").strip()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 
 MAX_BOOTSTRAP_PART_CHARS = int(os.getenv("MAX_BOOTSTRAP_PART_CHARS", "50000"))

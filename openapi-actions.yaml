@@ -6,7 +6,7 @@ info:
 servers:
   - url: https://web-production-4310e.up.railway.app
 security:
-  - bearerAuth: []
+  - actionKey: []
 paths:
   /v1/sessions:
     post:
@@ -239,9 +239,10 @@ paths:
                 additionalProperties: false
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
+    actionKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
   parameters:
     SessionId:
       name: session_id

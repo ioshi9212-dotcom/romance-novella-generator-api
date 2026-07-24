@@ -91,6 +91,10 @@ ENVIRONMENT=production
 ACTION_TOKEN=<long random secret>
 ```
 
+For compatibility with the previous deployment, `API_KEY` is also accepted when
+`ACTION_TOKEN` is absent. Requests may authenticate with either
+`X-API-Key: <secret>` or `Authorization: Bearer <secret>`.
+
 The production URL currently used by the Action schema is:
 
 ```text
@@ -117,7 +121,7 @@ Enable Railway Volume backups. Create a manual backup before future state-schema
    https://web-production-4310e.up.railway.app/openapi-actions.yaml
    ```
 
-5. Select API key authentication using Bearer.
+5. Select API key authentication with custom header `X-API-Key`.
 6. Enter the same value as Railway `ACTION_TOKEN`.
 7. Test `createSession`, `saveQuestionnaire`, and `listSessions` in Preview.
 
