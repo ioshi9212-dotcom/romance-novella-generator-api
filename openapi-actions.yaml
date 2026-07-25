@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: Novel Runtime Actions
   version: 1.0.0
@@ -55,7 +55,13 @@ paths:
       description: Returns phase, versions, pending turn, public bootstrap review, and a compact current summary.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       responses:
         "200":
           description: Session status
@@ -91,7 +97,13 @@ paths:
       description: Stores the user's raw answers plus normalized fields. Initial and clarification phases are saved separately.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       requestBody:
         required: true
         content:
@@ -112,7 +124,13 @@ paths:
       description: Saves profile, lore, hidden canon, plot, current state, one character card, or the public review without echoing it.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       requestBody:
         required: true
         content:
@@ -133,7 +151,13 @@ paths:
       description: Reports hard missing fields separately from optional warnings. It does not activate the story.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       responses:
         "200":
           description: Bootstrap validation
@@ -148,7 +172,13 @@ paths:
       description: Promotes a valid draft to canonical per-session state only after explicit user confirmation.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       responses:
         "200":
           description: Active session status
@@ -163,7 +193,13 @@ paths:
       description: Creates an immutable turn packet from the current version. Repeating the same request returns the same turn.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       requestBody:
         required: true
         content:
@@ -184,8 +220,20 @@ paths:
       description: Reads the exact packet created by prepareTurn. It never recomputes context from live state.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
-        - $ref: "#/components/parameters/TurnId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
+        - name: turn_id
+          in: path
+          required: true
+          description: Exact frozen turn ID returned by prepareTurn.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
         - name: chunk_index
           in: path
           required: true
@@ -207,8 +255,20 @@ paths:
       description: Validates a typed result against the frozen base version, saves it transactionally, and returns an idempotent receipt.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
-        - $ref: "#/components/parameters/TurnId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
+        - name: turn_id
+          in: path
+          required: true
+          description: Exact frozen turn ID returned by prepareTurn.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       requestBody:
         required: true
         content:
@@ -229,8 +289,20 @@ paths:
       description: Closes a pending turn without changing story state. A committed turn cannot be aborted.
       x-openai-isConsequential: false
       parameters:
-        - $ref: "#/components/parameters/SessionId"
-        - $ref: "#/components/parameters/TurnId"
+        - name: session_id
+          in: path
+          required: true
+          description: Exact session ID returned by createSession or resumeSession.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
+        - name: turn_id
+          in: path
+          required: true
+          description: Exact frozen turn ID returned by prepareTurn.
+          schema:
+            type: string
+            pattern: "^[a-zA-Z0-9_-]{1,100}$"
       requestBody:
         required: true
         content:
@@ -257,31 +329,13 @@ paths:
                 required: [status, turn_id]
                 additionalProperties: false
 components:
-  parameters:
-    SessionId:
-      name: session_id
-      in: path
-      required: true
-      description: Exact session ID returned by createSession or listSessions.
-      schema:
-        type: string
-        pattern: "^[a-zA-Z0-9_-]{1,100}$"
-    TurnId:
-      name: turn_id
-      in: path
-      required: true
-      description: Exact frozen turn ID returned by prepareTurn.
-      schema:
-        type: string
-        pattern: "^[a-zA-Z0-9_-]{1,100}$"
   schemas:
     CreateSessionRequest:
       type: object
       properties:
         title:
-          type: string
+          type: [string, "null"]
           maxLength: 160
-          nullable: true
       additionalProperties: false
     SessionSummary:
       type: object
@@ -315,8 +369,7 @@ components:
         updated_at:
           type: string
         pending_turn_id:
-          type: string
-          nullable: true
+          type: [string, "null"]
         bootstrap_missing:
           type: array
           items:
@@ -326,12 +379,10 @@ components:
           items:
             type: string
         review:
-          type: object
-          nullable: true
+          type: [object, "null"]
           additionalProperties: true
         current_summary:
-          type: object
-          nullable: true
+          type: [object, "null"]
           additionalProperties: true
       additionalProperties: false
     QuestionnaireRequest:
@@ -364,9 +415,8 @@ components:
           type: string
           enum: [profile, lore, hidden_canon, plot, current, character, review]
         part_id:
-          type: string
+          type: [string, "null"]
           maxLength: 80
-          nullable: true
         content:
           type: object
           additionalProperties: true
@@ -380,8 +430,7 @@ components:
         part_type:
           type: string
         part_id:
-          type: string
-          nullable: true
+          type: [string, "null"]
         size_chars:
           type: integer
         warnings:
@@ -468,8 +517,7 @@ components:
         has_more:
           type: boolean
         next_chunk_index:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
         total_chunks:
           type: integer
         warnings:
@@ -525,8 +573,7 @@ components:
         source:
           type: string
         replaces_entry_id:
-          type: string
-          nullable: true
+          type: [string, "null"]
       additionalProperties: false
     RelationshipEvent:
       type: object
@@ -595,8 +642,7 @@ components:
           items:
             $ref: "#/components/schemas/PlotlinePatch"
         chronology_event:
-          type: object
-          nullable: true
+          type: [object, "null"]
           additionalProperties: true
         audit_updates:
           type: object
@@ -631,8 +677,7 @@ components:
         turn_number:
           type: integer
         scene_number:
-          type: integer
-          nullable: true
+          type: [integer, "null"]
         changed_files:
           type: array
           items:
