@@ -51,6 +51,13 @@ def test_all_path_parameters_are_inline_and_named_for_gpt_actions():
                 assert parameter["required"] is True
 
 
+def test_bootstrap_content_is_exposed_as_json_text_for_gpt_actions():
+    document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
+    content_schema = document["components"]["schemas"]["BootstrapPartRequest"]["properties"]["content"]
+    assert content_schema["type"] == "string"
+    assert "JSON object" in content_schema["description"]
+
+
 def test_all_mutating_actions_disable_consequential_confirmation():
     document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
     for path in document["paths"].values():
