@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from fastapi import HTTPException
+
 from app.models import CreateSessionRequest, SessionStatus, SessionSummary
 from app.storage import (
     SESSIONS_DIR,
@@ -26,7 +28,7 @@ def _new_session_id() -> str:
 
 
 def _resume_code() -> str:
-    return uuid4().hex[:8].upper()
+    return uuid4().hex[:12].upper()
 
 
 def create_session(request: CreateSessionRequest) -> SessionSummary:
@@ -112,3 +114,20 @@ def list_sessions(limit: int = 20) -> list[SessionSummary]:
             candidates.append((str(metadata.get("updated_at") or ""), root.name))
     candidates.sort(reverse=True)
     return [get_session_summary(session_id) for _, session_id in candidates[:limit]]
+
+
+def resume_session(resume_code: str) -> SessionSummary:
+    normalized = resume_code.strip().upper()
+    if len(normalized) not in {8, 12} or any(character not in "0123456789ABCDEF" for character in normalized):
+        raise HTTPException(status_code=400, detail="Invalid resume code")
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    matches: list[str] = []
+    for root in SESSIONS_DIR.iterdir():
+        metadata = read_json(root / "session.json", default=None)
+        if isinstance(metadata, dict) and str(metadata.get("resume_code") or "").upper() == normalized:
+            matches.append(root.name)
+    if not matches:
+        raise HTTPException(status_code=404, detail="Resume code not found")
+    if len(matches) > 1:
+        raise HTTPException(status_code=409, detail="Resume code collision")
+    return get_session_summary(matches[0])

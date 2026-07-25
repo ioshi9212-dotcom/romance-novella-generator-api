@@ -83,17 +83,26 @@ There is no stored `canon_canvas`: the context builder derives a frozen scene pa
 
 Use one service, one replica, one Uvicorn worker, and one Volume mounted at `/data`.
 
-Required variables:
+Required variable:
 
 ```text
 DATA_DIR=/data
-ENVIRONMENT=production
-ACTION_TOKEN=<long random secret>
 ```
 
-For compatibility with the previous deployment, `API_KEY` is also accepted when
-`ACTION_TOKEN` is absent. Requests may authenticate with either
-`X-API-Key: <secret>` or `Authorization: Bearer <secret>`.
+Recommended variable:
+
+```text
+ENVIRONMENT=production
+```
+
+No API or Action key is required. In keyless mode each novel is protected by its
+random session ID and private resume code, and `listSessions` is disabled to
+prevent session enumeration.
+
+An optional shared secret can be enabled with `ACTION_TOKEN`. For compatibility,
+the previous name `API_KEY` is also accepted. Requests may then authenticate with
+either `X-API-Key: <secret>` or `Authorization: Bearer <secret>`, and
+`listSessions` becomes available.
 
 The production URL currently used by the Action schema is:
 
@@ -121,9 +130,8 @@ Enable Railway Volume backups. Create a manual backup before future state-schema
    https://web-production-4310e.up.railway.app/openapi-actions.yaml
    ```
 
-5. Select API key authentication with custom header `X-API-Key`.
-6. Enter the same value as Railway `ACTION_TOKEN`.
-7. Test `createSession`, `saveQuestionnaire`, and `listSessions` in Preview.
+5. Select no authentication.
+6. Test `createSession`, `saveQuestionnaire`, and `resumeSession` in Preview.
 
 This token is a private secret between the Custom GPT and this Railway service. It is not an OpenAI API key.
 
@@ -133,7 +141,6 @@ This token is a private secret between the Custom GPT and this Railway service. 
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
-export ACTION_TOKEN=test-token
 export DATA_DIR="$PWD/.data"
 uvicorn app.main:app --reload
 ```

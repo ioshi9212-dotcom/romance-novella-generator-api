@@ -78,4 +78,4 @@ When the user corrects canon, appearance, rules, chronology, or formatting:
 
 ## Resume
 
-Use `listSessions` when the user has not identified the session. Use `getSessionStatus` to resume. If a pending turn exists, resume or explicitly abort it before preparing another.
+Use `getSessionStatus` when the session ID is known. Otherwise ask for the private resume code returned when the session was created and call `resumeSession`. Use `listSessions` only when the deployment has a configured shared action secret; a keyless deployment intentionally returns 403 to prevent enumeration. If a pending turn exists, resume or explicitly abort it before preparing another.
