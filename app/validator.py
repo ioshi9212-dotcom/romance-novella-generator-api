@@ -84,9 +84,60 @@ def validate_bootstrap(root: Path) -> BootstrapValidationResponse:
     character_files = sorted(characters_dir.glob("*.json")) if characters_dir.is_dir() else []
     character_ids = [path.stem for path in character_files]
 
-    for field in ("title", "genre", "tone", "pov_id", "boundaries", "start"):
+    for field in (
+        "title",
+        "genre",
+        "tone",
+        "pov_id",
+        "boundaries",
+        "start",
+        "naming",
+        "presentation",
+        "prose_style",
+    ):
         if "profile" not in missing and not profile.get(field):
             errors.append(f"profile.{field} is required")
+
+    presentation = profile.get("presentation") or {}
+    if isinstance(presentation, dict):
+        minimum = presentation.get("scene_body_min_chars")
+        maximum = presentation.get("scene_body_max_chars")
+        if not isinstance(minimum, int) or not isinstance(maximum, int):
+            errors.append("profile.presentation scene-body limits are required")
+        elif minimum < 500 or maximum > 12000 or minimum > maximum:
+            errors.append("profile.presentation scene-body limits are invalid")
+        guidance = presentation.get("guidance")
+        if not isinstance(guidance, dict) or "enabled" not in guidance:
+            errors.append("profile.presentation.guidance is required")
+        for field in (
+            "layout",
+            "header_enabled",
+            "dialogue_format",
+            "footer_state",
+            "footer_relationships",
+            "footer_turn",
+        ):
+            if field not in presentation:
+                errors.append(f"profile.presentation.{field} is required")
+
+    naming = profile.get("naming") or {}
+    if isinstance(naming, dict):
+        for field in ("origin", "script", "avoid_russian_names"):
+            if field not in naming:
+                errors.append(f"profile.naming.{field} is required")
+
+    prose_style = profile.get("prose_style") or {}
+    if isinstance(prose_style, dict):
+        for field in (
+            "mode",
+            "seriousness",
+            "description_detail",
+            "literary_density",
+            "pace",
+            "directorial_irony",
+        ):
+            if not prose_style.get(field):
+                errors.append(f"profile.prose_style.{field} is required")
 
     pov_id = str(profile.get("pov_id") or "")
     if pov_id:
