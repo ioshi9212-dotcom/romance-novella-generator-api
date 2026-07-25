@@ -32,6 +32,14 @@ def test_action_schema_is_valid_and_has_expected_operations():
         "commitTurn",
         "abortTurn",
     }
+    assert "getStartQuestionnaire" not in operation_ids
+
+
+def test_create_session_explains_that_questionnaire_is_instruction_owned():
+    document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
+    operation = document["paths"]["/v1/sessions"]["post"]
+    assert "ask its questionnaire itself" in operation["description"]
+    assert "getStartQuestionnaire" in operation["description"]
 
 
 def test_all_path_parameters_are_inline_and_named_for_gpt_actions():
