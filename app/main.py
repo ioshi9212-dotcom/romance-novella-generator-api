@@ -43,7 +43,7 @@ def require_action_token(
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> None:
     if not ACTION_TOKEN:
-        raise HTTPException(status_code=503, detail="Action secret is not configured")
+        return
     bearer_token = (
         credentials.credentials
         if credentials is not None and credentials.scheme.lower() == "bearer"
@@ -98,7 +98,22 @@ def create_session(request: CreateSessionRequest) -> SessionSummary:
 
 @app.get("/v1/sessions", response_model=list[SessionSummary], dependencies=auth, tags=["sessions"])
 def list_sessions(limit: int = Query(default=20, ge=1, le=50)) -> list[SessionSummary]:
+    if not ACTION_TOKEN:
+        raise HTTPException(
+            status_code=403,
+            detail="Session listing is disabled without a shared action secret; use resumeSession",
+        )
     return session_service.list_sessions(limit)
+
+
+@app.get(
+    "/v1/sessions/resume/{resume_code}",
+    response_model=SessionSummary,
+    dependencies=auth,
+    tags=["sessions"],
+)
+def resume_session(resume_code: str) -> SessionSummary:
+    return session_service.resume_session(resume_code)
 
 
 @app.get(

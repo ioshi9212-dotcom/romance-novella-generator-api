@@ -20,6 +20,7 @@ def test_action_schema_is_valid_and_has_expected_operations():
     assert operation_ids == {
         "createSession",
         "listSessions",
+        "resumeSession",
         "getSessionStatus",
         "saveQuestionnaire",
         "saveBootstrapPart",

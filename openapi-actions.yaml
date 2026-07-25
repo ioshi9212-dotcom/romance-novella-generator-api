@@ -5,8 +5,6 @@ info:
   description: Persistent file-backed sessions for a Custom GPT novella director.
 servers:
   - url: https://web-production-4310e.up.railway.app
-security:
-  - actionKey: []
 paths:
   /v1/sessions:
     post:
@@ -61,6 +59,27 @@ paths:
       responses:
         "200":
           description: Session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummary"
+  /v1/sessions/resume/{resume_code}:
+    get:
+      operationId: resumeSession
+      summary: Resume a session by private code
+      description: Resolves the private resume code returned at creation without enumerating other sessions.
+      x-openai-isConsequential: false
+      parameters:
+        - name: resume_code
+          in: path
+          required: true
+          description: Exact private resume code previously returned for this session.
+          schema:
+            type: string
+            pattern: "^[A-Fa-f0-9]{8,12}$"
+      responses:
+        "200":
+          description: Matching session status
           content:
             application/json:
               schema:
@@ -238,11 +257,6 @@ paths:
                 required: [status, turn_id]
                 additionalProperties: false
 components:
-  securitySchemes:
-    actionKey:
-      type: apiKey
-      in: header
-      name: X-API-Key
   parameters:
     SessionId:
       name: session_id

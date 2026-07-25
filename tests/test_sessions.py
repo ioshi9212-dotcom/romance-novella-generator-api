@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import app.main as main_module
+
 from tests.conftest import create_session
 
 
@@ -31,3 +33,18 @@ def test_create_list_and_resume(client, auth_headers):
 def test_unsafe_session_path_is_rejected(client, auth_headers):
     response = client.get("/v1/sessions/..", headers=auth_headers)
     assert response.status_code in {400, 404}
+
+
+def test_keyless_mode_uses_private_resume_code_and_blocks_listing(client, monkeypatch):
+    monkeypatch.setattr(main_module, "ACTION_TOKEN", "")
+    created = client.post("/v1/sessions", json={"title": "Без ключа"})
+    assert created.status_code == 200, created.text
+    payload = created.json()
+    assert len(payload["resume_code"]) == 12
+
+    listed = client.get("/v1/sessions")
+    assert listed.status_code == 403
+
+    resumed = client.get(f"/v1/sessions/resume/{payload['resume_code']}")
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["session_id"] == payload["session_id"]
