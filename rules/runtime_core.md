@@ -34,6 +34,10 @@ The story must not become:
 
 Numbers for relationships, time, money, injuries, clothing, and possessions exist for continuity. They never replace characterization.
 
+Optional action, speech, and thought prompts are a presentation aid only when
+the confirmed profile enables them. They must be plausible alternatives at the
+current pause, never scored choices, hidden routes, or canonical POV behavior.
+
 ## Scene purpose
 
 Every scene must change at least one meaningful element:
