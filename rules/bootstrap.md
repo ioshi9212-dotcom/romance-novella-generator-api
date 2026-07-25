@@ -11,9 +11,30 @@ Ask in one compact message:
 5. Central theme or conflict.
 6. Forbidden content and boundaries.
 7. Starting situation.
-8. Style, pace, rating, and explicitness preferences.
+8. Naming convention: cultural basis, whether names are foreign or Russian, and
+   whether names and place names must be written in Cyrillic.
+9. Style, pace, rating, explicitness, literary density, description detail, and
+   the desired amount of directorial irony or sarcasm.
+10. Presentation preferences: header, scene-body length, dialogue layout,
+    guidance blocks, state, relationships, and turn number.
 
 The user supplies preferences, not the whole plot.
+
+Offer a compact prose-mode choice instead of demanding literary terminology:
+
+- serious literary — detailed, restrained, psychologically precise;
+- cinematic — visual, dynamic, with sharper scene cuts;
+- intimate psychological — close attention to reactions and subtext;
+- atmospheric — denser setting, sensory detail, and mood;
+- light ironic — lively framing and noticeable directorial wit.
+
+Ask for directorial irony separately: none, subtle, noticeable, or pronounced.
+The selected mode is a baseline that may bend with the scene without changing
+into another genre.
+
+If the user leaves naming unspecified, use non-Russian names written in
+Cyrillic. Keep one coherent naming culture within a location or social group;
+do not mix unrelated Russian, English, Japanese, and invented names at random.
 
 ## Clarification
 
@@ -42,8 +63,19 @@ Must contain:
 - `pov_id`
 - `boundaries`
 - `start`
+- `naming`
+- `presentation`
+- `prose_style`
 
-It may also contain style, rating, relationship preferences, scene format, and user-visible premise. It contains no spoilers.
+`naming` records the selected cultural basis, foreign/Russian preference,
+script, and location-name convention. `presentation` records the header,
+dialogue, scene-body length, guidance, state, relationship, and turn-number
+settings. `prose_style` records seriousness, detail, literary density, pace,
+and directorial irony. These are session canon for rendering, not global
+assumptions.
+
+It may also contain rating, relationship preferences, and user-visible
+premise. It contains no spoilers.
 
 ### lore
 
@@ -87,6 +119,9 @@ Must contain:
 - `pov_state`.
 
 It may include present, nearby, and scheduled character IDs; clothing; possessions; injuries; current occupation; obligations; last pose; unfinished movement; and continuation point.
+It should also keep the current weather, season/story period, readable location
+label, immediate scene condition, POV condition, clothing, and relevant
+inventory whenever the presentation header needs them.
 
 ### character
 
