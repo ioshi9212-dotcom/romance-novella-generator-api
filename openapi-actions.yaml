@@ -410,6 +410,7 @@ components:
     BootstrapPartRequest:
       type: object
       required: [part_type, content]
+      description: One bootstrap document. Send content as a compact JSON object encoded as text.
       properties:
         part_type:
           type: string
@@ -418,8 +419,11 @@ components:
           type: [string, "null"]
           maxLength: 80
         content:
-          type: object
-          additionalProperties: true
+          type: string
+          maxLength: 50000
+          description: >-
+            A valid JSON object encoded as text. Example for profile:
+            {"title":"My novel","genre":["romance"],"pov_id":"pov"}.
       additionalProperties: false
     BootstrapSaveResponse:
       type: object
