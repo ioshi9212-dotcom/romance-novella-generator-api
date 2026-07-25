@@ -3,7 +3,17 @@
   "$id": "profile.schema.json",
   "title": "Novel profile",
   "type": "object",
-  "required": ["title", "genre", "tone", "pov_id", "boundaries", "start"],
+  "required": [
+    "title",
+    "genre",
+    "tone",
+    "pov_id",
+    "boundaries",
+    "start",
+    "naming",
+    "presentation",
+    "prose_style"
+  ],
   "properties": {
     "title": {"type": "string", "minLength": 1},
     "genre": {"type": ["string", "array"]},
@@ -11,7 +21,82 @@
     "pov_id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{1,80}$"},
     "boundaries": {"type": ["object", "array"]},
     "start": {"type": "object"},
-    "style": {"type": "object"},
+    "naming": {
+      "type": "object",
+      "required": ["origin", "script", "avoid_russian_names"],
+      "properties": {
+        "origin": {"enum": ["foreign", "russian", "mixed", "invented"]},
+        "culture": {"type": "string"},
+        "script": {"enum": ["cyrillic", "latin", "setting_native"]},
+        "location_names_script": {"enum": ["cyrillic", "latin", "setting_native"]},
+        "avoid_russian_names": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "presentation": {
+      "type": "object",
+      "required": [
+        "layout",
+        "header_enabled",
+        "scene_body_min_chars",
+        "scene_body_max_chars",
+        "dialogue_format",
+        "guidance",
+        "footer_state",
+        "footer_relationships",
+        "footer_turn"
+      ],
+      "properties": {
+        "layout": {"type": "string"},
+        "header_enabled": {"type": "boolean"},
+        "scene_body_min_chars": {"type": "integer", "minimum": 500, "maximum": 10000},
+        "scene_body_max_chars": {"type": "integer", "minimum": 500, "maximum": 12000},
+        "dialogue_format": {"type": "string"},
+        "guidance": {
+          "type": "object",
+          "required": ["enabled", "items_per_section"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "items_per_section": {"type": "integer", "minimum": 1, "maximum": 5}
+          },
+          "additionalProperties": true
+        },
+        "footer_state": {"type": "boolean"},
+        "footer_relationships": {"type": "boolean"},
+        "footer_turn": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "prose_style": {
+      "type": "object",
+      "required": [
+        "mode",
+        "seriousness",
+        "description_detail",
+        "literary_density",
+        "pace",
+        "directorial_irony"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "serious_literary",
+            "cinematic",
+            "intimate_psychological",
+            "atmospheric",
+            "light_ironic"
+          ]
+        },
+        "seriousness": {"type": "string"},
+        "description_detail": {"type": "string"},
+        "literary_density": {"type": "string"},
+        "pace": {"type": "string"},
+        "directorial_irony": {
+          "enum": ["none", "subtle", "noticeable", "pronounced"]
+        }
+      },
+      "additionalProperties": true
+    },
     "relationship_preferences": {"type": "array"}
   },
   "additionalProperties": true
