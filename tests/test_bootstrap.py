@@ -39,6 +39,42 @@ def test_hidden_keys_cannot_enter_public_review(client, auth_headers):
     assert response.status_code == 422
 
 
+def test_bootstrap_part_accepts_json_text_content(client, auth_headers):
+    session_id = create_session(client, auth_headers)
+    response = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/parts",
+        headers=auth_headers,
+        json={
+            "part_type": "profile",
+            "content": json.dumps(
+                {
+                    "title": "Текстовый JSON",
+                    "genre": ["романтика"],
+                    "tone": ["живой"],
+                    "pov_id": "pov",
+                    "boundaries": ["без насилия"],
+                    "start": {"situation": "Утро в кафе"},
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+    assert response.status_code == 200, response.text
+    root = SESSIONS_DIR / session_id
+    saved = json.loads((root / "bootstrap" / "draft" / "profile.json").read_text())
+    assert saved["title"] == "Текстовый JSON"
+
+
+def test_bootstrap_part_rejects_invalid_json_text_content(client, auth_headers):
+    session_id = create_session(client, auth_headers)
+    response = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/parts",
+        headers=auth_headers,
+        json={"part_type": "profile", "content": "{not valid json"},
+    )
+    assert response.status_code == 422
+
+
 def test_confirmation_creates_per_session_state(client, auth_headers):
     session_id = activate_session(client, auth_headers, "C")
     root = SESSIONS_DIR / session_id
