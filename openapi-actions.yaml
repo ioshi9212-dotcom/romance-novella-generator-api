@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Novel Runtime Actions
-  version: 1.0.0
+  version: 1.0.1
   description: Persistent file-backed sessions for a Custom GPT novella director.
 servers:
   - url: https://web-production-4310e.up.railway.app
@@ -10,7 +10,12 @@ paths:
     post:
       operationId: createSession
       summary: Create an empty novel session
-      description: Creates a session before the questionnaire. It never copies lore or characters from another session.
+      description: >-
+        Creates a session before the questionnaire. After success, the Custom
+        GPT must ask its questionnaire itself from its instructions. There is
+        no endpoint for retrieving questionnaire questions. Never call
+        getStartQuestionnaire. This operation never copies lore or characters
+        from another session.
       x-openai-isConsequential: false
       requestBody:
         required: true
