@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SessionStatus(StrEnum):
@@ -64,6 +65,19 @@ class BootstrapPartRequest(BaseModel):
     part_type: BootstrapPartType
     part_id: str | None = Field(default=None, max_length=80)
     content: dict[str, Any]
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def parse_json_content(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("content must be a valid JSON object string") from exc
+        if not isinstance(decoded, dict):
+            raise ValueError("content JSON must decode to an object")
+        return decoded
 
     @model_validator(mode="after")
     def character_requires_id(self) -> "BootstrapPartRequest":
