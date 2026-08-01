@@ -64,7 +64,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Novel Runtime API",
-    version="1.0.0",
+    version="1.0.2",
     description="Persistent session runtime for a Custom GPT novella generator.",
     docs_url=None if ENVIRONMENT == "production" else "/docs",
     redoc_url=None if ENVIRONMENT == "production" else "/redoc",

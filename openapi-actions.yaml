@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Novel Runtime Actions
-  version: 1.0.1
+  version: 1.0.2
   description: Persistent file-backed sessions for a Custom GPT novella director.
 servers:
   - url: https://web-production-4310e.up.railway.app
@@ -99,7 +99,12 @@ paths:
     put:
       operationId: saveQuestionnaire
       summary: Save questionnaire answers
-      description: Stores the user's raw answers plus normalized fields. Initial and clarification phases are saved separately.
+      description: >-
+        Reliably stores the user's exact raw answers plus optional normalized
+        fields. The user may leave questionnaire items unanswered. Put ordinary
+        gaps in unknown_fields; the director must invent and save them instead
+        of asking the user. Put only material contradictions that truly require
+        the user in contradictions. Repeating the same request is idempotent.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -126,7 +131,11 @@ paths:
     post:
       operationId: saveBootstrapPart
       summary: Save one generated bootstrap part
-      description: Saves profile, lore, hidden canon, plot, current state, one character card, or the public review without echoing it.
+      description: >-
+        Saves profile, lore, hidden canon, plot, current state, one character
+        card, or the public review without echoing it. Set merge=true when
+        adding invented missing fields or repairing a saved part so existing
+        user-derived data is not erased.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -153,7 +162,11 @@ paths:
     post:
       operationId: validateBootstrap
       summary: Validate the generated project
-      description: Reports hard missing fields separately from optional warnings. It does not activate the story.
+      description: >-
+        Reports director_repairs separately from user_questions. The director
+        must invent and save every director repair, normally with merge=true.
+        Ask the user only when next_action is ask_user. It does not activate the
+        story.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -354,6 +367,7 @@ components:
         - turn_number
         - created_at
         - updated_at
+        - questionnaire_entry_count
       properties:
         session_id:
           type: string
@@ -383,6 +397,10 @@ components:
           type: array
           items:
             type: string
+        questionnaire_entry_count:
+          type: integer
+        last_questionnaire_entry_id:
+          type: [string, "null"]
         review:
           type: [object, "null"]
           additionalProperties: true
@@ -399,16 +417,20 @@ components:
           enum: [initial, clarification]
         raw_answers:
           type: string
-          maxLength: 30000
+          minLength: 1
+          maxLength: 100000
+          description: Preserve the user's answer exactly; do not summarize it.
         normalized:
-          type: object
-          additionalProperties: true
+          type: [object, string]
+          description: Optional normalized object; JSON text is also accepted as a recovery fallback.
         unknown_fields:
-          type: array
+          type: [array, string]
+          description: Ordinary gaps the director will invent and save without questioning the user.
           items:
             type: string
         contradictions:
-          type: array
+          type: [array, string]
+          description: Only unresolved material conflicts that genuinely require a user answer.
           items:
             type: string
       additionalProperties: false
@@ -423,6 +445,10 @@ components:
         part_id:
           type: [string, "null"]
           maxLength: 80
+        merge:
+          type: boolean
+          default: false
+          description: Deep-merge this content into the saved part instead of replacing it.
         content:
           type: string
           maxLength: 50000
@@ -432,7 +458,7 @@ components:
       additionalProperties: false
     BootstrapSaveResponse:
       type: object
-      required: [status, part_type, size_chars, warnings]
+      required: [status, part_type, size_chars, merged, warnings]
       properties:
         status:
           type: string
@@ -442,6 +468,8 @@ components:
           type: [string, "null"]
         size_chars:
           type: integer
+        merged:
+          type: boolean
         warnings:
           type: array
           items:
@@ -449,7 +477,15 @@ components:
       additionalProperties: false
     BootstrapValidation:
       type: object
-      required: [ready, missing, errors, warnings, character_ids]
+      required:
+        - ready
+        - missing
+        - errors
+        - warnings
+        - character_ids
+        - director_repairs
+        - user_questions
+        - next_action
       properties:
         ready:
           type: boolean
@@ -469,6 +505,19 @@ components:
           type: array
           items:
             type: string
+        director_repairs:
+          type: array
+          description: Missing or incomplete data the director must invent and save itself.
+          items:
+            type: string
+        user_questions:
+          type: array
+          description: Only material contradictions that cannot be safely invented.
+          items:
+            type: string
+        next_action:
+          type: string
+          enum: [show_review, repair_bootstrap, ask_user]
       additionalProperties: false
     PrepareTurnRequest:
       type: object

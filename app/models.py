@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.config import MAX_QUESTIONNAIRE_CHARS
+
 
 class SessionStatus(StrEnum):
     QUESTIONNAIRE = "questionnaire"
@@ -49,21 +51,64 @@ class SessionSummary(BaseModel):
     pending_turn_id: str | None = None
     bootstrap_missing: list[str] = Field(default_factory=list)
     bootstrap_warnings: list[str] = Field(default_factory=list)
+    questionnaire_entry_count: int = 0
+    last_questionnaire_entry_id: str | None = None
     review: dict[str, Any] | None = None
     current_summary: dict[str, Any] | None = None
 
 
 class QuestionnaireRequest(BaseModel):
     phase: Literal["initial", "clarification"]
-    raw_answers: str = Field(min_length=1, max_length=30000)
+    raw_answers: str = Field(min_length=1, max_length=MAX_QUESTIONNAIRE_CHARS)
     normalized: dict[str, Any] = Field(default_factory=dict)
     unknown_fields: list[str] = Field(default_factory=list)
     contradictions: list[str] = Field(default_factory=list)
+
+    @field_validator("raw_answers", mode="before")
+    @classmethod
+    def preserve_raw_answers(cls, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+    @field_validator("normalized", mode="before")
+    @classmethod
+    def tolerate_normalized_json_text(cls, value: Any) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError:
+                return {"unparsed_notes": value}
+            if isinstance(decoded, dict):
+                return decoded
+            return {"value": decoded}
+        return {"value": value}
+
+    @field_validator("unknown_fields", "contradictions", mode="before")
+    @classmethod
+    def tolerate_single_text_item(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        items = value if isinstance(value, list) else [value]
+        output: list[str] = []
+        for item in items:
+            if isinstance(item, str):
+                text = item.strip()
+            else:
+                text = json.dumps(item, ensure_ascii=False, separators=(",", ":")).strip()
+            if text:
+                output.append(text)
+        return output
 
 
 class BootstrapPartRequest(BaseModel):
     part_type: BootstrapPartType
     part_id: str | None = Field(default=None, max_length=80)
+    merge: bool = False
     content: dict[str, Any]
 
     @field_validator("content", mode="before")
@@ -93,6 +138,7 @@ class BootstrapSaveResponse(BaseModel):
     part_type: BootstrapPartType
     part_id: str | None = None
     size_chars: int
+    merged: bool = False
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -102,6 +148,9 @@ class BootstrapValidationResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     character_ids: list[str] = Field(default_factory=list)
+    director_repairs: list[str] = Field(default_factory=list)
+    user_questions: list[str] = Field(default_factory=list)
+    next_action: Literal["show_review", "repair_bootstrap", "ask_user"] = "repair_bootstrap"
 
 
 class PrepareTurnRequest(BaseModel):

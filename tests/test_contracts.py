@@ -66,6 +66,29 @@ def test_bootstrap_content_is_exposed_as_json_text_for_gpt_actions():
     assert "JSON object" in content_schema["description"]
 
 
+def test_questionnaire_contract_accepts_long_answers_and_recovery_shapes():
+    document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
+    questionnaire = document["components"]["schemas"]["QuestionnaireRequest"]["properties"]
+    assert questionnaire["raw_answers"]["maxLength"] == 100000
+    assert set(questionnaire["normalized"]["type"]) == {"object", "string"}
+    assert set(questionnaire["unknown_fields"]["type"]) == {"array", "string"}
+    assert "director" in questionnaire["unknown_fields"]["description"]
+
+
+def test_bootstrap_contract_exposes_merge_and_director_repairs():
+    document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
+    bootstrap_part = document["components"]["schemas"]["BootstrapPartRequest"]
+    assert bootstrap_part["properties"]["merge"]["type"] == "boolean"
+    validation = document["components"]["schemas"]["BootstrapValidation"]
+    assert "director_repairs" in validation["required"]
+    assert "user_questions" in validation["required"]
+    assert validation["properties"]["next_action"]["enum"] == [
+        "show_review",
+        "repair_bootstrap",
+        "ask_user",
+    ]
+
+
 def test_all_mutating_actions_disable_consequential_confirmation():
     document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
     for path in document["paths"].values():

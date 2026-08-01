@@ -20,6 +20,9 @@ GitHub contains only universal code, rules, schemas, and blank templates. Genera
 - one independent directory per session;
 - draft bootstrap is separate from confirmed state;
 - optional bootstrap omissions are warnings, not fatal errors;
+- questionnaire answers are stored idempotently and may be incomplete;
+- ordinary questionnaire gaps are director repairs, not mandatory user questions;
+- bootstrap repairs can be deep-merged without erasing saved fields;
 - every prepared turn has an immutable `turn_id`;
 - context chunks read the same frozen packet;
 - commits require the exact `base_state_version`;
@@ -158,9 +161,10 @@ pytest
 ```text
 createSession
 saveQuestionnaire(initial)
-saveQuestionnaire(clarification)
+saveQuestionnaire(clarification) only for material contradictions
 saveBootstrapPart x N
 validateBootstrap
+saveBootstrapPart(merge=true) until next_action=show_review
 show public review
 confirmBootstrap
 ```
@@ -178,6 +182,12 @@ show the committed scene
 ### Failed request
 
 Retry the same `turn_id`. Do not generate a second turn. A repeated commit returns the original receipt without applying changes twice.
+
+For questionnaire saves, retry with the exact same raw answer; identical
+requests are idempotent. If only normalization is malformed, retry with
+`normalized: {}`. Do not ask the user to retype visible answers. Validation
+items in `director_repairs` must be invented by the Custom GPT and written with
+`merge: true`; only `user_questions` may be returned to the user.
 
 ## Deliberate non-goals
 

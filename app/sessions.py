@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from app.models import CreateSessionRequest, SessionStatus, SessionSummary
+from app.policies import QUESTIONNAIRE_COMPLETION_POLICY
 from app.storage import (
     SESSIONS_DIR,
     atomic_write_json,
@@ -58,7 +59,13 @@ def create_session(request: CreateSessionRequest) -> SessionSummary:
         "updated_at": now,
     }
     atomic_write_json(root / "session.json", metadata)
-    atomic_write_json(root / "bootstrap" / "questionnaire.json", {"entries": []})
+    atomic_write_json(
+        root / "bootstrap" / "questionnaire.json",
+        {
+            "completion_policy": QUESTIONNAIRE_COMPLETION_POLICY,
+            "entries": [],
+        },
+    )
     (root / "journal.jsonl").write_text("", encoding="utf-8")
     return get_session_summary(session_id)
 
@@ -80,6 +87,18 @@ def get_session_summary(session_id: str) -> SessionSummary:
         recover_transactions(root)
         metadata = read_json(root / "session.json", default={}) or {}
         validation = validate_bootstrap(root)
+        questionnaire = read_json(
+            root / "bootstrap" / "questionnaire.json",
+            default={"entries": []},
+        ) or {"entries": []}
+        questionnaire_entries = questionnaire.get("entries", [])
+        if not isinstance(questionnaire_entries, list):
+            questionnaire_entries = []
+        last_questionnaire_entry = (
+            questionnaire_entries[-1]
+            if questionnaire_entries and isinstance(questionnaire_entries[-1], dict)
+            else {}
+        )
         review = read_json(root / "bootstrap" / "draft" / "review.json", default=None)
         current = read_json(root / "state" / "current.json", default=None)
         current_summary: dict[str, Any] | None = None
@@ -100,6 +119,8 @@ def get_session_summary(session_id: str) -> SessionSummary:
             pending_turn_id=_pending_turn_id(root),
             bootstrap_missing=validation.missing,
             bootstrap_warnings=validation.warnings,
+            questionnaire_entry_count=len(questionnaire_entries),
+            last_questionnaire_entry_id=last_questionnaire_entry.get("entry_id"),
             review=review if isinstance(review, dict) else None,
             current_summary=current_summary,
         )

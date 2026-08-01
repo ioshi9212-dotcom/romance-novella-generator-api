@@ -18,7 +18,8 @@ Ask in one compact message:
 10. Presentation preferences: header, scene-body length, dialogue layout,
     guidance blocks, state, relationships, and turn number.
 
-The user supplies preferences, not the whole plot.
+The user supplies preferences, not the whole plot. The user may answer freely
+and is never required to fill every item.
 
 Offer a compact prose-mode choice instead of demanding literary terminology:
 
@@ -38,7 +39,21 @@ do not mix unrelated Russian, English, Japanese, and invented names at random.
 
 ## Clarification
 
-Ask only questions whose answers materially alter the story. Do not repeat answered questions. Invent ordinary missing details yourself. Never reveal planned twists.
+Ask only questions whose answers materially alter the story, resolve a genuine
+contradiction, or establish a boundary. Do not repeat answered questions.
+Unanswered ordinary fields are director work: invent concrete values and save
+them in bootstrap. Never return a validation repair to the user as a new
+question. Never reveal planned twists.
+
+Save the user's complete raw questionnaire answer before building bootstrap.
+Do not summarize or shorten it. A retry with identical content must not create
+a second questionnaire entry. If normalization causes an Action error, retry
+with the same raw answer and an empty normalized object; never ask the user to
+type the answer again.
+
+When repairing a saved bootstrap part, deep-merge only the invented or corrected
+fields. Do not replace a complete part with a small patch and thereby erase
+previously saved user-derived data.
 
 ## What the director creates
 

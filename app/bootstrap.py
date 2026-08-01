@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
 
+from app.config import ROOT_DIR
 from app.models import (
     BootstrapPartRequest,
     BootstrapPartType,
@@ -14,6 +16,7 @@ from app.models import (
     SessionStatus,
     SessionSummary,
 )
+from app.policies import QUESTIONNAIRE_COMPLETION_POLICY
 from app.sessions import get_session_summary
 from app.storage import (
     atomic_write_json,
@@ -47,13 +50,35 @@ def save_questionnaire(session_id: str, request: QuestionnaireRequest) -> Sessio
         if metadata.get("status") in {SessionStatus.ACTIVE.value, SessionStatus.ARCHIVED.value}:
             raise HTTPException(status_code=409, detail="Questionnaire is closed")
         questionnaire_path = root / "bootstrap" / "questionnaire.json"
-        questionnaire = read_json(questionnaire_path, default={"entries": []}) or {"entries": []}
+        questionnaire = read_json(
+            questionnaire_path,
+            default={
+                "completion_policy": QUESTIONNAIRE_COMPLETION_POLICY,
+                "entries": [],
+            },
+        ) or {"entries": []}
+        questionnaire["completion_policy"] = QUESTIONNAIRE_COMPLETION_POLICY
         entries = questionnaire.setdefault("entries", [])
-        entries.append({"saved_at": utc_now(), **request.model_dump()})
+        if not isinstance(entries, list):
+            entries = []
+            questionnaire["entries"] = entries
+        request_data = request.model_dump()
+        entry_id = hashlib.sha256(json_text(request_data).encode("utf-8")).hexdigest()[:20]
+        if not any(
+            isinstance(entry, dict) and entry.get("entry_id") == entry_id
+            for entry in entries
+        ):
+            entries.append(
+                {
+                    "entry_id": entry_id,
+                    "saved_at": utc_now(),
+                    **request_data,
+                }
+            )
         atomic_write_json(questionnaire_path, questionnaire)
         metadata["status"] = (
             SessionStatus.CLARIFICATION.value
-            if request.phase == "initial"
+            if request.contradictions
             else SessionStatus.BUILDING.value
         )
         _save_metadata(root, metadata)
@@ -63,34 +88,57 @@ def save_questionnaire(session_id: str, request: QuestionnaireRequest) -> Sessio
 def _part_path(root: Any, request: BootstrapPartRequest) -> Any:
     draft = root / "bootstrap" / "draft"
     if request.part_type == BootstrapPartType.CHARACTER:
-        assert request.part_id is not None
+        if request.part_id is None:
+            raise HTTPException(status_code=422, detail="part_id is required for character")
         return draft / "characters" / f"{safe_id(request.part_id, 'character_id')}.json"
     return draft / f"{request.part_type.value}.json"
 
 
+def _part_defaults(request: BootstrapPartRequest) -> dict[str, Any]:
+    if request.part_type == BootstrapPartType.REVIEW:
+        return {}
+    template_name = (
+        "character"
+        if request.part_type == BootstrapPartType.CHARACTER
+        else request.part_type.value
+    )
+    defaults = (
+        read_json(ROOT_DIR / "templates" / f"{template_name}.json", default={}) or {}
+    )
+    if request.part_type == BootstrapPartType.CHARACTER and request.part_id:
+        defaults["id"] = request.part_id
+    return defaults
+
+
 def save_bootstrap_part(session_id: str, request: BootstrapPartRequest) -> BootstrapSaveResponse:
     root = require_session(session_id)
-    warnings = validate_part_content(request.part_type, request.part_id, request.content)
     with session_lock(root):
         recover_transactions(root)
         metadata = _metadata(root)
         if metadata.get("status") == SessionStatus.ACTIVE.value:
             raise HTTPException(status_code=409, detail="Bootstrap is already confirmed")
         path = _part_path(root, request)
-        atomic_write_json(path, request.content)
+        base = _part_defaults(request)
+        if request.merge:
+            existing = read_json(path, default={}) or {}
+            base = deep_merge(base, existing)
+        content = deep_merge(base, request.content)
+        warnings = validate_part_content(request.part_type, request.part_id, content)
+        atomic_write_json(path, content)
         metadata["status"] = (
             SessionStatus.REVIEW_PENDING.value
             if request.part_type == BootstrapPartType.REVIEW
             else SessionStatus.BUILDING.value
         )
-        if request.part_type == BootstrapPartType.PROFILE and request.content.get("title"):
-            metadata["title"] = str(request.content["title"])[:160]
+        if request.part_type == BootstrapPartType.PROFILE and content.get("title"):
+            metadata["title"] = str(content["title"])[:160]
         _save_metadata(root, metadata)
     return BootstrapSaveResponse(
         status="saved",
         part_type=request.part_type,
         part_id=request.part_id,
-        size_chars=len(json_text(request.content)),
+        size_chars=len(json_text(content)),
+        merged=request.merge,
         warnings=warnings,
     )
 
@@ -116,7 +164,14 @@ def _initial_relationships(cards: dict[str, dict[str, Any]]) -> dict[str, Any]:
             pair = pairs.setdefault(pair_id, {"directions": {}, "history": []})
             direction = f"{character_id}->{target}"
             direction_data = pair["directions"].setdefault(direction, {"metrics": {}})
-            direction_data["metrics"][metric] = max(0, min(100, int(item.get("value", 0))))
+            try:
+                value = int(item.get("value", 0))
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"character.{character_id}.initial_relationships value must be an integer",
+                ) from exc
+            direction_data["metrics"][metric] = max(0, min(100, value))
     return {"pairs": pairs}
 
 
@@ -164,6 +219,14 @@ def confirm_bootstrap(session_id: str) -> SessionSummary:
             writes[f"state/knowledge/{character_id}.json"] = json_text(knowledge)
         writes["state/characters/index.json"] = json_text(index)
         writes["state/relationships.json"] = json_text(_initial_relationships(cards))
+        questionnaire = read_json(
+            root / "bootstrap" / "questionnaire.json",
+            default={
+                "completion_policy": QUESTIONNAIRE_COMPLETION_POLICY,
+                "entries": [],
+            },
+        ) or {"entries": []}
+        writes["state/questionnaire_source.json"] = json_text(questionnaire)
         writes["state/chronology.jsonl"] = ""
         writes["state/scene_history.jsonl"] = ""
 
