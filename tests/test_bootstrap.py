@@ -6,8 +6,18 @@ from app.config import SESSIONS_DIR
 from tests.conftest import activate_session, bootstrap_parts, create_session
 
 
+def _save_minimal_questionnaire(client, headers, session_id):
+    response = client.put(
+        f"/v1/sessions/{session_id}/questionnaire",
+        headers=headers,
+        json={"phase": "initial", "raw_answers": "Остальное придумай сам."},
+    )
+    assert response.status_code == 200, response.text
+
+
 def test_missing_generated_character_fields_require_director_repair(client, auth_headers):
     session_id = create_session(client, auth_headers)
+    _save_minimal_questionnaire(client, auth_headers, session_id)
     parts = bootstrap_parts("W")
     npc_save = None
     for part in parts:
@@ -142,6 +152,7 @@ def test_bootstrap_part_rejects_invalid_json_text_content(client, auth_headers):
 
 def test_missing_session_presentation_uses_safe_defaults(client, auth_headers):
     session_id = create_session(client, auth_headers)
+    _save_minimal_questionnaire(client, auth_headers, session_id)
     parts = bootstrap_parts("FORMAT")
     for part in parts:
         if part["part_type"] == "profile":
@@ -162,6 +173,8 @@ def test_missing_session_presentation_uses_safe_defaults(client, auth_headers):
     profile = json.loads((root / "bootstrap" / "draft" / "profile.json").read_text())
     assert profile["presentation"]["scene_body_min_chars"] == 1500
     assert profile["presentation"]["footer_relationships"] is True
+    assert profile["pov_control"]["allow_minor_dialogue"] is True
+    assert profile["pov_control"]["user_only_consequential_choices"] is True
 
 
 def test_long_questionnaire_json_text_normalization_and_retry_are_safe(client, auth_headers):
@@ -205,6 +218,27 @@ def test_long_questionnaire_json_text_normalization_and_retry_are_safe(client, a
     assert questionnaire["completion_policy"]["ordinary_missing_fields"] == (
         "director_invents_and_saves"
     )
+
+    recovery_session = create_session(client, auth_headers)
+    malformed = client.put(
+        f"/v1/sessions/{recovery_session}/questionnaire",
+        headers=auth_headers,
+        json={
+            "phase": "initial",
+            "raw_answers": "Мой полный ответ остаётся видимым и сохранённым.",
+            "normalized": "{broken wrapper",
+        },
+    )
+    assert malformed.status_code == 200, malformed.text
+    recovered = json.loads(
+        (
+            SESSIONS_DIR
+            / recovery_session
+            / "bootstrap"
+            / "questionnaire.json"
+        ).read_text()
+    )
+    assert recovered["entries"][0]["normalized"] == {}
 
 
 def test_only_material_contradictions_request_user_clarification(client, auth_headers):
@@ -311,6 +345,56 @@ def test_invalid_initial_relationship_is_rejected_before_confirmation(client, au
     )
     assert response.status_code == 422
     assert "must be an integer" in response.text
+
+
+def test_normalized_questionnaire_fact_must_reach_bootstrap_state(client, auth_headers):
+    session_id = create_session(client, auth_headers)
+    questionnaire = client.put(
+        f"/v1/sessions/{session_id}/questionnaire",
+        headers=auth_headers,
+        json={
+            "phase": "initial",
+            "raw_answers": "Главной героине 37 лет.",
+            "normalized": {"pov": {"age": 37}},
+        },
+    )
+    assert questionnaire.status_code == 200, questionnaire.text
+
+    for part in bootstrap_parts("AGE"):
+        if part.get("part_id") == "pov":
+            part["content"]["age"] = 19
+        response = client.post(
+            f"/v1/sessions/{session_id}/bootstrap/parts",
+            headers=auth_headers,
+            json=part,
+        )
+        assert response.status_code == 200, response.text
+
+    validation = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/validate",
+        headers=auth_headers,
+    ).json()
+    assert validation["ready"] is False
+    mismatch = "questionnaire.normalized.pov.age=37 must be represented"
+    assert any(mismatch in item for item in validation["director_repairs"])
+    assert validation["user_questions"] == []
+
+    repaired = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/parts",
+        headers=auth_headers,
+        json={
+            "part_type": "character",
+            "part_id": "pov",
+            "merge": True,
+            "content": json.dumps({"age": 37}, ensure_ascii=False),
+        },
+    )
+    assert repaired.status_code == 200, repaired.text
+    after = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/validate",
+        headers=auth_headers,
+    ).json()
+    assert after["ready"] is True
 
 
 def test_confirmation_creates_per_session_state(client, auth_headers):

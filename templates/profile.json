@@ -34,5 +34,12 @@
     "pace": "balanced",
     "directorial_irony": "subtle"
   },
-  "relationship_preferences": []
+  "relationship_preferences": [],
+  "pov_control": {
+    "allow_routine_actions": true,
+    "allow_involuntary_reactions": true,
+    "allow_minor_dialogue": true,
+    "require_pov_presence": true,
+    "user_only_consequential_choices": true
+  }
 }

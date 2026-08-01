@@ -12,7 +12,8 @@
     "start",
     "naming",
     "presentation",
-    "prose_style"
+    "prose_style",
+    "pov_control"
   ],
   "properties": {
     "title": {"type": "string", "minLength": 1},
@@ -57,7 +58,7 @@
           "required": ["enabled", "items_per_section"],
           "properties": {
             "enabled": {"type": "boolean"},
-            "items_per_section": {"type": "integer", "minimum": 1, "maximum": 5}
+            "items_per_section": {"type": "integer", "minimum": 1, "maximum": 10}
           },
           "additionalProperties": true
         },
@@ -97,7 +98,25 @@
       },
       "additionalProperties": true
     },
-    "relationship_preferences": {"type": "array"}
+    "relationship_preferences": {"type": "array"},
+    "pov_control": {
+      "type": "object",
+      "required": [
+        "allow_routine_actions",
+        "allow_involuntary_reactions",
+        "allow_minor_dialogue",
+        "require_pov_presence",
+        "user_only_consequential_choices"
+      ],
+      "properties": {
+        "allow_routine_actions": {"type": "boolean"},
+        "allow_involuntary_reactions": {"type": "boolean"},
+        "allow_minor_dialogue": {"type": "boolean"},
+        "require_pov_presence": {"type": "boolean"},
+        "user_only_consequential_choices": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true
 }

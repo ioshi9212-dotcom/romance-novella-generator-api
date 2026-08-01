@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
+
+from fastapi import HTTPException
 
 from app.config import MAX_CONTEXT_CHUNK_CHARS, MAX_CONTEXT_CHUNKS, RULES_DIR
 from app.storage import compact_json_text, parse_jsonl, read_json, read_text
@@ -17,7 +18,13 @@ def _unique(values: list[str]) -> list[str]:
     return result
 
 
-def _character_scope(root: Path, user_input: str, profile: dict[str, Any], current: dict[str, Any]) -> list[str]:
+def _character_scope(
+    root: Path,
+    user_input: str,
+    profile: dict[str, Any],
+    current: dict[str, Any],
+    include_all: bool = False,
+) -> list[str]:
     index = read_json(root / "state" / "characters" / "index.json", default={}) or {}
     characters = index.get("characters", {}) or {}
     selected = [
@@ -26,50 +33,25 @@ def _character_scope(root: Path, user_input: str, profile: dict[str, Any], curre
         *(current.get("nearby_character_ids", []) or []),
         *(current.get("scheduled_character_ids", []) or []),
     ]
+    if include_all:
+        selected.extend(str(character_id) for character_id in characters)
     lowered = user_input.lower().replace("ё", "е")
     for character_id, entry in characters.items():
         aliases = [character_id, entry.get("name"), *(entry.get("aliases", []) or [])]
         if any(str(alias or "").lower().replace("ё", "е") in lowered for alias in aliases if alias):
             selected.append(character_id)
-    return [item for item in _unique(selected) if item in characters]
-
-
-def _relevant_facts(
-    source: dict[str, Any],
-    character_ids: list[str],
-    location_id: str | None,
-    plotline_ids: list[str],
-) -> dict[str, Any]:
-    output: dict[str, Any] = {}
-    for key in ("summary", "premise", "world_rules", "core_truths", "supernatural_rules"):
-        if key in source:
-            output[key] = source[key]
-
-    locations = source.get("locations")
-    if isinstance(locations, dict) and location_id and location_id in locations:
-        output["current_location"] = {location_id: locations[location_id]}
-    elif isinstance(locations, list) and location_id:
-        output["current_location"] = [
-            item for item in locations if isinstance(item, dict) and item.get("id") == location_id
-        ]
-
-    relevant: list[Any] = []
-    for fact in source.get("facts", []) or []:
-        if not isinstance(fact, dict):
-            continue
-        fact_characters = set(str(item) for item in fact.get("character_ids", []) or [])
-        fact_locations = set(str(item) for item in fact.get("location_ids", []) or [])
-        fact_lines = set(str(item) for item in fact.get("plotline_ids", []) or [])
-        if (
-            fact.get("always_include")
-            or fact_characters.intersection(character_ids)
-            or (location_id and location_id in fact_locations)
-            or fact_lines.intersection(plotline_ids)
-        ):
-            relevant.append(fact)
-    if relevant:
-        output["relevant_facts"] = relevant
-    return output
+    selected_ids = _unique(selected)
+    unknown_ids = [item for item in selected_ids if item not in characters]
+    if unknown_ids:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "scene_context_incomplete",
+                "message": "Current state references characters missing from the character index",
+                "missing_character_ids": unknown_ids,
+            },
+        )
+    return selected_ids
 
 
 def _active_plot(plot: dict[str, Any], character_ids: list[str]) -> dict[str, Any]:
@@ -177,8 +159,7 @@ def _split_oversized_section(section: dict[str, Any], max_chars: int) -> list[di
     return pieces
 
 
-def _pack_chunks(sections: list[dict[str, Any]]) -> tuple[list[list[dict[str, Any]]], list[str]]:
-    warnings: list[str] = []
+def _pack_chunks(sections: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     expanded: list[dict[str, Any]] = []
     for section in sections:
         expanded.extend(_split_oversized_section(section, MAX_CONTEXT_CHUNK_CHARS))
@@ -196,11 +177,39 @@ def _pack_chunks(sections: list[dict[str, Any]]) -> tuple[list[list[dict[str, An
         chunks.append(current)
 
     if len(chunks) > MAX_CONTEXT_CHUNKS:
-        kept = chunks[:MAX_CONTEXT_CHUNKS]
-        dropped_names = [item["name"] for chunk in chunks[MAX_CONTEXT_CHUNKS:] for item in chunk]
-        warnings.append("Context was capped; omitted sections: " + ", ".join(dropped_names))
-        chunks = kept
-    return chunks or [[]], warnings
+        overflow_names = [
+            item["name"]
+            for chunk in chunks[MAX_CONTEXT_CHUNKS:]
+            for item in chunk
+        ]
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "scene_context_too_large",
+                "message": (
+                    "The complete scene context does not fit the configured packet budget; "
+                    "the scene was not prepared and no canon was changed"
+                ),
+                "required_chunks": len(chunks),
+                "max_chunks": MAX_CONTEXT_CHUNKS,
+                "overflow_sections": overflow_names,
+            },
+        )
+    return chunks or [[]]
+
+
+def _required_state_object(root: Path, relative_path: str, label: str) -> dict[str, Any]:
+    value = read_json(root / relative_path, default=None)
+    if not isinstance(value, dict) or not value:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "scene_context_incomplete",
+                "message": f"Required scene state is missing or empty: {label}",
+                "missing_sections": [label],
+            },
+        )
+    return value
 
 
 def build_frozen_packet(
@@ -210,33 +219,53 @@ def build_frozen_packet(
     base_state_version: int,
     turn_number: int,
 ) -> dict[str, Any]:
-    profile = read_json(root / "state" / "profile.json", default={}) or {}
-    current = read_json(root / "state" / "current.json", default={}) or {}
-    lore = read_json(root / "state" / "lore.json", default={}) or {}
-    hidden = read_json(root / "state" / "hidden_canon.json", default={}) or {}
-    plot = read_json(root / "state" / "plot.json", default={}) or {}
-    relationships = read_json(root / "state" / "relationships.json", default={}) or {}
-    character_ids = _character_scope(root, user_input, profile, current)
+    profile = _required_state_object(root, "state/profile.json", "profile")
+    current = _required_state_object(root, "state/current.json", "current")
+    lore = _required_state_object(root, "state/lore.json", "lore")
+    hidden = _required_state_object(root, "state/hidden_canon.json", "hidden_canon")
+    plot = _required_state_object(root, "state/plot.json", "plot")
+    relationships = _required_state_object(
+        root,
+        "state/relationships.json",
+        "relationships",
+    )
+    audit_due = mode == "audit" or (
+        mode == "play" and (turn_number + 1) % 10 == 0
+    )
+    character_ids = _character_scope(
+        root,
+        user_input,
+        profile,
+        current,
+        include_all=audit_due,
+    )
     active_plot = _active_plot(plot, character_ids)
-    plotline_ids = list((active_plot.get("lines") or {}).keys())
     location_id = str(current.get("location_id") or "") or None
 
     characters: dict[str, Any] = {}
     knowledge: dict[str, Any] = {}
     for character_id in character_ids:
-        characters[character_id] = read_json(
-            root / "state" / "characters" / f"{character_id}.json",
-            default={},
-        ) or {}
-        knowledge[character_id] = read_json(
-            root / "state" / "knowledge" / f"{character_id}.json",
-            default={"character_id": character_id, "entries": []},
-        ) or {}
+        characters[character_id] = _required_state_object(
+            root,
+            f"state/characters/{character_id}.json",
+            f"character.{character_id}",
+        )
+        knowledge_path = root / "state" / "knowledge" / f"{character_id}.json"
+        knowledge_value = read_json(knowledge_path, default=None)
+        if not isinstance(knowledge_value, dict):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "scene_context_incomplete",
+                    "message": f"Knowledge state is missing for character {character_id}",
+                    "missing_sections": [f"knowledge.{character_id}"],
+                },
+            )
+        knowledge[character_id] = knowledge_value
 
     history = parse_jsonl(read_text(root / "state" / "scene_history.jsonl", default=""))
+    chronology = parse_jsonl(read_text(root / "state" / "chronology.jsonl", default=""))
     history_limit = 10 if (turn_number + 1) % 10 == 0 else 4
-    audit_due = mode == "audit" or (turn_number + 1) % 10 == 0
-
     rules = {
         name: read_text(RULES_DIR / name, default="")
         for name in ("runtime_core.md", "scene.md", "state_update.md")
@@ -253,22 +282,22 @@ def build_frozen_packet(
         _section("profile", profile, 1),
         _section("current", current, 1),
         _section("recent_scene_summaries", history[-history_limit:], 1),
+        _section("chronology", chronology, 1),
         _section("active_plot", active_plot, 2),
-        _section("characters", characters, 2),
-        _section("knowledge", knowledge, 2),
+        *(
+            _section(f"character.{character_id}", characters[character_id], 2)
+            for character_id in character_ids
+        ),
+        *(
+            _section(f"knowledge.{character_id}", knowledge[character_id], 2)
+            for character_id in character_ids
+        ),
         _section("relationships", _relationship_subset(relationships, character_ids), 2),
-        _section(
-            "relevant_lore",
-            _relevant_facts(lore, character_ids, location_id, plotline_ids),
-            3,
-        ),
-        _section(
-            "relevant_hidden_canon",
-            _relevant_facts(hidden, character_ids, location_id, plotline_ids),
-            3,
-        ),
+        _section("lore", lore, 3),
+        _section("hidden_canon", hidden, 3),
     ]
-    chunks, warnings = _pack_chunks(sections)
+    chunks = _pack_chunks(sections)
+    included_sections = [item["name"] for chunk in chunks for item in chunk]
     return {
         "base_state_version": base_state_version,
         "turn_number": turn_number,
@@ -277,5 +306,7 @@ def build_frozen_packet(
         "location_id": location_id,
         "audit_due": audit_due,
         "chunks": chunks,
-        "warnings": warnings,
+        "context_complete": True,
+        "included_sections": included_sections,
+        "warnings": [],
     }

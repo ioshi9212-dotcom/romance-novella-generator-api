@@ -51,6 +51,10 @@ a second questionnaire entry. If normalization causes an Action error, retry
 with the same raw answer and an empty normalized object; never ask the user to
 type the answer again.
 
+Normalize every explicit answer into small structured values rather than one
+prose summary. Bootstrap validation checks those values against the generated
+state and returns any missing or contradicted value as a director repair.
+
 When repairing a saved bootstrap part, deep-merge only the invented or corrected
 fields. Do not replace a complete part with a small patch and thereby erase
 previously saved user-derived data.

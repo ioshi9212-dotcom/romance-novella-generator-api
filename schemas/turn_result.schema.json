@@ -14,7 +14,16 @@
     "relationship_events": {"type": "array", "items": {"type": "object"}},
     "plotline_patches": {"type": "array", "items": {"type": "object"}},
     "chronology_event": {"type": ["object", "null"]},
-    "audit_updates": {"type": "object"}
+    "audit_updates": {
+      "type": "object",
+      "properties": {
+        "continuity_checked": {"type": "boolean"},
+        "chronology_checked": {"type": "boolean"},
+        "checked_character_ids": {"type": "array", "items": {"type": "string"}},
+        "issues": {"type": "array"},
+        "repairs": {"type": "array"}
+      }
+    }
   },
   "additionalProperties": false
 }

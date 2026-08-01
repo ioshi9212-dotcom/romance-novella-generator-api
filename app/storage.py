@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -181,6 +182,27 @@ def journal_event(root: Path, event: dict[str, Any]) -> None:
         atomic_write_text(path, updated)
 
 
+def _compact_commit_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    writes = plan.get("writes")
+    if not isinstance(writes, dict):
+        return plan
+    payload = compact_json_text(writes)
+    compacted = dict(plan)
+    compacted.pop("writes", None)
+    compacted["changed_files"] = sorted(str(path) for path in writes)
+    compacted["write_count"] = len(writes)
+    compacted["payload_size_chars"] = len(payload)
+    compacted["payload_sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return compacted
+
+
+def prune_transaction_payload(root: Path, transaction_id: str) -> None:
+    transaction_id = safe_id(transaction_id, "transaction_id")
+    packet_path = root / "transactions" / "pending" / transaction_id / "packet.json"
+    if packet_path.is_file():
+        packet_path.unlink()
+
+
 def execute_transaction(
     root: Path,
     transaction_id: str,
@@ -214,6 +236,7 @@ def execute_transaction(
         atomic_write_json(receipt_path, receipt)
     plan["status"] = "committed"
     plan["committed_at"] = utc_now()
+    plan = _compact_commit_plan(plan)
     atomic_write_json(plan_path, plan)
     journal_event(
         root,
@@ -224,6 +247,7 @@ def execute_transaction(
             "at": plan["committed_at"],
         },
     )
+    prune_transaction_payload(root, transaction_id)
     return changed
 
 
@@ -235,6 +259,12 @@ def recover_transactions(root: Path) -> list[str]:
     for txn_dir in sorted(pending_root.iterdir()):
         plan_path = txn_dir / "commit_plan.json"
         plan = read_json(plan_path, default={}) or {}
+        if plan.get("status") == "committed":
+            compacted = _compact_commit_plan(plan)
+            if compacted != plan:
+                atomic_write_json(plan_path, compacted)
+            prune_transaction_payload(root, txn_dir.name)
+            continue
         if plan.get("status") != "prepared":
             continue
         writes = plan.get("writes")
@@ -249,6 +279,7 @@ def recover_transactions(root: Path) -> list[str]:
             )
         plan["status"] = "committed"
         plan["recovered_at"] = utc_now()
+        plan = _compact_commit_plan(plan)
         atomic_write_json(plan_path, plan)
         journal_event(
             root,
@@ -259,5 +290,6 @@ def recover_transactions(root: Path) -> list[str]:
                 "at": plan["recovered_at"],
             },
         )
+        prune_transaction_payload(root, txn_dir.name)
         recovered.append(txn_dir.name)
     return recovered

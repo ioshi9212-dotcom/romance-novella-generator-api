@@ -22,15 +22,23 @@ Do not fragment natural sequences into trivial decisions. "Let's go" may include
 
 ## POV boundary
 
-Use close third person unless the profile requests another perspective. Never:
+Use close third person unless the profile requests another perspective. Do not
+turn the POV into furniture. Apply `profile.pov_control`; when it is absent, use
+the permissive routine default. The director should supply natural routine
+movement, involuntary reactions, continuity actions, and brief ordinary replies
+that fit the POV card and introduce no meaningful choice.
 
-- speak for the POV;
-- invent a conscious POV decision;
-- invent consent or refusal;
-- announce an internal conclusion the user did not supply;
-- let NPCs read POV thoughts.
+Never invent for the POV:
 
-The narration may describe involuntary physical reactions only when they do not decide meaning or consent for the POV.
+- a consequential decision or deliberate escalation;
+- consent or refusal;
+- a promise, confession, lie, disclosure, or commitment;
+- a weighty line that changes a relationship or plot direction;
+- an internal conclusion the user did not supply.
+
+Brief бытовые replies must remain replaceable without changing canon. If a line
+would materially affect trust, attraction, conflict, safety, knowledge, or the
+next plan, stop before it and leave it to the user. NPCs never read POV thoughts.
 
 ## Knowledge and hidden motives
 
@@ -97,6 +105,9 @@ exact heading:
 They are non-canonical possibilities, not correct answers, predictions, or
 actions already taken. Do not include impossible knowledge or force the POV's
 personality.
+
+Render every guidance entry as a separate Markdown list item. The server checks
+the exact headings and the configured item count before saving the scene.
 
 When enabled, finish with:
 

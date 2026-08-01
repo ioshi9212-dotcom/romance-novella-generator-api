@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Novel Runtime Actions
-  version: 1.0.2
+  version: 1.1.0
   description: Persistent file-backed sessions for a Custom GPT novella director.
 servers:
   - url: https://web-production-4310e.up.railway.app
@@ -208,7 +208,12 @@ paths:
     post:
       operationId: prepareTurn
       summary: Freeze context for one turn
-      description: Creates an immutable turn packet from the current version. Repeating the same request returns the same turn.
+      description: >-
+        Creates an immutable complete turn packet from the current session
+        state. It includes every required scene card, knowledge file,
+        chronology, lore, and hidden-canon section. If the complete context
+        does not fit, the operation fails instead of omitting state. Repeating
+        the same request returns the same turn.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -235,7 +240,10 @@ paths:
     get:
       operationId: getTurnChunk
       summary: Read another frozen context chunk
-      description: Reads the exact packet created by prepareTurn. It never recomputes context from live state.
+      description: >-
+        Reads the exact packet created by prepareTurn. Read every chunk until
+        has_more is false before writing prose. It never recomputes context
+        from live state.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -258,7 +266,7 @@ paths:
           schema:
             type: integer
             minimum: 0
-            maximum: 2
+            maximum: 7
       responses:
         "200":
           description: Requested frozen chunk
@@ -270,7 +278,11 @@ paths:
     post:
       operationId: commitTurn
       summary: Persist a scene and its state changes
-      description: Validates a typed result against the frozen base version, saves it transactionally, and returns an idempotent receipt.
+      description: >-
+        Validates scene presentation, tenth-turn continuity audit requirements,
+        typed state changes, and the frozen base version; then saves
+        transactionally and returns an idempotent receipt. Technical and audit
+        commits cannot advance story time.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -422,7 +434,10 @@ components:
           description: Preserve the user's answer exactly; do not summarize it.
         normalized:
           type: [object, string]
-          description: Optional normalized object; JSON text is also accepted as a recovery fallback.
+          description: >-
+            Put every explicit user fact into small structured values rather
+            than a prose summary. Bootstrap validation checks that each value
+            reaches generated state. JSON text is accepted as a recovery fallback.
         unknown_fields:
           type: [array, string]
           description: Ordinary gaps the director will invent and save without questioning the user.
@@ -451,7 +466,7 @@ components:
           description: Deep-merge this content into the saved part instead of replacing it.
         content:
           type: string
-          maxLength: 50000
+          maxLength: 60000
           description: >-
             A valid JSON object encoded as text. Example for profile:
             {"title":"My novel","genre":["romance"],"pov_id":"pov"}.
@@ -546,6 +561,9 @@ components:
         - chunk
         - has_more
         - total_chunks
+        - audit_due
+        - context_complete
+        - included_sections
         - warnings
       properties:
         status:
@@ -578,6 +596,19 @@ components:
           type: [integer, "null"]
         total_chunks:
           type: integer
+          maximum: 8
+        audit_due:
+          type: boolean
+          description: True when this commit must include a complete continuity audit.
+        context_complete:
+          type: boolean
+          enum: [true]
+          description: A prepared turn is returned only when no required context was omitted.
+        included_sections:
+          type: array
+          description: Exact frozen packet section names delivered across all chunks.
+          items:
+            type: string
         warnings:
           type: array
           items:
@@ -703,9 +734,26 @@ components:
           type: [object, "null"]
           additionalProperties: true
         audit_updates:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/AuditUpdates"
       additionalProperties: false
+    AuditUpdates:
+      type: object
+      properties:
+        continuity_checked:
+          type: boolean
+        chronology_checked:
+          type: boolean
+        checked_character_ids:
+          type: array
+          items:
+            type: string
+        issues:
+          type: array
+          items: {}
+        repairs:
+          type: array
+          items: {}
+      additionalProperties: true
     TurnReceipt:
       type: object
       required:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import re
 
@@ -87,6 +88,33 @@ def test_bootstrap_contract_exposes_merge_and_director_repairs():
         "repair_bootstrap",
         "ask_user",
     ]
+
+
+def test_turn_contract_exposes_complete_context_and_eight_chunks():
+    document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
+    prepared = document["components"]["schemas"]["PreparedTurn"]
+    assert "context_complete" in prepared["required"]
+    assert "included_sections" in prepared["required"]
+    assert "audit_due" in prepared["required"]
+    assert prepared["properties"]["total_chunks"]["maximum"] == 8
+    chunk_parameter = document["paths"][
+        "/v1/sessions/{session_id}/turns/{turn_id}/chunks/{chunk_index}"
+    ]["get"]["parameters"][-1]
+    assert chunk_parameter["schema"]["maximum"] == 7
+
+    packet_schema = json.loads(
+        (ROOT / "schemas" / "scene_packet.schema.json").read_text(encoding="utf-8")
+    )
+    assert packet_schema["properties"]["chunks"]["maxItems"] == 8
+
+
+def test_custom_gpt_instruction_fits_limit_and_preserves_pov_presence_policy():
+    instruction = (ROOT / "gpt" / "custom_gpt_instructions.md").read_text(encoding="utf-8")
+    assert len(instruction) <= 8000
+    assert "Do not make the POV passive furniture" in instruction
+    assert "brief ordinary replies" in instruction
+    assert "context_complete: true" in instruction
+    assert "continuity_audit_required" not in instruction
 
 
 def test_all_mutating_actions_disable_consequential_confirmation():
