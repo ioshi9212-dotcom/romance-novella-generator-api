@@ -33,7 +33,29 @@ def auth_headers() -> dict[str, str]:
 
 
 def create_session(client: TestClient, headers: dict[str, str], title: str = "Тест") -> str:
-    response = client.post("/v1/sessions", headers=headers, json={"title": title})
+    response = client.post(
+        "/v1/sessions",
+        headers=headers,
+        json={
+            "title": title,
+            "raw_answers": "Романтика в современном городе",
+            "normalized": {"genre": "романтика"},
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["session_id"]
+
+
+def create_empty_legacy_session(
+    client: TestClient,
+    headers: dict[str, str],
+    title: str = "Тест",
+) -> str:
+    response = client.post(
+        "/api/v1/sessions",
+        headers=headers,
+        json={"title": title},
+    )
     assert response.status_code == 200, response.text
     return response.json()["session_id"]
 
@@ -199,16 +221,6 @@ def activate_session(
     label: str = "A",
 ) -> str:
     session_id = create_session(client, headers, f"Новелла {label}")
-    questionnaire = client.put(
-        f"/v1/sessions/{session_id}/questionnaire",
-        headers=headers,
-        json={
-            "phase": "initial",
-            "raw_answers": "Романтика в современном городе",
-            "normalized": {"genre": "романтика"},
-        },
-    )
-    assert questionnaire.status_code == 200, questionnaire.text
     for part in bootstrap_parts(label):
         response = client.post(
             f"/v1/sessions/{session_id}/bootstrap/parts",

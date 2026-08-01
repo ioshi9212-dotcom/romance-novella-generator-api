@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from typing import Any
 from uuid import uuid4
 
@@ -17,6 +16,7 @@ from app.models import (
     SessionSummary,
 )
 from app.policies import QUESTIONNAIRE_COMPLETION_POLICY
+from app.questionnaire import append_questionnaire_entry
 from app.sessions import get_session_summary
 from app.storage import (
     atomic_write_json,
@@ -57,24 +57,7 @@ def save_questionnaire(session_id: str, request: QuestionnaireRequest) -> Sessio
                 "entries": [],
             },
         ) or {"entries": []}
-        questionnaire["completion_policy"] = QUESTIONNAIRE_COMPLETION_POLICY
-        entries = questionnaire.setdefault("entries", [])
-        if not isinstance(entries, list):
-            entries = []
-            questionnaire["entries"] = entries
-        request_data = request.model_dump()
-        entry_id = hashlib.sha256(json_text(request_data).encode("utf-8")).hexdigest()[:20]
-        if not any(
-            isinstance(entry, dict) and entry.get("entry_id") == entry_id
-            for entry in entries
-        ):
-            entries.append(
-                {
-                    "entry_id": entry_id,
-                    "saved_at": utc_now(),
-                    **request_data,
-                }
-            )
+        append_questionnaire_entry(questionnaire, request)
         atomic_write_json(questionnaire_path, questionnaire)
         metadata["status"] = (
             SessionStatus.CLARIFICATION.value

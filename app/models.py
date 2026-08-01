@@ -34,10 +34,6 @@ class BootstrapPartType(StrEnum):
     REVIEW = "review"
 
 
-class CreateSessionRequest(BaseModel):
-    title: str | None = Field(default=None, max_length=160)
-
-
 class StartQuestionnaireResponse(BaseModel):
     version: str
     questionnaire: str
@@ -62,8 +58,7 @@ class SessionSummary(BaseModel):
     current_summary: dict[str, Any] | None = None
 
 
-class QuestionnaireRequest(BaseModel):
-    phase: Literal["initial", "clarification"]
+class QuestionnaireFields(BaseModel):
     raw_answers: str = Field(min_length=1, max_length=MAX_QUESTIONNAIRE_CHARS)
     normalized: dict[str, Any] = Field(default_factory=dict)
     unknown_fields: list[str] = Field(default_factory=list)
@@ -108,6 +103,18 @@ class QuestionnaireRequest(BaseModel):
             if text:
                 output.append(text)
         return output
+
+
+class QuestionnaireRequest(QuestionnaireFields):
+    phase: Literal["initial", "clarification"]
+
+
+class CreateSessionRequest(QuestionnaireFields):
+    title: str | None = Field(default=None, max_length=160)
+
+
+class LegacyCreateSessionRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=160)
 
 
 class BootstrapPartRequest(BaseModel):

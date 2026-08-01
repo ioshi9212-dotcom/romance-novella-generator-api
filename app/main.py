@@ -21,6 +21,7 @@ from app.models import (
     BootstrapValidationResponse,
     CommitTurnRequest,
     CreateSessionRequest,
+    LegacyCreateSessionRequest,
     PrepareTurnRequest,
     PrepareTurnResponse,
     QuestionnaireRequest,
@@ -65,7 +66,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Novel Runtime API",
-    version="1.2.1",
+    version="1.3.0",
     description="Persistent session runtime for a Custom GPT novella generator.",
     docs_url=None if ENVIRONMENT == "production" else "/docs",
     redoc_url=None if ENVIRONMENT == "production" else "/redoc",
@@ -120,6 +121,10 @@ def get_start_questionnaire() -> StartQuestionnaireResponse:
     tags=["sessions"],
     include_in_schema=False,
 )
+def create_legacy_session(request: LegacyCreateSessionRequest) -> SessionSummary:
+    return session_service.create_session(request)
+
+
 @app.post("/v1/sessions", response_model=SessionSummary, dependencies=auth, tags=["sessions"])
 def create_session(request: CreateSessionRequest) -> SessionSummary:
     return session_service.create_session(request)

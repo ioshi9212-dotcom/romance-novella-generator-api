@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Novel Runtime Actions
-  version: 1.2.1
+  version: 1.3.0
   description: Persistent file-backed sessions for a Custom GPT novella director.
 servers:
   - url: https://web-production-4310e.up.railway.app
@@ -25,11 +25,11 @@ paths:
   /v1/sessions:
     post:
       operationId: createSession
-      summary: Create an empty novel session
+      summary: Create a novel session with its questionnaire
       description: >-
-        Creates one isolated session after the user provides starter preferences
-        or requests random generation. For a bare start request, call
-        getStartQuestionnaire first. Never copy state from another session.
+        Creates one isolated session and saves all visible starter answers in
+        the same operation. Call only after preferences or “Рандом” are visible.
+        Supply raw_answers from the conversation; never ask the user to repeat it.
       x-openai-isConsequential: false
       requestBody:
         required: true
@@ -114,10 +114,9 @@ paths:
       operationId: saveQuestionnaire
       summary: Save questionnaire answers
       description: >-
-        Stores the user's exact raw answers and normalized fields. Put unanswered
-        items in unknown_fields; the director must invent and save them, not ask
-        the user. Reserve contradictions for material conflicts requiring user
-        input. Identical retries are idempotent.
+        Saves clarification or repairs a legacy empty session. If starter answers
+        are already visible, send them from the conversation without asking the
+        user to repeat. Identical retries are idempotent.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -385,10 +384,29 @@ components:
       additionalProperties: false
     CreateSessionRequest:
       type: object
+      required: [raw_answers]
       properties:
         title:
           type: [string, "null"]
           maxLength: 160
+        raw_answers:
+          type: string
+          minLength: 1
+          maxLength: 100000
+          description: Preserve all visible starter answers verbatim; never summarize or request them again.
+        normalized:
+          type: [object, string]
+          description: Every explicit user fact as small structured values; JSON text is accepted as fallback.
+        unknown_fields:
+          type: [array, string]
+          description: Ordinary gaps the director will invent without asking the user.
+          items:
+            type: string
+        contradictions:
+          type: [array, string]
+          description: Only unresolved material conflicts that genuinely require a user answer.
+          items:
+            type: string
       additionalProperties: false
     SessionSummary:
       type: object

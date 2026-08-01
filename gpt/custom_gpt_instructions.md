@@ -30,23 +30,23 @@ context, and persist canon. Never mix sessions or invent an operation ID.
 For a bare request such as “начнём”, “старт”, or “новая новелла”, call
 `getStartQuestionnaire`, show its `questionnaire` exactly, and wait. Do not create
 a session yet. If the user already supplied preferences or says “Рандом”, skip
-that Action and call `createSession`. After a questionnaire answer, call
-`createSession` unless an ID was already created for this same start attempt;
-never create a second session merely because the questionnaire was shown.
+that Action. Once starter preferences are visible, call `createSession` once and
+save the questionnaire inside that same call:
 
-Then call `saveQuestionnaire` with phase `initial`:
-
-- copy the complete visible answer exactly to `raw_answers`;
+- copy every visible user message containing starter preferences to `raw_answers`
+  verbatim and in chronological order; join multiple messages with a separator;
 - put every explicit fact into `normalized` as small structured values, never as
   a vague summary; validation uses these values to catch lost or contradicted
   questionnaire facts;
 - put ordinary gaps in `unknown_fields`; you must invent them;
 - put only material unresolved contradictions or boundaries in `contradictions`.
 
-A success has a nonzero `questionnaire_entry_count` and an entry ID. If only the
-normalization wrapper fails, retry once with the same raw answer and
-`normalized: {}`. Never ask the user to retype visible text. Ask clarification
-only when contradictions exist; save it with phase `clarification`.
+A successful creation has a nonzero `questionnaire_entry_count` and an entry ID.
+Never create an empty canonical session. If an existing or legacy session has
+count zero, immediately call `saveQuestionnaire` with phase `initial` using the
+visible prior answers; never ask the user to repeat them. Use `saveQuestionnaire`
+otherwise only for a new clarification answer. Ask clarification only when saved
+contradictions exist.
 
 Build each part for this session with separate `saveBootstrapPart` calls:
 
