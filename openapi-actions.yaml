@@ -100,11 +100,10 @@ paths:
       operationId: saveQuestionnaire
       summary: Save questionnaire answers
       description: >-
-        Reliably stores the user's exact raw answers plus optional normalized
-        fields. The user may leave questionnaire items unanswered. Put ordinary
-        gaps in unknown_fields; the director must invent and save them instead
-        of asking the user. Put only material contradictions that truly require
-        the user in contradictions. Repeating the same request is idempotent.
+        Stores the user's exact raw answers and normalized fields. Put unanswered
+        items in unknown_fields; the director must invent and save them, not ask
+        the user. Reserve contradictions for material conflicts requiring user
+        input. Identical retries are idempotent.
       x-openai-isConsequential: false
       parameters:
         - name: session_id
@@ -209,11 +208,10 @@ paths:
       operationId: prepareTurn
       summary: Freeze context for one turn
       description: >-
-        Creates an immutable complete turn packet from the current session
-        state. It includes every required scene card, knowledge file,
-        chronology, lore, and hidden-canon section. If the complete context
-        does not fit, the operation fails instead of omitting state. Repeating
-        the same request returns the same turn.
+        Freezes complete context from this session, including required cards,
+        knowledge, chronology, lore, and all hidden canon. It fails rather than
+        omit context when the packet cannot fit. Identical retries return the
+        same turn.
       x-openai-isConsequential: false
       parameters:
         - name: session_id

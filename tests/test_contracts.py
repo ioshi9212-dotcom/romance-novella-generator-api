@@ -43,6 +43,18 @@ def test_create_session_explains_that_questionnaire_is_instruction_owned():
     assert "getStartQuestionnaire" in operation["description"]
 
 
+def test_all_action_operation_descriptions_fit_chatgpt_limit():
+    document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
+    for path_item in document["paths"].values():
+        for method, operation in path_item.items():
+            if method not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            description = operation.get("description", "")
+            assert len(description) <= 300, (
+                f'{operation["operationId"]} description has {len(description)} characters'
+            )
+
+
 def test_all_path_parameters_are_inline_and_named_for_gpt_actions():
     document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
     for path_template, path_item in document["paths"].items():
