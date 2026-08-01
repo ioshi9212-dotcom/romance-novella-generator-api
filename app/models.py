@@ -82,7 +82,7 @@ class QuestionnaireRequest(BaseModel):
             try:
                 decoded = json.loads(value)
             except json.JSONDecodeError:
-                return {"unparsed_notes": value}
+                return {}
             if isinstance(decoded, dict):
                 return decoded
             return {"value": decoded}
@@ -181,6 +181,9 @@ class PrepareTurnResponse(BaseModel):
     has_more: bool
     next_chunk_index: int | None = None
     total_chunks: int
+    audit_due: bool = False
+    context_complete: bool = True
+    included_sections: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

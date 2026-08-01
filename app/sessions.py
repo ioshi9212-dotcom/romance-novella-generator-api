@@ -22,6 +22,7 @@ from app.validator import validate_bootstrap
 
 
 SCHEMA_VERSION = 1
+RULES_VERSION = 2
 
 
 def _new_session_id() -> str:
@@ -52,7 +53,7 @@ def create_session(request: CreateSessionRequest) -> SessionSummary:
         "title": (request.title or "Новая новелла").strip(),
         "status": SessionStatus.QUESTIONNAIRE.value,
         "schema_version": SCHEMA_VERSION,
-        "rules_version": 1,
+        "rules_version": RULES_VERSION,
         "state_version": 0,
         "turn_number": 0,
         "created_at": now,

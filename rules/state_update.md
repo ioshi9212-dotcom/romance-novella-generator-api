@@ -21,6 +21,10 @@ Stable appearance and personality do not change because of a single scene. Patch
 
 Dynamic knowledge never belongs in another character's card.
 
+When a stable character name, alias, or tag changes, patch the card normally.
+The server refreshes the lookup index and preserves the previous display name as
+an alias, so future mentions resolve to the same stable character ID.
+
 ## Knowledge
 
 Every knowledge event includes:
@@ -46,6 +50,15 @@ Do not award points merely because the user selected a line. The delta follows a
 Chronology contains only events that occurred, their time/place, factual consequences, obligations, and deadlines. It excludes unchosen options, author guesses, and secret plans that did not occur.
 
 Plotline patches update status, stage, stakes, next window, or causal consequences. Hidden truth changes only when the story genuinely establishes a compatible new fact.
+
+## Continuity audit
+
+On every packet with `audit_due: true`, check the complete chronology, all session
+character cards and knowledge, current state, relationships, and active plot.
+Commit `continuity_checked`, `chronology_checked`, every checked character ID,
+and explicit `issues` and `repairs` lists. Apply every real repair through the
+matching structured patch in the same commit. Empty lists are valid; omitting
+the audit is not.
 
 ## Technical correction
 

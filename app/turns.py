@@ -26,6 +26,7 @@ from app.storage import (
     execute_transaction,
     json_text,
     jsonl_with_event,
+    prune_transaction_payload,
     read_json,
     read_text,
     recover_transactions,
@@ -34,7 +35,11 @@ from app.storage import (
     session_lock,
     utc_now,
 )
-from app.validator import validate_commit_semantics
+from app.validator import (
+    validate_audit_requirements,
+    validate_commit_semantics,
+    validate_scene_presentation,
+)
 
 
 def _input_hash(user_input: str, mode: TurnMode, state_version: int) -> str:
@@ -71,6 +76,9 @@ def _response_from_packet(
         has_more=has_more,
         next_chunk_index=chunk_index + 1 if has_more else None,
         total_chunks=len(chunks),
+        audit_due=bool(packet.get("audit_due", False)),
+        context_complete=bool(packet.get("context_complete", False)),
+        included_sections=packet.get("included_sections", []),
         warnings=packet.get("warnings", []),
     )
 
@@ -108,6 +116,7 @@ def prepare_turn(session_id: str, request: PrepareTurnRequest) -> PrepareTurnRes
             metadata["aborted_at"] = utc_now()
             metadata["abort_reason"] = "replaced by newer prepareTurn"
             atomic_write_json(directory / "metadata.json", metadata)
+            prune_transaction_payload(root, directory.name)
 
         turn_id = f"turn_{uuid4().hex}"
         packet = build_frozen_packet(
@@ -165,6 +174,33 @@ def _advance_datetime(current: dict[str, Any], minutes: int, warnings: list[str]
 
 def _character_ids(index: dict[str, Any]) -> set[str]:
     return set(str(key) for key in (index.get("characters", {}) or {}))
+
+
+def _index_entry(
+    character_id: str,
+    card: dict[str, Any],
+    previous_name: str | None = None,
+) -> dict[str, Any]:
+    name = str(card.get("name") or "").strip()
+    if not name:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Character {character_id} requires a non-empty name",
+        )
+    aliases = [
+        str(value).strip()
+        for value in (card.get("aliases", []) or [])
+        if str(value).strip()
+    ]
+    if previous_name and previous_name != name and previous_name not in aliases:
+        aliases.append(previous_name)
+        card["aliases"] = aliases
+    return {
+        "id": character_id,
+        "name": name,
+        "aliases": aliases,
+        "tags": card.get("tags", []) if isinstance(card.get("tags", []), list) else [],
+    }
 
 
 def _apply_knowledge_events(
@@ -275,6 +311,9 @@ def commit_turn(session_id: str, turn_id: str, request: CommitTurnRequest) -> Tu
             raise HTTPException(status_code=409, detail="Prepared turn is not open")
         mode = TurnMode(metadata["mode"])
         validate_commit_semantics(mode, request)
+        packet = read_json(directory / "packet.json", default=None)
+        if not isinstance(packet, dict):
+            raise HTTPException(status_code=409, detail="Prepared scene packet is missing")
 
         session = read_json(root / "session.json", default={}) or {}
         base_version = int(metadata["base_state_version"])
@@ -289,10 +328,16 @@ def commit_turn(session_id: str, turn_id: str, request: CommitTurnRequest) -> Tu
                 },
             )
 
+        next_turn_number = int(session.get("turn_number", 0)) + (
+            1 if mode == TurnMode.PLAY else 0
+        )
+        if mode == TurnMode.PLAY:
+            validate_scene_presentation(root, request, next_turn_number)
+        validate_audit_requirements(mode, request, packet)
+
         warnings: list[str] = []
         writes: dict[str, str] = {}
         changed: set[str] = set()
-        next_turn_number = int(session.get("turn_number", 0)) + (1 if mode == TurnMode.PLAY else 0)
         scene_number = next_turn_number if mode == TurnMode.PLAY else None
 
         current = read_json(root / "state" / "current.json", default={}) or {}
@@ -316,12 +361,10 @@ def commit_turn(session_id: str, turn_id: str, request: CommitTurnRequest) -> Tu
             card.setdefault("id", character_id)
             if not card.get("name"):
                 raise HTTPException(status_code=422, detail=f"New character {character_id} requires name")
-            index.setdefault("characters", {})[character_id] = {
-                "id": character_id,
-                "name": card["name"],
-                "aliases": card.get("aliases", []),
-                "tags": card.get("tags", []),
-            }
+            index.setdefault("characters", {})[character_id] = _index_entry(
+                character_id,
+                card,
+            )
             writes[f"state/characters/{character_id}.json"] = json_text(card)
             writes[f"state/knowledge/{character_id}.json"] = json_text(
                 {
@@ -349,7 +392,23 @@ def commit_turn(session_id: str, turn_id: str, request: CommitTurnRequest) -> Tu
             else:
                 path = root / relative_path
                 card = read_json(path, default={}) or {}
+            previous_name = str(card.get("name") or "").strip() or None
+            requested_id = patch.changes.get("id", patch.character_id)
+            requested_character_id = patch.changes.get(
+                "character_id",
+                patch.character_id,
+            )
+            if requested_id != patch.character_id or requested_character_id != patch.character_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Character patches cannot change a stable character id",
+                )
             card = deep_merge(card, patch.changes)
+            index.setdefault("characters", {})[patch.character_id] = _index_entry(
+                patch.character_id,
+                card,
+                previous_name=previous_name,
+            )
             writes[relative_path] = json_text(card)
             changed.add(relative_path)
         writes["state/characters/index.json"] = json_text(index)
@@ -473,4 +532,5 @@ def abort_turn(session_id: str, turn_id: str, reason: str) -> AbortTurnResponse:
         metadata["aborted_at"] = utc_now()
         metadata["abort_reason"] = reason
         atomic_write_json(path, metadata)
+        prune_transaction_payload(root, turn_id)
         return AbortTurnResponse(status="aborted", turn_id=turn_id)

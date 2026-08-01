@@ -92,6 +92,10 @@ def bootstrap_parts(label: str = "A") -> list[dict[str, Any]]:
                 "core_truths": [f"Секрет {label}"],
                 "facts": [],
                 "false_versions": [],
+                "causal_chain": [
+                    {"cause": "прошлое посетителя", "effect": "встреча в кафе"}
+                ],
+                "constraints": ["Причина визита раскрывается постепенно"],
             },
         },
         {
@@ -105,7 +109,13 @@ def bootstrap_parts(label: str = "A") -> list[dict[str, Any]]:
                     }
                 },
                 "clocks": {},
-                "npc_plans": [],
+                "npc_plans": [
+                    {
+                        "character_id": "npc",
+                        "goal": "добиться разговора",
+                        "next_action": "вернуться к теме после заказа",
+                    }
+                ],
             },
         },
         {
@@ -113,7 +123,13 @@ def bootstrap_parts(label: str = "A") -> list[dict[str, Any]]:
             "content": {
                 "datetime": "2026-09-02T08:00:00+10:00",
                 "location_id": "cafe",
+                "location_label": f"кафе {label}",
+                "season_or_period": "начало осени",
+                "weather": "прохладное утро",
+                "scene_condition": "начало утренней смены",
                 "pov_state": {"mood": "спокойна"},
+                "clothing": ["рабочая одежда"],
+                "inventory": [],
                 "present_character_ids": ["pov", "npc"],
                 "nearby_character_ids": [],
                 "scheduled_character_ids": [],
@@ -131,6 +147,13 @@ def bootstrap_parts(label: str = "A") -> list[dict[str, Any]]:
                 "personality": {"core": "наблюдательная"},
                 "goals": {"current": "закончить смену"},
                 "voice": {"style": "мягкий"},
+                "values": ["самостоятельность"],
+                "flaws": ["упрямство"],
+                "skills": ["работа с кофе"],
+                "work": {"role": "бариста"},
+                "past": ["давно работает в кафе"],
+                "schedule": {"today": "утренняя смена"},
+                "tags": ["pov"],
                 "starting_knowledge": [],
                 "initial_relationships": [
                     {"to_character_id": "npc", "metric": "trust", "value": 10}
@@ -148,6 +171,13 @@ def bootstrap_parts(label: str = "A") -> list[dict[str, Any]]:
                 "personality": {"core": "упрямый"},
                 "goals": {"current": "поговорить"},
                 "voice": {"style": "сдержанный"},
+                "values": ["настойчивость"],
+                "flaws": ["скрытность"],
+                "skills": ["наблюдательность"],
+                "work": {"role": "не раскрыто героине"},
+                "past": ["знает причину визита"],
+                "schedule": {"today": "встреча в кафе"},
+                "tags": ["starting_npc"],
                 "starting_knowledge": [],
                 "initial_relationships": [],
             },

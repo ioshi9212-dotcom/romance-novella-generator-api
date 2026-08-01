@@ -23,14 +23,21 @@ GitHub contains only universal code, rules, schemas, and blank templates. Genera
 - questionnaire answers are stored idempotently and may be incomplete;
 - ordinary questionnaire gaps are director repairs, not mandatory user questions;
 - bootstrap repairs can be deep-merged without erasing saved fields;
+- normalized explicit questionnaire facts must be represented in generated state;
 - every prepared turn has an immutable `turn_id`;
 - context chunks read the same frozen packet;
+- required scene context is never silently truncated: overflow blocks preparation;
+- chronology, full lore, full hidden canon, every scene card, and its knowledge are loaded;
 - commits require the exact `base_state_version`;
 - repeated prepare and commit calls are idempotent;
 - per-session file locks prevent concurrent writers;
 - multi-file commits use a recovery journal;
 - a scene is canonical only after `commitTurn`;
+- standard scene presentation and stored body-length limits are validated before commit;
+- every tenth play turn requires a persisted continuity audit;
+- character renames refresh the name/alias index;
 - technical corrections do not advance story time or turn number;
+- committed transaction payload copies are compacted after recovery is no longer needed;
 - action responses stay below conservative size budgets.
 
 ## Repository layout
@@ -68,6 +75,7 @@ railway.json            Railway deployment configuration
     plot.json
     current.json
     relationships.json
+    questionnaire_source.json
     chronology.jsonl
     scene_history.jsonl
     characters/index.json
@@ -136,6 +144,11 @@ Enable Railway Volume backups. Create a manual backup before future state-schema
 5. Select no authentication.
 6. Test `createSession`, `saveQuestionnaire`, and `resumeSession` in Preview.
 
+Repository deployment updates the hosted Action schema, but it does not replace
+the text already pasted into an existing Custom GPT. After deploying a version
+that changes `gpt/custom_gpt_instructions.md`, paste that file into the GPT editor
+again and re-import the hosted Action schema before testing in Preview.
+
 This token is a private secret between the Custom GPT and this Railway service. It is not an OpenAI API key.
 
 ## Local development
@@ -174,7 +187,9 @@ confirmBootstrap
 ```text
 prepareTurn
 getTurnChunk until has_more=false
+verify context_complete=true and read every returned section
 write scene and structured result
+include audit_updates when audit_due=true
 commitTurn
 show the committed scene
 ```
