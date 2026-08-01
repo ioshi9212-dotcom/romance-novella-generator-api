@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Novel Runtime Actions
-  version: 1.2.0
+  version: 1.2.1
   description: Persistent file-backed sessions for a Custom GPT novella director.
 servers:
   - url: https://web-production-4310e.up.railway.app

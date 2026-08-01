@@ -65,7 +65,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Novel Runtime API",
-    version="1.2.0",
+    version="1.2.1",
     description="Persistent session runtime for a Custom GPT novella generator.",
     docs_url=None if ENVIRONMENT == "production" else "/docs",
     redoc_url=None if ENVIRONMENT == "production" else "/redoc",
@@ -113,11 +113,25 @@ def get_start_questionnaire() -> StartQuestionnaireResponse:
     return StartQuestionnaireResponse(version="2.0", questionnaire=questionnaire)
 
 
+@app.post(
+    "/api/v1/sessions",
+    response_model=SessionSummary,
+    dependencies=auth,
+    tags=["sessions"],
+    include_in_schema=False,
+)
 @app.post("/v1/sessions", response_model=SessionSummary, dependencies=auth, tags=["sessions"])
 def create_session(request: CreateSessionRequest) -> SessionSummary:
     return session_service.create_session(request)
 
 
+@app.get(
+    "/api/v1/sessions",
+    response_model=list[SessionSummary],
+    dependencies=auth,
+    tags=["sessions"],
+    include_in_schema=False,
+)
 @app.get("/v1/sessions", response_model=list[SessionSummary], dependencies=auth, tags=["sessions"])
 def list_sessions(limit: int = Query(default=20, ge=1, le=50)) -> list[SessionSummary]:
     if not ACTION_TOKEN:
@@ -129,6 +143,13 @@ def list_sessions(limit: int = Query(default=20, ge=1, le=50)) -> list[SessionSu
 
 
 @app.get(
+    "/api/v1/sessions/resume/{resume_code}",
+    response_model=SessionSummary,
+    dependencies=auth,
+    tags=["sessions"],
+    include_in_schema=False,
+)
+@app.get(
     "/v1/sessions/resume/{resume_code}",
     response_model=SessionSummary,
     dependencies=auth,
@@ -138,6 +159,13 @@ def resume_session(resume_code: str) -> SessionSummary:
     return session_service.resume_session(resume_code)
 
 
+@app.get(
+    "/api/v1/sessions/{session_id}",
+    response_model=SessionSummary,
+    dependencies=auth,
+    tags=["sessions"],
+    include_in_schema=False,
+)
 @app.get(
     "/v1/sessions/{session_id}",
     response_model=SessionSummary,
@@ -149,6 +177,13 @@ def get_session_status(session_id: str) -> SessionSummary:
 
 
 @app.put(
+    "/api/v1/sessions/{session_id}/questionnaire",
+    response_model=SessionSummary,
+    dependencies=auth,
+    tags=["bootstrap"],
+    include_in_schema=False,
+)
+@app.put(
     "/v1/sessions/{session_id}/questionnaire",
     response_model=SessionSummary,
     dependencies=auth,
@@ -158,6 +193,13 @@ def save_questionnaire(session_id: str, request: QuestionnaireRequest) -> Sessio
     return bootstrap_service.save_questionnaire(session_id, request)
 
 
+@app.post(
+    "/api/v1/sessions/{session_id}/bootstrap/parts",
+    response_model=BootstrapSaveResponse,
+    dependencies=auth,
+    tags=["bootstrap"],
+    include_in_schema=False,
+)
 @app.post(
     "/v1/sessions/{session_id}/bootstrap/parts",
     response_model=BootstrapSaveResponse,
@@ -172,6 +214,13 @@ def save_bootstrap_part(
 
 
 @app.post(
+    "/api/v1/sessions/{session_id}/bootstrap/validate",
+    response_model=BootstrapValidationResponse,
+    dependencies=auth,
+    tags=["bootstrap"],
+    include_in_schema=False,
+)
+@app.post(
     "/v1/sessions/{session_id}/bootstrap/validate",
     response_model=BootstrapValidationResponse,
     dependencies=auth,
@@ -181,6 +230,13 @@ def validate_bootstrap(session_id: str) -> BootstrapValidationResponse:
     return bootstrap_service.validate_session_bootstrap(session_id)
 
 
+@app.post(
+    "/api/v1/sessions/{session_id}/bootstrap/confirm",
+    response_model=SessionSummary,
+    dependencies=auth,
+    tags=["bootstrap"],
+    include_in_schema=False,
+)
 @app.post(
     "/v1/sessions/{session_id}/bootstrap/confirm",
     response_model=SessionSummary,
@@ -192,6 +248,13 @@ def confirm_bootstrap(session_id: str) -> SessionSummary:
 
 
 @app.post(
+    "/api/v1/sessions/{session_id}/turns",
+    response_model=PrepareTurnResponse,
+    dependencies=auth,
+    tags=["turns"],
+    include_in_schema=False,
+)
+@app.post(
     "/v1/sessions/{session_id}/turns",
     response_model=PrepareTurnResponse,
     dependencies=auth,
@@ -201,6 +264,13 @@ def prepare_turn(session_id: str, request: PrepareTurnRequest) -> PrepareTurnRes
     return turn_service.prepare_turn(session_id, request)
 
 
+@app.get(
+    "/api/v1/sessions/{session_id}/turns/{turn_id}/chunks/{chunk_index}",
+    response_model=PrepareTurnResponse,
+    dependencies=auth,
+    tags=["turns"],
+    include_in_schema=False,
+)
 @app.get(
     "/v1/sessions/{session_id}/turns/{turn_id}/chunks/{chunk_index}",
     response_model=PrepareTurnResponse,
@@ -216,6 +286,13 @@ def get_turn_chunk(
 
 
 @app.post(
+    "/api/v1/sessions/{session_id}/turns/{turn_id}/commit",
+    response_model=TurnReceipt,
+    dependencies=auth,
+    tags=["turns"],
+    include_in_schema=False,
+)
+@app.post(
     "/v1/sessions/{session_id}/turns/{turn_id}/commit",
     response_model=TurnReceipt,
     dependencies=auth,
@@ -229,6 +306,13 @@ def commit_turn(
     return turn_service.commit_turn(session_id, turn_id, request)
 
 
+@app.post(
+    "/api/v1/sessions/{session_id}/turns/{turn_id}/abort",
+    response_model=AbortTurnResponse,
+    dependencies=auth,
+    tags=["turns"],
+    include_in_schema=False,
+)
 @app.post(
     "/v1/sessions/{session_id}/turns/{turn_id}/abort",
     response_model=AbortTurnResponse,
