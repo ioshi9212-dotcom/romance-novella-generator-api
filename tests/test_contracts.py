@@ -20,6 +20,7 @@ def test_action_schema_is_valid_and_has_expected_operations():
         if method in {"get", "post", "put", "patch", "delete"}
     }
     assert operation_ids == {
+        "getStartQuestionnaire",
         "createSession",
         "listSessions",
         "resumeSession",
@@ -33,14 +34,14 @@ def test_action_schema_is_valid_and_has_expected_operations():
         "commitTurn",
         "abortTurn",
     }
-    assert "getStartQuestionnaire" not in operation_ids
-
-
-def test_create_session_explains_that_questionnaire_is_instruction_owned():
+def test_start_questionnaire_is_a_real_compatibility_action():
     document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
-    operation = document["paths"]["/v1/sessions"]["post"]
-    assert "ask its questionnaire itself" in operation["description"]
-    assert "getStartQuestionnaire" in operation["description"]
+    operation = document["paths"]["/api/v1/start-questionnaire"]["get"]
+    assert operation["operationId"] == "getStartQuestionnaire"
+    assert "show" in operation["description"]
+
+    create_operation = document["paths"]["/v1/sessions"]["post"]
+    assert "getStartQuestionnaire first" in create_operation["description"]
 
 
 def test_all_action_operation_descriptions_fit_chatgpt_limit():
@@ -126,6 +127,8 @@ def test_custom_gpt_instruction_fits_limit_and_preserves_pov_presence_policy():
     assert "Do not make the POV passive furniture" in instruction
     assert "brief ordinary replies" in instruction
     assert "context_complete: true" in instruction
+    assert "call\n`getStartQuestionnaire`" in instruction
+    assert "Do not create\na session yet" in instruction
     assert "continuity_audit_required" not in instruction
 
 
