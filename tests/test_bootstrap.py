@@ -6,9 +6,10 @@ from app.config import SESSIONS_DIR
 from tests.conftest import activate_session, bootstrap_parts, create_session
 
 
-def test_missing_optional_character_fields_are_warnings(client, auth_headers):
+def test_missing_generated_character_fields_require_director_repair(client, auth_headers):
     session_id = create_session(client, auth_headers)
     parts = bootstrap_parts("W")
+    npc_save = None
     for part in parts:
         if part.get("part_id") == "npc":
             part["content"].pop("voice")
@@ -18,12 +19,52 @@ def test_missing_optional_character_fields_are_warnings(client, auth_headers):
             json=part,
         )
         assert response.status_code == 200, response.text
+        if part.get("part_id") == "npc":
+            npc_save = response.json()
+    assert npc_save is not None
+    assert "Director must invent character.npc.voice before confirmation" in npc_save["warnings"]
     validation = client.post(
         f"/v1/sessions/{session_id}/bootstrap/validate",
         headers=auth_headers,
     ).json()
-    assert validation["ready"] is True
-    assert "character.npc.voice is not specified" in validation["warnings"]
+    assert validation["ready"] is False
+    repair = "character.npc.voice must be invented and saved by the director"
+    assert repair in validation["errors"]
+    assert repair in validation["director_repairs"]
+    assert validation["user_questions"] == []
+    assert validation["next_action"] == "repair_bootstrap"
+
+    repaired = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/parts",
+        headers=auth_headers,
+        json={
+            "part_type": "character",
+            "part_id": "npc",
+            "merge": True,
+            "content": json.dumps(
+                {"voice": {"style": "спокойный, без лишней откровенности"}},
+                ensure_ascii=False,
+            ),
+        },
+    )
+    assert repaired.status_code == 200, repaired.text
+    assert repaired.json()["merged"] is True
+    after_repair = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/validate",
+        headers=auth_headers,
+    ).json()
+    assert after_repair["ready"] is True
+    assert after_repair["next_action"] == "show_review"
+    confirmation = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/confirm",
+        headers=auth_headers,
+    )
+    assert confirmation.status_code == 200, confirmation.text
+    assert confirmation.json()["status"] == "active"
+    saved_card = json.loads(
+        (SESSIONS_DIR / session_id / "state" / "characters" / "npc.json").read_text()
+    )
+    assert saved_card["voice"]["style"] == "спокойный, без лишней откровенности"
 
 
 def test_hidden_keys_cannot_enter_public_review(client, auth_headers):
@@ -99,7 +140,7 @@ def test_bootstrap_part_rejects_invalid_json_text_content(client, auth_headers):
     assert response.status_code == 422
 
 
-def test_bootstrap_requires_session_presentation_settings(client, auth_headers):
+def test_missing_session_presentation_uses_safe_defaults(client, auth_headers):
     session_id = create_session(client, auth_headers)
     parts = bootstrap_parts("FORMAT")
     for part in parts:
@@ -116,8 +157,160 @@ def test_bootstrap_requires_session_presentation_settings(client, auth_headers):
         headers=auth_headers,
     )
     assert validation.status_code == 200
-    assert validation.json()["ready"] is False
-    assert "profile.presentation is required" in validation.json()["errors"]
+    assert validation.json()["ready"] is True
+    root = SESSIONS_DIR / session_id
+    profile = json.loads((root / "bootstrap" / "draft" / "profile.json").read_text())
+    assert profile["presentation"]["scene_body_min_chars"] == 1500
+    assert profile["presentation"]["footer_relationships"] is True
+
+
+def test_long_questionnaire_json_text_normalization_and_retry_are_safe(client, auth_headers):
+    session_id = create_session(client, auth_headers)
+    raw_answers = "Романтика, современный город. " + "я" * 60000
+    payload = {
+        "phase": "initial",
+        "raw_answers": raw_answers,
+        "normalized": json.dumps({"genre": "романтика"}, ensure_ascii=False),
+        "unknown_fields": "внешность второстепенного персонажа",
+    }
+
+    first = client.put(
+        f"/v1/sessions/{session_id}/questionnaire",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "building"
+    assert first.json()["questionnaire_entry_count"] == 1
+    assert first.json()["last_questionnaire_entry_id"]
+
+    retry = client.put(
+        f"/v1/sessions/{session_id}/questionnaire",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["questionnaire_entry_count"] == 1
+    assert retry.json()["last_questionnaire_entry_id"] == first.json()[
+        "last_questionnaire_entry_id"
+    ]
+
+    questionnaire = json.loads(
+        (SESSIONS_DIR / session_id / "bootstrap" / "questionnaire.json").read_text()
+    )
+    entry = questionnaire["entries"][0]
+    assert entry["raw_answers"] == raw_answers
+    assert entry["normalized"] == {"genre": "романтика"}
+    assert entry["unknown_fields"] == ["внешность второстепенного персонажа"]
+    assert questionnaire["completion_policy"]["ordinary_missing_fields"] == (
+        "director_invents_and_saves"
+    )
+
+
+def test_only_material_contradictions_request_user_clarification(client, auth_headers):
+    session_id = create_session(client, auth_headers)
+    response = client.put(
+        f"/v1/sessions/{session_id}/questionnaire",
+        headers=auth_headers,
+        json={
+            "phase": "initial",
+            "raw_answers": "Пусть остальное генератор придумает сам",
+            "unknown_fields": ["точная дата", "имена NPC", "место"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "building"
+
+    conflicted_session = create_session(client, auth_headers)
+    conflicted = client.put(
+        f"/v1/sessions/{conflicted_session}/questionnaire",
+        headers=auth_headers,
+        json={
+            "phase": "initial",
+            "raw_answers": "Рейтинг одновременно 12+ и максимально откровенный 18+",
+            "contradictions": "Какой рейтинг считать обязательным?",
+        },
+    )
+    assert conflicted.status_code == 200
+    assert conflicted.json()["status"] == "clarification"
+    validation = client.post(
+        f"/v1/sessions/{conflicted_session}/bootstrap/validate",
+        headers=auth_headers,
+    ).json()
+    assert validation["next_action"] == "ask_user"
+    assert validation["user_questions"] == ["Какой рейтинг считать обязательным?"]
+
+
+def test_bootstrap_merge_preserves_existing_generated_and_user_fields(client, auth_headers):
+    session_id = create_session(client, auth_headers)
+    initial = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/parts",
+        headers=auth_headers,
+        json={
+            "part_type": "profile",
+            "content": json.dumps(
+                {
+                    "title": "Гроза",
+                    "genre": ["романтика", "мистика"],
+                    "tone": ["напряжённый"],
+                    "pov_id": "emily",
+                    "boundaries": [],
+                    "start": {"situation": "утро перед сменой"},
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+    assert initial.status_code == 200, initial.text
+    repair = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/parts",
+        headers=auth_headers,
+        json={
+            "part_type": "profile",
+            "merge": True,
+            "content": json.dumps(
+                {"prose_style": {"pace": "slow"}},
+                ensure_ascii=False,
+            ),
+        },
+    )
+    assert repair.status_code == 200, repair.text
+    profile = json.loads(
+        (SESSIONS_DIR / session_id / "bootstrap" / "draft" / "profile.json").read_text()
+    )
+    assert profile["title"] == "Гроза"
+    assert profile["genre"] == ["романтика", "мистика"]
+    assert profile["boundaries"] == []
+    assert profile["prose_style"]["pace"] == "slow"
+    assert profile["prose_style"]["mode"] == "serious_literary"
+
+
+def test_invalid_initial_relationship_is_rejected_before_confirmation(client, auth_headers):
+    session_id = create_session(client, auth_headers)
+    response = client.post(
+        f"/v1/sessions/{session_id}/bootstrap/parts",
+        headers=auth_headers,
+        json={
+            "part_type": "character",
+            "part_id": "npc",
+            "content": json.dumps(
+                {
+                    "id": "npc",
+                    "name": "Николь",
+                    "initial_relationships": [
+                        {
+                            "to_character_id": "pov",
+                            "metric": "trust",
+                            "value": "сильное доверие",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+    assert response.status_code == 422
+    assert "must be an integer" in response.text
 
 
 def test_confirmation_creates_per_session_state(client, auth_headers):
@@ -126,6 +319,8 @@ def test_confirmation_creates_per_session_state(client, auth_headers):
     assert json.loads((root / "state" / "lore.json").read_text())["summary"] == "Уникальный мир C"
     assert (root / "state" / "characters" / "pov.json").is_file()
     assert (root / "state" / "knowledge" / "npc.json").is_file()
+    source = json.loads((root / "state" / "questionnaire_source.json").read_text())
+    assert source["entries"][0]["raw_answers"] == "Романтика в современном городе"
     assert not (root / "state" / "canon_canvas.json").exists()
 
 

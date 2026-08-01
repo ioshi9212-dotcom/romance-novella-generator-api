@@ -21,6 +21,28 @@ PUBLIC_REVIEW_FORBIDDEN_KEYS = {
     "planned_betrayals",
 }
 
+CHARACTER_OBJECT_FIELDS = (
+    "appearance",
+    "voice",
+    "personality",
+    "goals",
+    "work",
+    "schedule",
+)
+CHARACTER_LIST_FIELDS = (
+    "aliases",
+    "values",
+    "flaws",
+    "fears",
+    "boundaries",
+    "skills",
+    "past",
+    "connections",
+    "tags",
+    "starting_knowledge",
+    "initial_relationships",
+)
+
 
 def _has_forbidden_key(value: Any) -> bool:
     if isinstance(value, dict):
@@ -47,17 +69,77 @@ def validate_part_content(
             detail=f"Bootstrap part is too large: {len(serialized)} > {limit}",
         )
     warnings: list[str] = []
+    if part_type == BootstrapPartType.PROFILE:
+        for field in ("naming", "presentation", "prose_style", "start"):
+            if field in content and not isinstance(content[field], dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"profile.{field} must be an object",
+                )
+        for field in ("genre", "tone"):
+            if field in content and not isinstance(content[field], (str, list)):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"profile.{field} must be text or a list",
+                )
+        if "boundaries" in content and not isinstance(content["boundaries"], (dict, list)):
+            raise HTTPException(
+                status_code=422,
+                detail="profile.boundaries must be an object or a list",
+            )
     if part_type == BootstrapPartType.CHARACTER:
-        assert part_id is not None
+        if part_id is None:
+            raise HTTPException(status_code=422, detail="part_id is required for character")
         safe_id(part_id, "character_id")
         content_id = str(content.get("id") or content.get("character_id") or part_id)
         if content_id != part_id:
             raise HTTPException(status_code=422, detail="Character id does not match part_id")
         if not content.get("name"):
             raise HTTPException(status_code=422, detail="Character requires name")
-        for optional in ("appearance", "personality", "goals", "voice"):
-            if not content.get(optional):
-                warnings.append(f"character.{part_id}.{optional} is not specified")
+        for field in CHARACTER_OBJECT_FIELDS:
+            value = content.get(field)
+            if not isinstance(value, dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"character.{part_id}.{field} must be an object",
+                )
+            if field in {"appearance", "personality", "goals", "voice"} and not value:
+                warnings.append(
+                    f"Director must invent character.{part_id}.{field} before confirmation"
+                )
+        for field in CHARACTER_LIST_FIELDS:
+            value = content.get(field)
+            if not isinstance(value, list):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"character.{part_id}.{field} must be a list",
+                )
+        for index, item in enumerate(content.get("starting_knowledge", [])):
+            if not isinstance(item, dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"character.{part_id}.starting_knowledge[{index}] must be an object",
+                )
+        for index, item in enumerate(content.get("initial_relationships", [])):
+            if not isinstance(item, dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"character.{part_id}.initial_relationships[{index}] must be an object",
+                )
+            value = item.get("value", 0)
+            try:
+                int(value)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"character.{part_id}.initial_relationships[{index}].value "
+                        "must be an integer"
+                    ),
+                ) from exc
+    if part_type == BootstrapPartType.CURRENT:
+        if "pov_state" in content and not isinstance(content["pov_state"], dict):
+            raise HTTPException(status_code=422, detail="current.pov_state must be an object")
     if part_type == BootstrapPartType.REVIEW and _has_forbidden_key(content):
         raise HTTPException(status_code=422, detail="Public review contains hidden-canon keys")
     return warnings
@@ -84,22 +166,17 @@ def validate_bootstrap(root: Path) -> BootstrapValidationResponse:
     character_files = sorted(characters_dir.glob("*.json")) if characters_dir.is_dir() else []
     character_ids = [path.stem for path in character_files]
 
-    for field in (
-        "title",
-        "genre",
-        "tone",
-        "pov_id",
-        "boundaries",
-        "start",
-        "naming",
-        "presentation",
-        "prose_style",
-    ):
+    for field in ("title", "genre", "tone", "pov_id", "start"):
         if "profile" not in missing and not profile.get(field):
-            errors.append(f"profile.{field} is required")
+            errors.append(f"profile.{field} must be invented and saved by the director")
+
+    if "profile" not in missing and "boundaries" not in profile:
+        errors.append("profile.boundaries must be saved; use an empty list when there are none")
 
     presentation = profile.get("presentation") or {}
-    if isinstance(presentation, dict):
+    if not isinstance(presentation, dict):
+        errors.append("profile.presentation must be an object")
+    else:
         minimum = presentation.get("scene_body_min_chars")
         maximum = presentation.get("scene_body_max_chars")
         if not isinstance(minimum, int) or not isinstance(maximum, int):
@@ -121,13 +198,17 @@ def validate_bootstrap(root: Path) -> BootstrapValidationResponse:
                 errors.append(f"profile.presentation.{field} is required")
 
     naming = profile.get("naming") or {}
-    if isinstance(naming, dict):
+    if not isinstance(naming, dict):
+        errors.append("profile.naming must be an object")
+    else:
         for field in ("origin", "script", "avoid_russian_names"):
             if field not in naming:
                 errors.append(f"profile.naming.{field} is required")
 
     prose_style = profile.get("prose_style") or {}
-    if isinstance(prose_style, dict):
+    if not isinstance(prose_style, dict):
+        errors.append("profile.prose_style must be an object")
+    else:
         for field in (
             "mode",
             "seriousness",
@@ -155,26 +236,65 @@ def validate_bootstrap(root: Path) -> BootstrapValidationResponse:
 
     for field in ("datetime", "location_id", "pov_state"):
         if "current" not in missing and not current.get(field):
-            errors.append(f"current.{field} is required")
+            errors.append(f"current.{field} must be invented and saved by the director")
+
+    if "current" not in missing and not isinstance(current.get("pov_state"), dict):
+        errors.append("current.pov_state must be an object")
 
     if review and _has_forbidden_key(review):
         errors.append("Public review contains hidden-canon keys")
+    if "review" not in missing and not review:
+        errors.append("review must be generated from the completed draft")
 
     for path in character_files:
         card = read_json(path, default={}) or {}
         if not card.get("name"):
             errors.append(f"character.{path.stem}.name is required")
-        for optional in ("appearance", "personality", "goals", "voice"):
-            if not card.get(optional):
-                warnings.append(f"character.{path.stem}.{optional} is not specified")
+        for field in ("appearance", "personality", "goals", "voice"):
+            if not isinstance(card.get(field), dict) or not card.get(field):
+                errors.append(
+                    f"character.{path.stem}.{field} must be invented and saved by the director"
+                )
 
-    ready = not missing and not errors
+    questionnaire = read_json(
+        root / "bootstrap" / "questionnaire.json",
+        default={"entries": []},
+    ) or {"entries": []}
+    questionnaire_entries = questionnaire.get("entries", [])
+    last_entry = (
+        questionnaire_entries[-1]
+        if isinstance(questionnaire_entries, list)
+        and questionnaire_entries
+        and isinstance(questionnaire_entries[-1], dict)
+        else {}
+    )
+    user_questions = [
+        str(item).strip()
+        for item in (last_entry.get("contradictions", []) or [])
+        if str(item).strip()
+    ]
+    director_repairs = [
+        *(f"Create missing bootstrap part: {name}" for name in missing),
+        *errors,
+    ]
+
+    ready = not missing and not errors and not user_questions
+    next_action = (
+        "ask_user"
+        if user_questions
+        else "repair_bootstrap"
+        if director_repairs
+        else "show_review"
+    )
     return BootstrapValidationResponse(
         ready=ready,
         missing=missing,
         errors=errors,
         warnings=warnings,
         character_ids=character_ids,
+        director_repairs=director_repairs,
+        user_questions=user_questions,
+        next_action=next_action,
     )
 
 
