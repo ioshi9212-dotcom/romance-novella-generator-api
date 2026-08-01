@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 
 from app.config import SESSIONS_DIR
-from tests.conftest import activate_session, bootstrap_parts, create_session
+from tests.conftest import (
+    activate_session,
+    bootstrap_parts,
+    create_empty_legacy_session,
+    create_session,
+)
 
 
 def _save_minimal_questionnaire(client, headers, session_id):
@@ -178,7 +183,7 @@ def test_missing_session_presentation_uses_safe_defaults(client, auth_headers):
 
 
 def test_long_questionnaire_json_text_normalization_and_retry_are_safe(client, auth_headers):
-    session_id = create_session(client, auth_headers)
+    session_id = create_empty_legacy_session(client, auth_headers)
     raw_answers = "Романтика, современный город. " + "я" * 60000
     payload = {
         "phase": "initial",
@@ -219,7 +224,7 @@ def test_long_questionnaire_json_text_normalization_and_retry_are_safe(client, a
         "director_invents_and_saves"
     )
 
-    recovery_session = create_session(client, auth_headers)
+    recovery_session = create_empty_legacy_session(client, auth_headers)
     malformed = client.put(
         f"/v1/sessions/{recovery_session}/questionnaire",
         headers=auth_headers,
@@ -242,7 +247,7 @@ def test_long_questionnaire_json_text_normalization_and_retry_are_safe(client, a
 
 
 def test_only_material_contradictions_request_user_clarification(client, auth_headers):
-    session_id = create_session(client, auth_headers)
+    session_id = create_empty_legacy_session(client, auth_headers)
     response = client.put(
         f"/v1/sessions/{session_id}/questionnaire",
         headers=auth_headers,
@@ -255,7 +260,7 @@ def test_only_material_contradictions_request_user_clarification(client, auth_he
     assert response.status_code == 200
     assert response.json()["status"] == "building"
 
-    conflicted_session = create_session(client, auth_headers)
+    conflicted_session = create_empty_legacy_session(client, auth_headers)
     conflicted = client.put(
         f"/v1/sessions/{conflicted_session}/questionnaire",
         headers=auth_headers,
@@ -348,7 +353,7 @@ def test_invalid_initial_relationship_is_rejected_before_confirmation(client, au
 
 
 def test_normalized_questionnaire_fact_must_reach_bootstrap_state(client, auth_headers):
-    session_id = create_session(client, auth_headers)
+    session_id = create_empty_legacy_session(client, auth_headers)
     questionnaire = client.put(
         f"/v1/sessions/{session_id}/questionnaire",
         headers=auth_headers,

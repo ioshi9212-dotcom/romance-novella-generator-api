@@ -174,8 +174,8 @@ pytest
 
 ```text
 getStartQuestionnaire for a bare start request
-createSession
-saveQuestionnaire(initial)
+createSession with the complete initial questionnaire
+saveQuestionnaire(initial) only to repair a legacy empty session
 saveQuestionnaire(clarification) only for material contradictions
 saveBootstrapPart x N
 validateBootstrap

@@ -6,8 +6,14 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from app.models import CreateSessionRequest, SessionStatus, SessionSummary
-from app.policies import QUESTIONNAIRE_COMPLETION_POLICY
+from app.models import (
+    CreateSessionRequest,
+    LegacyCreateSessionRequest,
+    QuestionnaireRequest,
+    SessionStatus,
+    SessionSummary,
+)
+from app.questionnaire import new_questionnaire_document
 from app.storage import (
     SESSIONS_DIR,
     atomic_write_json,
@@ -33,7 +39,9 @@ def _resume_code() -> str:
     return uuid4().hex[:12].upper()
 
 
-def create_session(request: CreateSessionRequest) -> SessionSummary:
+def create_session(
+    request: CreateSessionRequest | LegacyCreateSessionRequest,
+) -> SessionSummary:
     session_id = _new_session_id()
     root = session_root(session_id)
     root.mkdir(parents=True, exist_ok=False)
@@ -47,11 +55,29 @@ def create_session(request: CreateSessionRequest) -> SessionSummary:
     ):
         (root / directory).mkdir(parents=True, exist_ok=True)
     now = utc_now()
+    initial_questionnaire = (
+        QuestionnaireRequest(
+            phase="initial",
+            raw_answers=request.raw_answers,
+            normalized=request.normalized,
+            unknown_fields=request.unknown_fields,
+            contradictions=request.contradictions,
+        )
+        if isinstance(request, CreateSessionRequest)
+        else None
+    )
     metadata = {
         "session_id": session_id,
         "resume_code": _resume_code(),
         "title": (request.title or "Новая новелла").strip(),
-        "status": SessionStatus.QUESTIONNAIRE.value,
+        "status": (
+            SessionStatus.CLARIFICATION.value
+            if initial_questionnaire is not None
+            and initial_questionnaire.contradictions
+            else SessionStatus.BUILDING.value
+            if initial_questionnaire is not None
+            else SessionStatus.QUESTIONNAIRE.value
+        ),
         "schema_version": SCHEMA_VERSION,
         "rules_version": RULES_VERSION,
         "state_version": 0,
@@ -62,10 +88,7 @@ def create_session(request: CreateSessionRequest) -> SessionSummary:
     atomic_write_json(root / "session.json", metadata)
     atomic_write_json(
         root / "bootstrap" / "questionnaire.json",
-        {
-            "completion_policy": QUESTIONNAIRE_COMPLETION_POLICY,
-            "entries": [],
-        },
+        new_questionnaire_document(initial_questionnaire),
     )
     (root / "journal.jsonl").write_text("", encoding="utf-8")
     return get_session_summary(session_id)

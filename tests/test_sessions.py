@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+
 import app.main as main_module
+from app.config import SESSIONS_DIR
 
 from tests.conftest import bootstrap_parts, create_session
 
@@ -14,9 +17,65 @@ def test_legacy_x_api_key_authentication(client):
     response = client.post(
         "/v1/sessions",
         headers={"X-API-Key": "test-action-token"},
-        json={"title": "Совместимость"},
+        json={
+            "title": "Совместимость",
+            "raw_answers": "Романтика в современном городе",
+        },
     )
     assert response.status_code == 200, response.text
+
+
+def test_canonical_creation_requires_and_saves_questionnaire_atomically(
+    client,
+    auth_headers,
+):
+    missing = client.post(
+        "/v1/sessions",
+        headers=auth_headers,
+        json={"title": "Нельзя оставить пустой"},
+    )
+    assert missing.status_code == 422, missing.text
+
+    raw_answers = (
+        "История у моря. Эмили, 21 год."
+        "\n\n---\n\n"
+        "Плотная живая проза. Нижний блок — только значимое."
+    )
+    created = client.post(
+        "/v1/sessions",
+        headers=auth_headers,
+        json={
+            "title": "Скоро начнётся гроза",
+            "raw_answers": raw_answers,
+            "normalized": {
+                "pov": {"name": "Эмили", "age": 21},
+                "prose": "плотная живая",
+            },
+        },
+    )
+    assert created.status_code == 200, created.text
+    summary = created.json()
+    assert summary["status"] == "building"
+    assert summary["questionnaire_entry_count"] == 1
+    assert summary["last_questionnaire_entry_id"]
+
+    status = client.get(
+        f"/v1/sessions/{summary['session_id']}",
+        headers=auth_headers,
+    )
+    assert status.status_code == 200, status.text
+    assert status.json()["questionnaire_entry_count"] == 1
+
+    stored = json.loads(
+        (
+            SESSIONS_DIR
+            / summary["session_id"]
+            / "bootstrap"
+            / "questionnaire.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert stored["entries"][0]["raw_answers"] == raw_answers
+    assert stored["entries"][0]["normalized"]["pov"]["age"] == 21
 
 
 def test_start_questionnaire_supports_legacy_and_current_paths(client, auth_headers):
@@ -40,6 +99,8 @@ def test_legacy_api_prefix_supports_the_current_action_flow(client, auth_headers
     assert created.status_code == 200, created.text
     session = created.json()
     session_id = session["session_id"]
+    assert session["status"] == "questionnaire"
+    assert session["questionnaire_entry_count"] == 0
 
     listed = client.get("/api/v1/sessions", headers=auth_headers)
     assert listed.status_code == 200, listed.text
@@ -131,7 +192,8 @@ def test_create_list_and_resume(client, auth_headers):
     resumed = client.get(f"/v1/sessions/{session_id}", headers=auth_headers)
     assert resumed.status_code == 200
     assert resumed.json()["title"] == "Моя история"
-    assert resumed.json()["status"] == "questionnaire"
+    assert resumed.json()["status"] == "building"
+    assert resumed.json()["questionnaire_entry_count"] == 1
 
 
 def test_unsafe_session_path_is_rejected(client, auth_headers):
@@ -141,7 +203,13 @@ def test_unsafe_session_path_is_rejected(client, auth_headers):
 
 def test_keyless_mode_uses_private_resume_code_and_blocks_listing(client, monkeypatch):
     monkeypatch.setattr(main_module, "ACTION_TOKEN", "")
-    created = client.post("/v1/sessions", json={"title": "Без ключа"})
+    created = client.post(
+        "/v1/sessions",
+        json={
+            "title": "Без ключа",
+            "raw_answers": "Романтика в современном городе",
+        },
+    )
     assert created.status_code == 200, created.text
     payload = created.json()
     assert len(payload["resume_code"]) == 12
