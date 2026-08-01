@@ -142,7 +142,8 @@ Enable Railway Volume backups. Create a manual backup before future state-schema
    ```
 
 5. Select no authentication.
-6. Test `createSession`, `saveQuestionnaire`, and `resumeSession` in Preview.
+6. Test `getStartQuestionnaire`, `createSession`, `saveQuestionnaire`, and
+   `resumeSession` in Preview.
 
 Repository deployment updates the hosted Action schema, but it does not replace
 the text already pasted into an existing Custom GPT. After deploying a version
@@ -172,6 +173,7 @@ pytest
 ### New novel
 
 ```text
+getStartQuestionnaire for a bare start request
 createSession
 saveQuestionnaire(initial)
 saveQuestionnaire(clarification) only for material contradictions

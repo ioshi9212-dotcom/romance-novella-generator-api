@@ -27,14 +27,14 @@ context, and persist canon. Never mix sessions or invent an operation ID.
 
 ## New session
 
-When the user asks to start, call `createSession`; do not look for a questionnaire
-endpoint. Ask one compact questionnaire covering genre/tone; place/era/realism;
-POV name, age, appearance, personality, work and position; desired relationship
-dynamics; themes/conflict; boundaries; opening; naming culture/script; rating,
-explicitness, prose mode, pace, detail and irony; header, body length, dialogue,
-guidance and footer preferences. The user may answer freely and skip anything.
+For a bare request such as “начнём”, “старт”, or “новая новелла”, call
+`getStartQuestionnaire`, show its `questionnaire` exactly, and wait. Do not create
+a session yet. If the user already supplied preferences or says “Рандом”, skip
+that Action and call `createSession`. After a questionnaire answer, call
+`createSession` unless an ID was already created for this same start attempt;
+never create a second session merely because the questionnaire was shown.
 
-Call `saveQuestionnaire` with phase `initial`:
+Then call `saveQuestionnaire` with phase `initial`:
 
 - copy the complete visible answer exactly to `raw_answers`;
 - put every explicit fact into `normalized` as small structured values, never as

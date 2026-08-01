@@ -38,6 +38,11 @@ class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=160)
 
 
+class StartQuestionnaireResponse(BaseModel):
+    version: str
+    questionnaire: str
+
+
 class SessionSummary(BaseModel):
     session_id: str
     resume_code: str

@@ -1,21 +1,35 @@
 openapi: 3.1.0
 info:
   title: Novel Runtime Actions
-  version: 1.1.0
+  version: 1.2.0
   description: Persistent file-backed sessions for a Custom GPT novella director.
 servers:
   - url: https://web-production-4310e.up.railway.app
 paths:
+  /api/v1/start-questionnaire:
+    get:
+      operationId: getStartQuestionnaire
+      summary: Load the visible starter questionnaire
+      description: >-
+        Returns the exact questionnaire to show when the user asks to start
+        without giving story preferences. Show it verbatim, then wait for the
+        answer before creating a session. It does not read or mix session state.
+      x-openai-isConsequential: false
+      responses:
+        "200":
+          description: Visible starter questionnaire
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartQuestionnaireResponse"
   /v1/sessions:
     post:
       operationId: createSession
       summary: Create an empty novel session
       description: >-
-        Creates a session before the questionnaire. After success, the Custom
-        GPT must ask its questionnaire itself from its instructions. There is
-        no endpoint for retrieving questionnaire questions. Never call
-        getStartQuestionnaire. This operation never copies lore or characters
-        from another session.
+        Creates one isolated session after the user provides starter preferences
+        or requests random generation. For a bare start request, call
+        getStartQuestionnaire first. Never copy state from another session.
       x-openai-isConsequential: false
       requestBody:
         required: true
@@ -358,6 +372,17 @@ paths:
                 additionalProperties: false
 components:
   schemas:
+    StartQuestionnaireResponse:
+      type: object
+      required: [version, questionnaire]
+      properties:
+        version:
+          type: string
+        questionnaire:
+          type: string
+          maxLength: 12000
+          description: Show this Markdown text to the user exactly as returned.
+      additionalProperties: false
     CreateSessionRequest:
       type: object
       properties:

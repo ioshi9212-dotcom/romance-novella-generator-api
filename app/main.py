@@ -25,6 +25,7 @@ from app.models import (
     PrepareTurnResponse,
     QuestionnaireRequest,
     SessionSummary,
+    StartQuestionnaireResponse,
     TurnReceipt,
 )
 
@@ -64,7 +65,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Novel Runtime API",
-    version="1.1.0",
+    version="1.2.0",
     description="Persistent session runtime for a Custom GPT novella generator.",
     docs_url=None if ENVIRONMENT == "production" else "/docs",
     redoc_url=None if ENVIRONMENT == "production" else "/redoc",
@@ -89,6 +90,27 @@ def action_schema() -> PlainTextResponse:
 
 
 auth = [Depends(require_action_token)]
+
+
+@app.get(
+    "/api/v1/start-questionnaire",
+    response_model=StartQuestionnaireResponse,
+    dependencies=auth,
+    tags=["bootstrap"],
+    operation_id="getStartQuestionnaire",
+)
+@app.get(
+    "/v1/start-questionnaire",
+    response_model=StartQuestionnaireResponse,
+    dependencies=auth,
+    tags=["bootstrap"],
+    include_in_schema=False,
+)
+def get_start_questionnaire() -> StartQuestionnaireResponse:
+    questionnaire = (ROOT_DIR / "gpt" / "start_questionnaire.md").read_text(
+        encoding="utf-8"
+    )
+    return StartQuestionnaireResponse(version="2.0", questionnaire=questionnaire)
 
 
 @app.post("/v1/sessions", response_model=SessionSummary, dependencies=auth, tags=["sessions"])

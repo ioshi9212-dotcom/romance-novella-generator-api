@@ -19,6 +19,18 @@ def test_legacy_x_api_key_authentication(client):
     assert response.status_code == 200, response.text
 
 
+def test_start_questionnaire_supports_legacy_and_current_paths(client, auth_headers):
+    legacy = client.get("/api/v1/start-questionnaire", headers=auth_headers)
+    current = client.get("/v1/start-questionnaire", headers=auth_headers)
+
+    assert legacy.status_code == 200, legacy.text
+    assert current.status_code == 200, current.text
+    assert legacy.json() == current.json()
+    assert legacy.json()["version"] == "2.0"
+    assert "Стартовая анкета" in legacy.json()["questionnaire"]
+    assert "Рандом" in legacy.json()["questionnaire"]
+
+
 def test_create_list_and_resume(client, auth_headers):
     session_id = create_session(client, auth_headers, "Моя история")
     listed = client.get("/v1/sessions", headers=auth_headers)
