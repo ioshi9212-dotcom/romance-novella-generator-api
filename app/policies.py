@@ -6,6 +6,8 @@ from typing import Any
 QUESTIONNAIRE_COMPLETION_POLICY: dict[str, Any] = {
     "preserve_explicit_user_data": True,
     "user_may_skip_questionnaire_items": True,
+    "draft_before_confirmation": "conversation_only",
+    "persist_only_after_explicit_confirmation": True,
     "ordinary_missing_fields": "director_invents_and_saves",
     "ask_user_only_for": [
         "material contradictions",

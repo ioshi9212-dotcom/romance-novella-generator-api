@@ -54,6 +54,7 @@ class SessionSummary(BaseModel):
     bootstrap_warnings: list[str] = Field(default_factory=list)
     questionnaire_entry_count: int = 0
     last_questionnaire_entry_id: str | None = None
+    questionnaire_confirmed: bool = False
     review: dict[str, Any] | None = None
     current_summary: dict[str, Any] | None = None
 
@@ -111,6 +112,25 @@ class QuestionnaireRequest(QuestionnaireFields):
 
 class CreateSessionRequest(QuestionnaireFields):
     title: str | None = Field(default=None, max_length=160)
+    confirmed_questionnaire: str = Field(min_length=40, max_length=30000)
+    questionnaire_confirmed: Literal[True]
+
+    @field_validator("confirmed_questionnaire")
+    @classmethod
+    def require_visible_questionnaire_text(cls, value: str) -> str:
+        if len(value.strip()) < 40:
+            raise ValueError("confirmed_questionnaire must contain the filled questionnaire")
+        return value
+
+    @model_validator(mode="after")
+    def require_resolved_confirmed_questionnaire(self) -> "CreateSessionRequest":
+        if not self.normalized:
+            raise ValueError("normalized must contain the parsed questionnaire facts")
+        if self.contradictions:
+            raise ValueError(
+                "contradictions must be resolved before the questionnaire is confirmed"
+            )
+        return self
 
 
 class LegacyCreateSessionRequest(BaseModel):

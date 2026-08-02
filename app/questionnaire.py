@@ -10,11 +10,19 @@ from app.storage import json_text, utc_now
 
 def new_questionnaire_document(
     request: QuestionnaireRequest | None = None,
+    *,
+    confirmed_questionnaire: str | None = None,
 ) -> dict[str, Any]:
     document: dict[str, Any] = {
         "completion_policy": QUESTIONNAIRE_COMPLETION_POLICY,
         "entries": [],
     }
+    if confirmed_questionnaire is not None:
+        document["confirmation"] = {
+            "status": "confirmed",
+            "confirmed_at": utc_now(),
+            "questionnaire": confirmed_questionnaire,
+        }
     if request is not None:
         append_questionnaire_entry(document, request)
     return document
