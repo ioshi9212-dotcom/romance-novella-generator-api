@@ -82,13 +82,21 @@ def create_session(
         "rules_version": RULES_VERSION,
         "state_version": 0,
         "turn_number": 0,
+        "questionnaire_confirmed": isinstance(request, CreateSessionRequest),
         "created_at": now,
         "updated_at": now,
     }
     atomic_write_json(root / "session.json", metadata)
     atomic_write_json(
         root / "bootstrap" / "questionnaire.json",
-        new_questionnaire_document(initial_questionnaire),
+        new_questionnaire_document(
+            initial_questionnaire,
+            confirmed_questionnaire=(
+                request.confirmed_questionnaire
+                if isinstance(request, CreateSessionRequest)
+                else None
+            ),
+        ),
     )
     (root / "journal.jsonl").write_text("", encoding="utf-8")
     return get_session_summary(session_id)
@@ -123,6 +131,12 @@ def get_session_summary(session_id: str) -> SessionSummary:
             if questionnaire_entries and isinstance(questionnaire_entries[-1], dict)
             else {}
         )
+        questionnaire_confirmation = questionnaire.get("confirmation", {})
+        questionnaire_confirmed = (
+            isinstance(questionnaire_confirmation, dict)
+            and questionnaire_confirmation.get("status") == "confirmed"
+        )
+        metadata["questionnaire_confirmed"] = questionnaire_confirmed
         review = read_json(root / "bootstrap" / "draft" / "review.json", default=None)
         current = read_json(root / "state" / "current.json", default=None)
         current_summary: dict[str, Any] | None = None

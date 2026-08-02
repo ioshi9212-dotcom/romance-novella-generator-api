@@ -19,8 +19,9 @@ GitHub contains only universal code, rules, schemas, and blank templates. Genera
 
 - one independent directory per session;
 - draft bootstrap is separate from confirmed state;
+- questionnaire drafts stay in chat and are stored only after explicit approval;
+- the exact approved questionnaire and raw answers are stored atomically;
 - optional bootstrap omissions are warnings, not fatal errors;
-- questionnaire answers are stored idempotently and may be incomplete;
 - ordinary questionnaire gaps are director repairs, not mandatory user questions;
 - bootstrap repairs can be deep-merged without erasing saved fields;
 - normalized explicit questionnaire facts must be represented in generated state;
@@ -174,13 +175,17 @@ pytest
 
 ```text
 getStartQuestionnaire for a bare start request
-createSession with the complete initial questionnaire
+user replies in free text (one or more messages)
+GPT renders the complete filled questionnaire in chat
+GPT asks only material clarifications and renders the full revision
+user explicitly approves the displayed questionnaire
+createSession with that exact questionnaire, raw answers, and confirmation=true
 saveQuestionnaire(initial) only to repair a legacy empty session
-saveQuestionnaire(clarification) only for material contradictions
 saveBootstrapPart x N
 validateBootstrap
 saveBootstrapPart(merge=true) until next_action=show_review
 show public review
+wait for separate approval of the generated novel preview
 confirmBootstrap
 ```
 

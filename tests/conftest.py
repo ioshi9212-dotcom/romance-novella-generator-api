@@ -40,6 +40,10 @@ def create_session(client: TestClient, headers: dict[str, str], title: str = "Т
             "title": title,
             "raw_answers": "Романтика в современном городе",
             "normalized": {"genre": "романтика"},
+            "confirmed_questionnaire": (
+                "Заполненная анкета\n1. История: романтика в современном городе"
+            ),
+            "questionnaire_confirmed": True,
         },
     )
     assert response.status_code == 200, response.text

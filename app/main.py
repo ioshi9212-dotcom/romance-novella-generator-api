@@ -66,7 +66,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Novel Runtime API",
-    version="1.3.0",
+    version="1.4.0",
     description="Persistent session runtime for a Custom GPT novella generator.",
     docs_url=None if ENVIRONMENT == "production" else "/docs",
     redoc_url=None if ENVIRONMENT == "production" else "/redoc",
@@ -111,7 +111,7 @@ def get_start_questionnaire() -> StartQuestionnaireResponse:
     questionnaire = (ROOT_DIR / "gpt" / "start_questionnaire.md").read_text(
         encoding="utf-8"
     )
-    return StartQuestionnaireResponse(version="2.0", questionnaire=questionnaire)
+    return StartQuestionnaireResponse(version="3.0", questionnaire=questionnaire)
 
 
 @app.post(

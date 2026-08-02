@@ -41,16 +41,25 @@ def test_start_questionnaire_is_a_real_compatibility_action():
     assert "show" in operation["description"]
 
     create_operation = document["paths"]["/v1/sessions"]["post"]
-    assert "same operation" in create_operation["description"]
-    assert "never ask the user to repeat" in create_operation["description"]
+    assert "explicitly approves" in create_operation["description"]
+    assert "Keep drafts" in create_operation["description"]
 
 
 def test_canonical_create_contract_requires_visible_questionnaire_answers():
     document = yaml.safe_load((ROOT / "openapi-actions.yaml").read_text(encoding="utf-8"))
     create_request = document["components"]["schemas"]["CreateSessionRequest"]
-    assert "raw_answers" in create_request["required"]
+    assert set(create_request["required"]) == {
+        "raw_answers",
+        "confirmed_questionnaire",
+        "questionnaire_confirmed",
+        "normalized",
+    }
     assert create_request["properties"]["raw_answers"]["maxLength"] == 100000
     assert "never summarize" in create_request["properties"]["raw_answers"]["description"]
+    assert create_request["properties"]["confirmed_questionnaire"]["minLength"] == 40
+    assert create_request["properties"]["confirmed_questionnaire"]["maxLength"] == 30000
+    assert create_request["properties"]["questionnaire_confirmed"]["enum"] == [True]
+    assert "empty" in create_request["properties"]["contradictions"]["description"]
 
 
 def test_all_action_operation_descriptions_fit_chatgpt_limit():
@@ -138,8 +147,12 @@ def test_custom_gpt_instruction_fits_limit_and_preserves_pov_presence_policy():
     assert "context_complete: true" in instruction
     assert "call\n`getStartQuestionnaire`" in instruction
     assert "Do not create\na session yet" in instruction
-    assert "Never create an empty canonical session" in instruction
-    assert "never ask the user to repeat them" in instruction
+    assert "Before\nquestionnaire approval, call no other Action" in instruction
+    assert "Заполненная анкета" in instruction
+    assert "Подтверждаешь эту анкету?" in instruction
+    assert "confirmed_questionnaire" in instruction
+    assert "surnames, unspecified appearances" in instruction
+    assert "without asking for retyping" in instruction
     assert "continuity_audit_required" not in instruction
 
 

@@ -19,7 +19,8 @@ Ask in one compact message:
     guidance blocks, state, relationships, and turn number.
 
 The user supplies preferences, not the whole plot. The user may answer freely
-and is never required to fill every item.
+in one or several prose messages and is never required to copy the numbered form
+or fill every item.
 
 Offer a compact prose-mode choice instead of demanding literary terminology:
 
@@ -39,19 +40,28 @@ do not mix unrelated Russian, English, Japanese, and invented names at random.
 
 ## Clarification
 
+Before creating a session, convert every visible answer into one user-facing
+questionnaire under the same numbered headings. Preserve explicit facts and mark
+ordinary gaps as director work; do not invent those values in the questionnaire
+draft. Show the complete draft. Ask all genuinely necessary clarification
+questions in one compact batch, merge the answers, and show the complete revised
+draft again. A correction is not confirmation. Wait for explicit approval of the
+current full questionnaire, and keep this draft only in the conversation until
+then.
+
 Ask only questions whose answers materially alter the story, resolve a genuine
 contradiction, or establish a boundary. Do not repeat answered questions.
 Unanswered ordinary fields are director work: invent concrete values and save
 them in bootstrap. Never return a validation repair to the user as a new
 question. Never reveal planned twists.
 
-Create the session and save the user's complete raw questionnaire answer in the
-same canonical Action call before building bootstrap. Do not summarize or
-shorten it. If the user supplied preferences across several visible messages,
-preserve each message verbatim and join them in chronological order. Never ask
-the user to type visible answers again. `saveQuestionnaire(initial)` exists only
-to repair a legacy empty session; use it immediately from visible chat context.
-An identical questionnaire retry must not create a second entry.
+Only after approval, create the session and save in the same canonical Action:
+the exact displayed questionnaire, a true confirmation flag, the complete raw
+answers, a non-empty normalization of explicit facts, ordinary gaps, and no
+unresolved contradictions. Do not summarize raw answers. Preserve visible messages
+verbatim in chronological order. Never ask the user to type visible answers
+again. `saveQuestionnaire(initial)` exists only to repair a legacy empty session.
+An identical retry must not create a second entry.
 
 Normalize every explicit answer into small structured values rather than one
 prose summary. Bootstrap validation checks those values against the generated
@@ -65,10 +75,10 @@ previously saved user-derived data.
 
 - exact title and starting datetime;
 - place, routes, social environment, and ordinary routines;
-- a complete POV card;
+- a complete POV card, including an unspecified surname or appearance;
 - 2–7 useful starting NPCs unless the user requests otherwise;
 - one main causal line and 2–4 secondary lines;
-- hidden truth and plausible mistaken versions;
+- hidden lore, stable truth, and plausible mistaken versions;
 - autonomous NPC plans and deadlines;
 - a strong opening situation.
 
