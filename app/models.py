@@ -44,9 +44,33 @@ class CreateSessionResponse(BaseModel):
     session_id: str | None = None
     status: str
     mode: SessionMode
-    bootstrap_prompt: str | None = None
+    bootstrap_prompt: str | None = Field(
+        default=None,
+        description="Full prompt when one chunk is enough; otherwise ordered chunk 0. Fetch every remaining chunk using getBootstrapPromptChunk before building the preview.",
+    )
+    bootstrap_prompt_bytes: int = Field(default=0, ge=0)
+    bootstrap_prompt_sha256: str | None = None
+    bootstrap_prompt_chunk_count: int = Field(default=0, ge=0)
+    has_more_bootstrap_prompt_chunks: bool = False
     questionnaire: str | None = None
     files_created: list[str] = Field(default_factory=list)
+
+
+class BootstrapPromptChunkResponse(BaseModel):
+    session_id: str
+    status: str
+    bootstrap_prompt_sha256: str
+    bootstrap_prompt_chars: int = Field(ge=0)
+    bootstrap_prompt_bytes: int = Field(ge=0)
+    chunk_index: int = Field(ge=0)
+    chunk_count: int = Field(ge=1)
+    bootstrap_prompt_chunk: str = Field(
+        ...,
+        description="One ordered prompt fragment. Concatenate it after chunk 0 from createSession without separators or edits.",
+    )
+    has_more: bool
+    next_chunk_index: int | None = Field(default=None, ge=0)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class BootstrapResultRequest(BaseModel):
     bootstrap_json: dict[str, Any]

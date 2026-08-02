@@ -3,6 +3,10 @@ from typing import Any
 
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.bootstrap_preview_transport import BOOTSTRAP_PREVIEW_TRANSPORT_RULES, build_bootstrap_preview_response, get_bootstrap_preview_chunk
+from app.bootstrap_prompt_transport import (
+    BOOTSTRAP_PROMPT_TRANSPORT_FILE,
+    build_create_session_prompt_response,
+)
 from app.bootstrap_setup import build_bootstrap_prompt, build_setup_preview
 from app.bootstrapper import BASE_FILES, debug_stub_bootstrap
 from app.character_profiles import prepare_bootstrap_cast
@@ -144,15 +148,25 @@ class SessionManager:
             + BOOTSTRAP_PREVIEW_TRANSPORT_RULES
         )
         (session_dir / "pending_bootstrap_prompt.md").write_text(prompt, encoding="utf-8")
-        return {
-            "session_id": session_id,
-            "status": "bootstrap_pending",
-            "mode": request.mode,
-            "bootstrap_prompt": prompt,
-            "questionnaire": None,
-            "files_created": list(empty_files.keys())
-            + ["characters/", "state/knowledge/", "state/relationship_pairs/", "pending_bootstrap_prompt.md"],
-        }
+        return build_create_session_prompt_response(
+            self.storage,
+            session_id,
+            prompt,
+            response={
+                "session_id": session_id,
+                "status": "bootstrap_pending",
+                "mode": request.mode,
+                "questionnaire": None,
+                "files_created": list(empty_files.keys())
+                + [
+                    "characters/",
+                    "state/knowledge/",
+                    "state/relationship_pairs/",
+                    "pending_bootstrap_prompt.md",
+                    BOOTSTRAP_PROMPT_TRANSPORT_FILE,
+                ],
+            },
+        )
 
     def _write_bootstrap_files(self, session_id: str, bootstrap_json: dict[str, Any]) -> list[str]:
         bootstrap_json = normalize_bootstrap_json(bootstrap_json)

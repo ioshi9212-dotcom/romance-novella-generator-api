@@ -8,7 +8,7 @@ class Settings(BaseModel):
     data_dir: Path = Path(os.getenv("DATA_DIR", "./data"))
     engine_version: str = os.getenv(
         "ENGINE_VERSION",
-        "novella-generator-gpt-actions-v9.3-preview-confirm",
+        "novella-generator-gpt-actions-v9.4-session-chunks",
     )
     default_language: str = os.getenv("DEFAULT_LANGUAGE", "ru")
     api_key: str | None = os.getenv("API_KEY") or None
