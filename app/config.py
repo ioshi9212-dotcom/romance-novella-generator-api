@@ -1,26 +1,22 @@
-from __future__ import annotations
-
-import os
+from functools import lru_cache
 from pathlib import Path
+from pydantic import BaseModel
+import os
 
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = Path(os.getenv("DATA_DIR", ROOT_DIR / ".data")).resolve()
-SESSIONS_DIR = DATA_DIR / "sessions"
-RULES_DIR = ROOT_DIR / "rules"
-
-ACTION_TOKEN = (os.getenv("ACTION_TOKEN") or os.getenv("API_KEY") or "").strip()
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
-
-MAX_BOOTSTRAP_PART_CHARS = int(os.getenv("MAX_BOOTSTRAP_PART_CHARS", "60000"))
-MAX_CHARACTER_CHARS = int(os.getenv("MAX_CHARACTER_CHARS", "60000"))
-MAX_QUESTIONNAIRE_CHARS = int(os.getenv("MAX_QUESTIONNAIRE_CHARS", "100000"))
-MAX_CONTEXT_CHUNK_CHARS = int(os.getenv("MAX_CONTEXT_CHUNK_CHARS", "25000"))
-MAX_CONTEXT_CHUNKS = max(1, min(8, int(os.getenv("MAX_CONTEXT_CHUNKS", "8"))))
-MAX_SCENE_CHARS = int(os.getenv("MAX_SCENE_CHARS", "20000"))
-MAX_COMMIT_CHARS = int(os.getenv("MAX_COMMIT_CHARS", "50000"))
-LOCK_TIMEOUT_SECONDS = float(os.getenv("LOCK_TIMEOUT_SECONDS", "5"))
+class Settings(BaseModel):
+    data_dir: Path = Path(os.getenv("DATA_DIR", "./data"))
+    engine_version: str = os.getenv(
+        "ENGINE_VERSION",
+        "novella-generator-gpt-actions-v9.3-preview-confirm",
+    )
+    default_language: str = os.getenv("DEFAULT_LANGUAGE", "ru")
+    api_key: str | None = os.getenv("API_KEY") or None
 
 
-def ensure_data_dirs() -> None:
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+@lru_cache
+def get_settings() -> Settings:
+    settings = Settings()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    (settings.data_dir / "sessions").mkdir(parents=True, exist_ok=True)
+    return settings

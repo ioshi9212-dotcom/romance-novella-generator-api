@@ -1,218 +1,184 @@
-# Novel Runtime API
+# Romance Novella Generator API — GPT Actions v9.3
 
-File-backed runtime for a literary Custom GPT novella generator.
+Генератор интерактивных новелл для связки:
 
-The Custom GPT writes all prose. This service does not call the OpenAI API and does not require an OpenAI API key. It creates isolated novel sessions, freezes context for each turn, validates structured changes, and persists canon on a Railway Volume.
-
-## Architecture
-
-```text
-User -> Custom GPT -> GPT Actions -> FastAPI on Railway -> Railway Volume
-                                      ^
-                                      |
-                              GitHub code and rules
+```txt
+Custom GPT = писатель и сборщик bootstrap-preview
+Railway API = память, state, проверки, preview gate, сборка контекста
+GitHub = код, правила, схемы и промпты
 ```
 
-GitHub contains only universal code, rules, schemas, and blank templates. Generated lore and characters are stored under `/data/sessions/<session_id>` and never fall back to repository story content.
+В репозитории нет готового канона, персонажей, лора или истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume только после подтверждения пользователем.
 
-## Runtime guarantees
+## Что изменилось в v9
 
-- one independent directory per session;
-- draft bootstrap is separate from confirmed state;
-- questionnaire drafts stay in chat and are stored only after explicit approval;
-- the exact approved questionnaire and raw answers are stored atomically;
-- optional bootstrap omissions are warnings, not fatal errors;
-- ordinary questionnaire gaps are director repairs, not mandatory user questions;
-- bootstrap repairs can be deep-merged without erasing saved fields;
-- normalized explicit questionnaire facts must be represented in generated state;
-- every prepared turn has an immutable `turn_id`;
-- context chunks read the same frozen packet;
-- required scene context is never silently truncated: overflow blocks preparation;
-- chronology, full lore, full hidden canon, every scene card, and its knowledge are loaded;
-- commits require the exact `base_state_version`;
-- repeated prepare and commit calls are idempotent;
-- per-session file locks prevent concurrent writers;
-- multi-file commits use a recovery journal;
-- a scene is canonical only after `commitTurn`;
-- standard scene presentation and stored body-length limits are validated before commit;
-- every tenth play turn requires a persisted continuity audit;
-- character renames refresh the name/alias index;
-- technical corrections do not advance story time or turn number;
-- committed transaction payload copies are compacted after recovery is no longer needed;
-- action responses stay below conservative size budgets.
+- Добавлен обязательный launch-flow с preview перед первой сценой.
+- Канонический старт передаётся одним `createBootstrapPreview`: GPT присылает цельный `bootstrap_json`, а Railway достраивает технический state и возвращает preview.
+- `confirmBootstrapPreview` после явного подтверждения пользователя раскладывает персонажей/знания/отношения по state-файлам и активирует сессию.
+- Первая сцена пишется только после подтверждения preview.
+- `story_plan.json` усилен: цель новеллы, цель героини, центральный конфликт, центральный вопрос, opening intent, character_arcs, relationship_focus, open_threads.
+- Сохранена архитектура v8: персонажи и их state создаются динамически внутри каждой сессии по generated `character_id`.
 
-## Repository layout
+## Railway variables
 
-```text
-app/                    FastAPI and runtime services
-gpt/                    instruction pasted into the Custom GPT
-rules/                  universal literary and state rules
-schemas/                JSON contracts
-templates/              blank bootstrap examples
-tests/                  API and persistence tests
-openapi-actions.yaml    minimal GPT Action schema
-railway.json            Railway deployment configuration
+```env
+DATA_DIR=/app/runtime
+ENGINE_VERSION=novella-generator-gpt-actions-v9.3-preview-confirm
+DEFAULT_LANGUAGE=ru
 ```
 
-## Session layout
+`DATA_DIR` должен указывать на Railway Volume mount path. Если volume примонтирован в `/app/runtime`, оставляй `DATA_DIR=/app/runtime`.
 
-```text
-/data/sessions/<session_id>/
-  session.json
-  bootstrap/
-    questionnaire.json
-    draft/
-      profile.json
-      lore.json
-      hidden_canon.json
-      plot.json
-      current.json
-      review.json
-      characters/<character_id>.json
-  state/
-    profile.json
-    lore.json
-    hidden_canon.json
-    plot.json
-    current.json
-    relationships.json
-    questionnaire_source.json
-    chronology.jsonl
-    scene_history.jsonl
-    characters/index.json
-    characters/<character_id>.json
-    knowledge/<character_id>.json
-  scenes/000001.md
-  transactions/
-    pending/<turn_id>/
-    receipts/<turn_id>.json
-  journal.jsonl
+Текущая Actions-схема рассчитана на `Authentication: None`, поэтому `API_KEY`
+в этом deployment не задаётся. Если позже понадобится закрытый deployment, при
+заданном `API_KEY` все endpoints кроме `/health` потребуют header:
+
+```txt
+X-API-Key: your-long-random-secret
 ```
 
-There is no stored `canon_canvas`: the context builder derives a frozen scene packet from canonical files. There is no ZIP continuation flow because session state persists on the Volume.
+`session_id` остаётся приватным идентификатором: его нельзя публиковать вместе с
+debug-ответами.
 
-## Railway configuration
+## Launch flow
 
-Use one service, one replica, one Uvicorn worker, and one Volume mounted at `/data`.
-
-Required variable:
-
-```text
-DATA_DIR=/data
+```txt
+User: начнем
+↓
+GPT calls GET /api/v1/start-questionnaire
+↓
+User answers in ordinary text, one or several messages, or chooses «Рандом»
+↓
+GPT calls POST /api/v1/sessions with the exact answer in raw_start_text
+↓
+API returns bootstrap_prompt, session remains bootstrap_pending
+↓
+GPT builds one bootstrap_json and calls POST /api/v1/sessions/{session_id}/bootstrap-preview
+↓
+API derives technical runtime state, performs structural validation and returns a spoiler-free preview; source-fidelity heuristics are diagnostic warnings only
+↓
+Большой preview возвращается безопасными chunks; потерянный первый ответ восстанавливается с chunk 0 по metadata из debugSessionDump
+↓
+User confirms or asks edits
+↓
+If edits: GPT sends one updated bootstrap_json to the same preview endpoint
+↓
+If confirmed: GPT calls POST /api/v1/sessions/{session_id}/bootstrap-confirm
+↓
+API writes state files and session becomes active
+↓
+GPT calls POST /api/v1/sessions/{session_id}/turn with player_input="(начать первую сцену)"
+↓
+API returns current state, active/nearby cards and only eligible event-driven entrance candidates
+↓
+An unknown future person is represented only by a short seed; one complete card may be created atomically when that person actually enters a scene
+↓
+GPT sends flat scene fields without rendered_text to apply-turn-result
+↓
+Railway renders, atomically saves and retains the visible scene
+↓
+GPT shows message_to_user; if delivery was lost, getLastScene returns it without a new turn
 ```
 
-Recommended variable:
+## Session state layout
 
-```text
-ENVIRONMENT=production
+```txt
+DATA_DIR/
+  sessions/
+    <session_id>/
+      session.json
+      user_request.json
+      protagonist.json
+      story_plan.json
+      director_bible.json
+      current_state.json
+      npc_state.json
+      future_locks.json
+      continuity.json
+      scene_history.json
+      turns.json
+      last_scene_output.json
+      characters_index.json
+      characters/
+        <character_id>.json
+      state/
+        knowledge_index.json
+        relationship_index.json
+        knowledge/
+          <character_id>.json
+        relationship_pairs/
+          <a>__<b>.json
 ```
 
-No API or Action key is required. In keyless mode each novel is protected by its
-random session ID and private resume code, and `listSessions` is disabled to
-prevent session enumeration.
+Один уже известный или появившийся персонаж = одна полная поведенческая карточка в `characters/<character_id>.json`; в сценический prompt попадает её компактная версия только тогда, когда персонаж нужен текущей сцене. Неизвестные будущие люди остаются короткими seeds в `future_locks.json` до фактического появления.
 
-An optional shared secret can be enabled with `ACTION_TOKEN`. For compatibility,
-the previous name `API_KEY` is also accepted. Requests may then authenticate with
-either `X-API-Key: <secret>` or `Authorization: Bearer <secret>`, and
-`listSessions` becomes available.
+Знания = субъективная память конкретного персонажа в `state/knowledge/<character_id>.json`: что видел, слышал, как понял, что запомнил, где может ошибаться.
 
-The production URL currently used by the Action schema is:
+Отношения = парный файл `state/relationship_pairs/<a>__<b>.json` с общими scores и направленными взглядами `a_view_of_b` / `b_view_of_a`.
 
-```text
-https://web-production-4310e.up.railway.app
+## Visible scene format
+
+```md
+🎭 <Название истории> · <дата / день>
+🕒 <время> · 📍 <локация>
+🌦️ Погода: <погода / атмосфера>
+⚙️ Состояние сцены: <физический контекст>
+
+✦ <имя персонажа игрока> · <видимое состояние>
+🧥 <одежда>
+◈ <инвентарь / предметы при себе / рядом>
+
+━━━━━━━━━━━━━━━━━━━━
 ```
 
-After deployment, verify:
+Диалог:
 
-```text
-GET /health
-GET /openapi-actions.yaml
+```md
+**Name** — Реплика. *(короткая ремарка)* Продолжение реплики.
 ```
 
-Enable Railway Volume backups. Create a manual backup before future state-schema migrations.
+## Main endpoints
 
-## Custom GPT setup
+```txt
+GET  /health
+GET  /api/v1/start-questionnaire
+POST /api/v1/sessions
+GET  /api/v1/sessions
+GET  /api/v1/sessions/latest
+GET  /api/v1/sessions/{session_id}
+GET  /api/v1/sessions/{session_id}/memory
+POST /api/v1/sessions/{session_id}/bootstrap-preview
+GET  /api/v1/sessions/{session_id}/bootstrap-preview-chunk
+POST /api/v1/sessions/{session_id}/bootstrap-confirm
+GET  /api/v1/sessions/{session_id}/scene-contract
+POST /api/v1/sessions/{session_id}/turn
+POST /api/v1/sessions/{session_id}/advance-time
+GET  /api/v1/sessions/{session_id}/turn-prompt-chunk
+POST /api/v1/sessions/{session_id}/apply-turn-result
+GET  /api/v1/sessions/{session_id}/last-scene
+GET  /api/v1/sessions/{session_id}/debug-dump
+```
 
-1. Open the GPT editor.
-2. Paste [`gpt/custom_gpt_instructions.md`](gpt/custom_gpt_instructions.md) into Instructions.
-3. Add an Action.
-4. Import:
+Каноническая Action-схема доступна по `GET /openapi-actions.json`. Стабильная
+ссылка для импорта в редактор GPT — `GET /openapi-actions.yaml`.
+Отслеживаемый `openapi.yaml` пересобирается командой `python scripts/export_openapi.py`.
 
-   ```text
-   https://web-production-4310e.up.railway.app/openapi-actions.yaml
-   ```
-
-5. Select no authentication.
-6. Test `getStartQuestionnaire`, `createSession`, `saveQuestionnaire`, and
-   `resumeSession` in Preview.
-
-Repository deployment updates the hosted Action schema, but it does not replace
-the text already pasted into an existing Custom GPT. After deploying a version
-that changes `gpt/custom_gpt_instructions.md`, paste that file into the GPT editor
-again and re-import the hosted Action schema before testing in Preview.
-
-This token is a private secret between the Custom GPT and this Railway service. It is not an OpenAI API key.
-
-## Local development
+## Local run
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-export DATA_DIR="$PWD/.data"
+pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Run tests:
+## Tests and CI
+
+Локальный запуск тестов:
 
 ```bash
-pytest
+pip install -r requirements.txt
+pip install pytest==8.3.4 httpx==0.28.1
+python -m pytest -q
 ```
 
-## Main Action flow
-
-### New novel
-
-```text
-getStartQuestionnaire for a bare start request
-user replies in free text (one or more messages)
-GPT renders the complete filled questionnaire in chat
-GPT asks only material clarifications and renders the full revision
-user explicitly approves the displayed questionnaire
-createSession with that exact questionnaire, raw answers, and confirmation=true
-saveQuestionnaire(initial) only to repair a legacy empty session
-saveBootstrapPart x N
-validateBootstrap
-saveBootstrapPart(merge=true) until next_action=show_review
-show public review
-wait for separate approval of the generated novel preview
-confirmBootstrap
-```
-
-### Story turn
-
-```text
-prepareTurn
-getTurnChunk until has_more=false
-verify context_complete=true and read every returned section
-write scene and structured result
-include audit_updates when audit_due=true
-commitTurn
-show the committed scene
-```
-
-### Failed request
-
-Retry the same `turn_id`. Do not generate a second turn. A repeated commit returns the original receipt without applying changes twice.
-
-For questionnaire saves, retry with the exact same raw answer; identical
-requests are idempotent. If only normalization is malformed, retry with
-`normalized: {}`. Do not ask the user to retype visible answers. Validation
-items in `director_repairs` must be invented by the Custom GPT and written with
-`merge: true`; only `user_questions` may be returned to the user.
-
-## Deliberate non-goals
-
-The first version has no PostgreSQL, Redis, vector database, web frontend, OAuth, background worker, multi-replica deployment, generated ZIP files, or OpenAI API integration.
-
-PostgreSQL becomes appropriate when the generator is shared among unrelated users, needs OAuth accounts, requires multiple Railway replicas, or receives concurrent writes to the same session.
+GitHub Actions запускает тот же набор тестов на Python 3.11 при push в `main` и `agent/**`, а также для pull request в `main`.
+Перед слиянием изменений проверка `Tests / Python 3.11` должна завершиться успешно.

@@ -1,7 +1,0 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
-
-[tool.coverage.run]
-source = ["app"]
-omit = ["tests/*"]
