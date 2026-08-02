@@ -1,0 +1,25 @@
+name: Export session chunks worktree
+
+on:
+  push:
+    branches:
+      - agent/session-bootstrap-chunks-v94
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: github.event.head_commit.message == 'Export worktree for session chunks'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove git metadata
+        run: rm -rf .git
+      - name: Upload worktree
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-chunks-worktree
+          path: .
+          include-hidden-files: true
+          retention-days: 1
