@@ -349,7 +349,14 @@ CREATE_SESSION_RESPONSE_SCHEMA = _schema_obj(
         "session_id": {"type": ["string", "null"]},
         "status": {"type": "string"},
         "mode": {"type": "string"},
-        "bootstrap_prompt": {"type": ["string", "null"]},
+        "bootstrap_prompt": {
+            "type": ["string", "null"],
+            "description": "Full prompt when one chunk is enough; otherwise chunk 0. Fetch all remaining chunks before building preview.",
+        },
+        "bootstrap_prompt_bytes": {"type": "integer", "minimum": 0},
+        "bootstrap_prompt_sha256": {"type": ["string", "null"]},
+        "bootstrap_prompt_chunk_count": {"type": "integer", "minimum": 0},
+        "has_more_bootstrap_prompt_chunks": {"type": "boolean"},
         "questionnaire": {"type": ["string", "null"]},
         "files_created": _string_array(),
     },
@@ -358,8 +365,43 @@ CREATE_SESSION_RESPONSE_SCHEMA = _schema_obj(
         "status",
         "mode",
         "bootstrap_prompt",
+        "bootstrap_prompt_bytes",
+        "bootstrap_prompt_sha256",
+        "bootstrap_prompt_chunk_count",
+        "has_more_bootstrap_prompt_chunks",
         "questionnaire",
         "files_created",
+    ],
+    additional_properties=True,
+)
+
+BOOTSTRAP_PROMPT_CHUNK_RESPONSE_SCHEMA = _schema_obj(
+    {
+        "session_id": {"type": "string"},
+        "status": {"type": "string"},
+        "bootstrap_prompt_sha256": {"type": "string", "minLength": 64, "maxLength": 64},
+        "bootstrap_prompt_bytes": {"type": "integer", "minimum": 0},
+        "chunk_index": {"type": "integer", "minimum": 0},
+        "chunk_count": {"type": "integer", "minimum": 1},
+        "bootstrap_prompt_chunk": {
+            "type": "string",
+            "description": "One ordered prompt fragment. Append to chunk 0 from createSession without separators or edits.",
+        },
+        "has_more": {"type": "boolean"},
+        "next_chunk_index": {"type": ["integer", "null"], "minimum": 0},
+        "diagnostics": _loose_obj(),
+    },
+    required=[
+        "session_id",
+        "status",
+        "bootstrap_prompt_sha256",
+        "bootstrap_prompt_bytes",
+        "chunk_index",
+        "chunk_count",
+        "bootstrap_prompt_chunk",
+        "has_more",
+        "next_chunk_index",
+        "diagnostics",
     ],
     additional_properties=True,
 )
@@ -589,11 +631,11 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
         "openapi": "3.1.0",
         "info": {
             "title": "Romance Novella Generator API",
-            "version": "gpt-actions-v9.3-preview-confirm",
+            "version": "gpt-actions-v9.4-session-chunks",
             "description": (
-                "One-preview launch and persistent novella turns. Send the exact questionnaire, "
-                "build one bootstrap preview, confirm it, then use chunked processTurn and flat "
-                "applyTurnResult. Railway renders and retains scenes; getLastScene recovers lost delivery."
+                "One-preview launch with chunked bootstrap prompt delivery. Create one session, read every "
+                "bootstrap prompt chunk, build one preview, confirm it, then use chunked processTurn and flat "
+                "applyTurnResult. Railway retains full prompts, state and visible scenes."
             ),
         },
         "servers": [{"url": url}],
@@ -603,6 +645,7 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 **_load_actions_component_schemas(),
                 "CreateSessionRequest": CREATE_SESSION_SCHEMA,
                 "CreateSessionResponse": CREATE_SESSION_RESPONSE_SCHEMA,
+                "BootstrapPromptChunkResponse": BOOTSTRAP_PROMPT_CHUNK_RESPONSE_SCHEMA,
                 "BootstrapPreviewRequest": BOOTSTRAP_PREVIEW_REQUEST_SCHEMA,
                 "BootstrapPreviewResponse": BOOTSTRAP_PREVIEW_RESPONSE_SCHEMA,
                 "BootstrapPreviewChunkResponse": BOOTSTRAP_PREVIEW_CHUNK_RESPONSE_SCHEMA,
@@ -644,17 +687,52 @@ def build_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
                 "post": {
                     "operationId": "createSession",
                     "summary": (
-                        "Create a session from exactly raw_start_text plus optional mode. "
-                        "Never split the questionnaire into title/genre/character kwargs."
+                        "Create one session from exactly raw_start_text. Never split questionnaire fields. "
+                        "Return prompt chunk 0; read the rest with getBootstrapPromptChunk and never recreate it."
                     ),
                     "requestBody": _request_body(
                         {"$ref": "#/components/schemas/CreateSessionRequest"}
                     ),
                     "responses": {
                         "200": _json_response(
-                            "Session created or questionnaire required.",
+                            "Session created with bounded bootstrap prompt transport, or questionnaire required.",
                             {"$ref": "#/components/schemas/CreateSessionResponse"},
                         )
+                    },
+                }
+            },
+            "/api/v1/sessions/{session_id}/bootstrap-prompt-chunk": {
+                "get": {
+                    "operationId": "getBootstrapPromptChunk",
+                    "summary": (
+                        "Get one stored bootstrap prompt chunk. Start at index 1 because createSession returned chunk 0; "
+                        "concatenate all chunks before building preview and never call createSession again."
+                    ),
+                    "parameters": [
+                        _session_id_param(),
+                        {
+                            "name": "chunk_index",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "integer", "minimum": 1},
+                            "description": "Ordered zero-based chunk index; normally start at 1.",
+                        },
+                        {
+                            "name": "bootstrap_prompt_sha256",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string", "minLength": 64, "maxLength": 64},
+                            "description": "Optional exact hash returned by createSession to reject stale prompt reads.",
+                        },
+                    ],
+                    "responses": {
+                        "200": _json_response(
+                            "Bootstrap prompt chunk",
+                            {"$ref": "#/components/schemas/BootstrapPromptChunkResponse"},
+                        ),
+                        "404": _json_response("Stored prompt or session not found", _loose_obj()),
+                        "409": _json_response("Prompt no longer available or hash is stale", _loose_obj()),
+                        "416": _json_response("Chunk index out of range", _loose_obj()),
                     },
                 }
             },

@@ -17,6 +17,7 @@ from app.bootstrap_diagnostics import (
     record_bootstrap_error as _record_bootstrap_error,
 )
 from app.bootstrap_preview_transport import BootstrapPreviewTransportError
+from app.bootstrap_prompt_transport import BootstrapPromptTransportError, get_bootstrap_prompt_chunk
 from app.bootstrap_normalizer import normalize_bootstrap_json
 from app.bootstrap_source_fidelity import validate_bootstrap_source_fidelity
 from app.config import get_settings
@@ -30,6 +31,7 @@ from app.models import (
     BootstrapConfirmRequest,
     BootstrapConfirmResponse,
     BootstrapPreviewChunkResponse,
+    BootstrapPromptChunkResponse,
     BootstrapPreviewRequest,
     BootstrapPreviewResponse,
     CreateSessionRequest,
@@ -51,7 +53,7 @@ from app.validators import validate_bootstrap_result, validate_scene_response, v
 
 RAILWAY_PUBLIC_URL = "https://web-production-4310e.up.railway.app"
 LAST_SCENE_OUTPUT_FILE = "last_scene_output.json"
-app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v9", servers=[{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}])
+app = FastAPI(title="Romance Novella Generator API", version="gpt-actions-v9.4-session-chunks", servers=[{"url": RAILWAY_PUBLIC_URL, "description": "Railway production"}])
 
 
 class BootstrapValidationError(ValueError):
@@ -957,6 +959,33 @@ def openapi_actions_yaml() -> PlainTextResponse:
 @app.post("/api/v1/sessions", response_model=CreateSessionResponse, dependencies=[Depends(require_api_key)], operation_id="createSession")
 def create_session(request: CreateSessionRequest) -> dict:
     return SessionManager().create_session(request)
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/bootstrap-prompt-chunk",
+    response_model=BootstrapPromptChunkResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_api_key)],
+    operation_id="getBootstrapPromptChunk",
+)
+def get_bootstrap_prompt_chunk_action(
+    session_id: str,
+    chunk_index: int = Query(..., ge=0),
+    bootstrap_prompt_sha256: str | None = Query(default=None, min_length=64, max_length=64),
+) -> dict[str, Any]:
+    manager = SessionManager()
+    try:
+        with _session_request_context(manager, session_id):
+            return get_bootstrap_prompt_chunk(
+                manager.storage,
+                session_id,
+                chunk_index,
+                expected_prompt_sha256=bootstrap_prompt_sha256,
+            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BootstrapPromptTransportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.get("/api/v1/start-questionnaire", dependencies=[Depends(require_api_key)], operation_id="getStartQuestionnaire")

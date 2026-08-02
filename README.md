@@ -1,4 +1,4 @@
-# Romance Novella Generator API — GPT Actions v9.3
+# Romance Novella Generator API — GPT Actions v9.4-session-chunks
 
 Генератор интерактивных новелл для связки:
 
@@ -23,7 +23,7 @@ GitHub = код, правила, схемы и промпты
 
 ```env
 DATA_DIR=/app/runtime
-ENGINE_VERSION=novella-generator-gpt-actions-v9.3-preview-confirm
+ENGINE_VERSION=novella-generator-gpt-actions-v9.4-session-chunks
 DEFAULT_LANGUAGE=ru
 ```
 

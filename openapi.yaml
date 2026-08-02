@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Romance Novella Generator API
-  version: gpt-actions-v9.3-preview-confirm
-  description: One-preview launch and persistent novella turns. Send the exact questionnaire, build one
-    bootstrap preview, confirm it, then use chunked processTurn and flat applyTurnResult. Railway renders
-    and retains scenes; getLastScene recovers lost delivery.
+  version: gpt-actions-v9.4-session-chunks
+  description: One-preview launch with chunked bootstrap prompt delivery. Create one session, read every
+    bootstrap prompt chunk, build one preview, confirm it, then use chunked processTurn and flat applyTurnResult.
+    Railway retains full prompts, state and visible scenes.
 servers:
 - url: https://web-production-4310e.up.railway.app
 security: []
@@ -315,6 +315,20 @@ components:
           type:
           - string
           - 'null'
+          description: Full prompt when one chunk is enough; otherwise chunk 0. Fetch all remaining chunks
+            before building preview.
+        bootstrap_prompt_bytes:
+          type: integer
+          minimum: 0
+        bootstrap_prompt_sha256:
+          type:
+          - string
+          - 'null'
+        bootstrap_prompt_chunk_count:
+          type: integer
+          minimum: 0
+        has_more_bootstrap_prompt_chunks:
+          type: boolean
         questionnaire:
           type:
           - string
@@ -329,8 +343,59 @@ components:
       - status
       - mode
       - bootstrap_prompt
+      - bootstrap_prompt_bytes
+      - bootstrap_prompt_sha256
+      - bootstrap_prompt_chunk_count
+      - has_more_bootstrap_prompt_chunks
       - questionnaire
       - files_created
+    BootstrapPromptChunkResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        status:
+          type: string
+        bootstrap_prompt_sha256:
+          type: string
+          minLength: 64
+          maxLength: 64
+        bootstrap_prompt_bytes:
+          type: integer
+          minimum: 0
+        chunk_index:
+          type: integer
+          minimum: 0
+        chunk_count:
+          type: integer
+          minimum: 1
+        bootstrap_prompt_chunk:
+          type: string
+          description: One ordered prompt fragment. Append to chunk 0 from createSession without separators
+            or edits.
+        has_more:
+          type: boolean
+        next_chunk_index:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        diagnostics:
+          type: object
+          properties: {}
+          additionalProperties: true
+      additionalProperties: true
+      required:
+      - session_id
+      - status
+      - bootstrap_prompt_sha256
+      - bootstrap_prompt_bytes
+      - chunk_index
+      - chunk_count
+      - bootstrap_prompt_chunk
+      - has_more
+      - next_chunk_index
+      - diagnostics
     BootstrapPreviewRequest:
       type: object
       properties:
@@ -1061,8 +1126,8 @@ paths:
   /api/v1/sessions:
     post:
       operationId: createSession
-      summary: Create a session from exactly raw_start_text plus optional mode. Never split the questionnaire
-        into title/genre/character kwargs.
+      summary: Create one session from exactly raw_start_text. Never split questionnaire fields. Return
+        prompt chunk 0; read the rest with getBootstrapPromptChunk and never recreate it.
       requestBody:
         required: true
         content:
@@ -1071,11 +1136,69 @@ paths:
               $ref: '#/components/schemas/CreateSessionRequest'
       responses:
         '200':
-          description: Session created or questionnaire required.
+          description: Session created with bounded bootstrap prompt transport, or questionnaire required.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateSessionResponse'
+  /api/v1/sessions/{session_id}/bootstrap-prompt-chunk:
+    get:
+      operationId: getBootstrapPromptChunk
+      summary: Get one stored bootstrap prompt chunk. Start at index 1 because createSession returned
+        chunk 0; concatenate all chunks before building preview and never call createSession again.
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: chunk_index
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+        description: Ordered zero-based chunk index; normally start at 1.
+      - name: bootstrap_prompt_sha256
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 64
+          maxLength: 64
+        description: Optional exact hash returned by createSession to reject stale prompt reads.
+      responses:
+        '200':
+          description: Bootstrap prompt chunk
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapPromptChunkResponse'
+        '404':
+          description: Stored prompt or session not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+        '409':
+          description: Prompt no longer available or hash is stale
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+        '416':
+          description: Chunk index out of range
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
   /api/v1/sessions/{session_id}:
     get:
       operationId: getSession
