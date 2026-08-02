@@ -4,13 +4,15 @@ on:
   push:
     branches:
       - agent/session-bootstrap-chunks-v94
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   export:
-    if: github.event.head_commit.message == 'Export worktree for session chunks'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
