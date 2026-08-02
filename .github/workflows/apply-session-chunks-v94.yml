@@ -4,17 +4,22 @@ on:
   push:
     branches:
       - agent/session-bootstrap-chunks-v94
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply-and-test:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: agent/session-bootstrap-chunks-v94
 
       - name: Decode and apply verified patch
         run: |
