@@ -378,7 +378,7 @@ components:
           title: Character Id
         card_hint:
           type: string
-          maxLength: 700
+          maxLength: 3000
           minLength: 1
           title: Card Hint
         record_status:
