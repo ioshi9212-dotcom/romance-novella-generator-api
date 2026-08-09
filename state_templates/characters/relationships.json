@@ -1,0 +1,16 @@
+{
+  "owner_character_id": "char_example",
+  "relations": [
+    {
+      "target_character_id": "char_target",
+      "relationship_status": "unknown",
+      "trust": "unknown",
+      "attraction": "unknown",
+      "irritation": "unknown",
+      "current_tension": "unknown",
+      "beliefs_about_target": [],
+      "change_reasons": [],
+      "last_changed_turn": 0
+    }
+  ]
+}

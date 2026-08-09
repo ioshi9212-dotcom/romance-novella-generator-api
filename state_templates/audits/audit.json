@@ -1,0 +1,24 @@
+{
+  "session_id": "sess_generated_by_railway",
+  "audit_id": "audit_generated_by_railway",
+  "status": "complete",
+  "turn_from": 1,
+  "turn_to": 15,
+  "checklist": {
+    "events_and_consequences": true,
+    "time_and_movement": true,
+    "scene_and_physical_state": true,
+    "character_current_states": true,
+    "character_continuity": true,
+    "minor_npc_lifecycle": true,
+    "knowledge_sources": true,
+    "knowledge_boundaries": true,
+    "directional_relationships": true,
+    "plot_threads": true,
+    "hidden_lore_and_reveal_timing": true,
+    "compaction_and_duplicates": true
+  },
+  "findings": {},
+  "created_correction_event_ids": [],
+  "created_compaction_event_ids": []
+}
