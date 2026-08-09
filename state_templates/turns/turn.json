@@ -1,0 +1,16 @@
+{
+  "session_id": "sess_generated_by_railway",
+  "turn_id": "turn_generated_by_railway",
+  "turn_number": 1,
+  "revision": 1,
+  "status": "current",
+  "cycle_position": 1,
+  "player_input": "unknown",
+  "scene_output": "Полный игровой ответ.",
+  "summary": "Компактное содержание хода.",
+  "scene_id": "scene_0001",
+  "story_datetime": "ISO-8601",
+  "created_event_ids": [],
+  "displayed_state_changes": {},
+  "revision_history": []
+}

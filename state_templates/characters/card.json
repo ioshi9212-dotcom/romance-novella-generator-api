@@ -1,0 +1,26 @@
+{
+  "character_id": "char_example",
+  "card_hint": "Кто персонаж, его роль, ключевой характер и главные ограничения.",
+  "record_status": "active",
+  "story_status": "not_introduced",
+  "player_visibility": "hidden",
+  "identity": {
+    "name": "unknown",
+    "age": "unknown",
+    "role": "unknown"
+  },
+  "appearance": {},
+  "behavior": {
+    "traits": [],
+    "habits": [],
+    "speech": [],
+    "temperament": "unknown"
+  },
+  "biography": [],
+  "skills": [],
+  "personal_goals": [],
+  "hidden_motives": [],
+  "secrets": [],
+  "story_function": [],
+  "constraints": []
+}

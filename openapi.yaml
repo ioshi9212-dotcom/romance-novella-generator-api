@@ -1,0 +1,1198 @@
+openapi: 3.1.0
+info:
+  title: Interactive Novella State Runtime
+  description: Session-scoped Railway storage for a Custom GPT visual novella. The API stores state and never calls
+    an OpenAI model.
+  version: 1.0.0
+paths:
+  /api/v1/sessions:
+    post:
+      summary: Create one new novella session after player confirmation
+      description: Call only after the player explicitly confirms the setup preview. Returns a random session_id
+        that is mandatory for every later action.
+      operationId: createSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turn-packet:
+    post:
+      summary: Get the authoritative packet required to write one scene
+      description: Reads the exact session state, rules, builder, chronology and current unaudited turns. If the
+        15-turn audit is due, this action returns AUDIT_REQUIRED and no scene may be written.
+      operationId: getTurnPacket
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TurnPacketRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turn-packets/{packet_id}/chunks/{chunk_index}:
+    get:
+      summary: Read another ordered chunk of a turn packet
+      operationId: getTurnPacketChunk
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
+      - name: chunk_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Chunk Index
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turns/commit:
+    post:
+      summary: Atomically commit the generated scene and every state change
+      description: Must succeed before the scene is shown to the player. The scene, chronology, state, character
+        knowledge and relationships are stored in one session transaction.
+      operationId: commitTurn
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitTurnRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitTurnResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/audit-packet:
+    get:
+      summary: Get the mandatory packet for the next 15-turn audit
+      description: Returns all 15 complete current turn revisions, the full compact chronology and current state.
+        The next scene remains blocked until commitAudit succeeds.
+      operationId: getAuditPacket
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/audit-packets/{packet_id}/chunks/{chunk_index}:
+    get:
+      summary: Read another ordered chunk of an audit packet
+      operationId: getAuditPacketChunk
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
+      - name: chunk_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Chunk Index
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/audits/commit:
+    post:
+      summary: Commit a completed 15-turn audit and release the scene gate
+      description: All checklist fields must be true. Repairs, compaction and chronology corrections are stored
+        atomically before another turn packet is allowed.
+      operationId: commitAudit
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitAuditRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitAuditResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/chronology:
+    get:
+      summary: Read the session chronology in order
+      operationId: getChronologyPage
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: include_inactive
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Include superseded and hidden source events for diagnostics only.
+          default: false
+          title: Include Inactive
+        description: Include superseded and hidden source events for diagnostics only.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChronologyPageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+components:
+  schemas:
+    AuditChecklist:
+      properties:
+        events_and_consequences:
+          type: boolean
+          title: Events And Consequences
+        time_and_movement:
+          type: boolean
+          title: Time And Movement
+        scene_and_physical_state:
+          type: boolean
+          title: Scene And Physical State
+        character_current_states:
+          type: boolean
+          title: Character Current States
+        character_continuity:
+          type: boolean
+          title: Character Continuity
+        minor_npc_lifecycle:
+          type: boolean
+          title: Minor Npc Lifecycle
+        knowledge_sources:
+          type: boolean
+          title: Knowledge Sources
+        knowledge_boundaries:
+          type: boolean
+          title: Knowledge Boundaries
+        directional_relationships:
+          type: boolean
+          title: Directional Relationships
+        plot_threads:
+          type: boolean
+          title: Plot Threads
+        hidden_lore_and_reveal_timing:
+          type: boolean
+          title: Hidden Lore And Reveal Timing
+        compaction_and_duplicates:
+          type: boolean
+          title: Compaction And Duplicates
+      type: object
+      required:
+      - events_and_consequences
+      - time_and_movement
+      - scene_and_physical_state
+      - character_current_states
+      - character_continuity
+      - minor_npc_lifecycle
+      - knowledge_sources
+      - knowledge_boundaries
+      - directional_relationships
+      - plot_threads
+      - hidden_lore_and_reveal_timing
+      - compaction_and_duplicates
+      title: AuditChecklist
+    CharacterBundle:
+      properties:
+        character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Character Id
+        card:
+          $ref: '#/components/schemas/CharacterCard'
+          description: Relatively stable character card.
+        current_state:
+          type: object
+          title: Current State
+          description: Frequently changing location, condition, goal, intention and activity.
+          properties: {}
+        relationships:
+          type: object
+          title: Relationships
+          description: Relationships owned by this character and directed toward targets.
+          properties: {}
+        knowledge:
+          type: object
+          title: Knowledge
+          description: Only facts, partial facts and wrong beliefs known by this character.
+          properties: {}
+      type: object
+      required:
+      - character_id
+      - card
+      title: CharacterBundle
+    CharacterCard:
+      properties:
+        character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Character Id
+        card_hint:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Card Hint
+        record_status:
+          type: string
+          enum:
+          - active
+          - inactive
+          title: Record Status
+        story_status:
+          type: string
+          enum:
+          - not_introduced
+          - active
+          - offstage
+          - missing
+          - dead
+          - retired
+          title: Story Status
+        player_visibility:
+          type: string
+          enum:
+          - hidden
+          - partial
+          - visible
+          title: Player Visibility
+      additionalProperties: true
+      type: object
+      required:
+      - character_id
+      - card_hint
+      - record_status
+      - story_status
+      - player_visibility
+      title: CharacterCard
+    CharacterUpdate:
+      properties:
+        character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Character Id
+        card:
+          anyOf:
+          - $ref: '#/components/schemas/CharacterCard'
+          - type: 'null'
+        current_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Current State
+        relationships:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Relationships
+        knowledge:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Knowledge
+      type: object
+      required:
+      - character_id
+      title: CharacterUpdate
+    ChronologyCompactionInput:
+      properties:
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        location_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Location Id
+        participants_present:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Participants Present
+        event:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Event
+        consequences:
+          items:
+            type: string
+          type: array
+          title: Consequences
+        knowledge_update_refs:
+          items:
+            type: string
+          type: array
+          title: Knowledge Update Refs
+        minor_npcs:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Minor Npcs
+        supersedes_event_id:
+          type: 'null'
+          title: Supersedes Event Id
+        turn_number:
+          type: integer
+          minimum: 1.0
+          title: Turn Number
+        compacts_event_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          minItems: 1
+          title: Compacts Event Ids
+          description: Existing active events replaced in runtime context by this compact summary.
+      type: object
+      required:
+      - scene_id
+      - story_datetime
+      - event
+      - turn_number
+      - compacts_event_ids
+      title: ChronologyCompactionInput
+    ChronologyCorrectionInput:
+      properties:
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        location_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Location Id
+        participants_present:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Participants Present
+        event:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Event
+        consequences:
+          items:
+            type: string
+          type: array
+          title: Consequences
+        knowledge_update_refs:
+          items:
+            type: string
+          type: array
+          title: Knowledge Update Refs
+        minor_npcs:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Minor Npcs
+        supersedes_event_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Supersedes Event Id
+        turn_number:
+          type: integer
+          minimum: 1.0
+          title: Turn Number
+      type: object
+      required:
+      - scene_id
+      - story_datetime
+      - event
+      - supersedes_event_id
+      - turn_number
+      title: ChronologyCorrectionInput
+    ChronologyEventInput:
+      properties:
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        location_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Location Id
+        participants_present:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Participants Present
+        event:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Event
+        consequences:
+          items:
+            type: string
+          type: array
+          title: Consequences
+        knowledge_update_refs:
+          items:
+            type: string
+          type: array
+          title: Knowledge Update Refs
+        minor_npcs:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Minor Npcs
+        supersedes_event_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Supersedes Event Id
+      type: object
+      required:
+      - scene_id
+      - story_datetime
+      - event
+      title: ChronologyEventInput
+    ChronologyPageResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        cursor:
+          type: integer
+          title: Cursor
+        events:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Events
+        include_inactive:
+          type: boolean
+          title: Include Inactive
+        has_more:
+          type: boolean
+          title: Has More
+        next_cursor:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Cursor
+      type: object
+      required:
+      - session_id
+      - cursor
+      - events
+      - include_inactive
+      - has_more
+      - next_cursor
+      title: ChronologyPageResponse
+    CommitAuditRequest:
+      properties:
+        audit_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Audit Id
+        expected_state_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected State Revision
+        checklist:
+          $ref: '#/components/schemas/AuditChecklist'
+        findings:
+          type: object
+          title: Findings
+          description: What was missing, corrected, compacted, closed or promoted during the audit.
+          properties: {}
+        state_updates:
+          $ref: '#/components/schemas/RuntimeStateUpdates'
+          description: Compacted replacements for current state documents; history must not be erased.
+        chronology_corrections:
+          items:
+            $ref: '#/components/schemas/ChronologyCorrectionInput'
+          type: array
+          title: Chronology Corrections
+          description: Corrective events that explicitly supersede inaccurate chronology events.
+        chronology_compactions:
+          items:
+            $ref: '#/components/schemas/ChronologyCompactionInput'
+          type: array
+          title: Chronology Compactions
+          description: Compact summaries that hide repetitive source events from future packets while preserving
+            the original records in Railway.
+      type: object
+      required:
+      - audit_id
+      - expected_state_revision
+      - checklist
+      title: CommitAuditRequest
+    CommitAuditResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        audit_id:
+          type: string
+          title: Audit Id
+        audit_complete:
+          type: boolean
+          title: Audit Complete
+        audited_turn_from:
+          type: integer
+          title: Audited Turn From
+        audited_turn_to:
+          type: integer
+          title: Audited Turn To
+        state_revision:
+          type: integer
+          title: State Revision
+        last_audited_turn:
+          type: integer
+          title: Last Audited Turn
+        audit_required:
+          type: boolean
+          title: Audit Required
+        next_turn_number:
+          type: integer
+          title: Next Turn Number
+        next_cycle_position:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Cycle Position
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - audit_id
+      - audit_complete
+      - audited_turn_from
+      - audited_turn_to
+      - state_revision
+      - last_audited_turn
+      - audit_required
+      - next_turn_number
+      - next_cycle_position
+      - next_required_action
+      title: CommitAuditResponse
+    CommitTurnRequest:
+      properties:
+        turn_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Turn Id
+        expected_state_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected State Revision
+        scene_output:
+          type: string
+          maxLength: 80000
+          minLength: 1
+          title: Scene Output
+        summary:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Summary
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        events:
+          items:
+            $ref: '#/components/schemas/ChronologyEventInput'
+          type: array
+          title: Events
+          description: Compact established facts for chronology, never a copy of the whole scene.
+        state_updates:
+          $ref: '#/components/schemas/RuntimeStateUpdates'
+          description: Only documents changed by this scene; omitted documents remain unchanged.
+        displayed_state_changes:
+          type: object
+          title: Displayed State Changes
+          description: The state and relationship changes actually printed in the scene footer.
+          properties: {}
+      type: object
+      required:
+      - turn_id
+      - expected_state_revision
+      - scene_output
+      - summary
+      - scene_id
+      - story_datetime
+      title: CommitTurnRequest
+    CommitTurnResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        turn_id:
+          type: string
+          title: Turn Id
+        turn_number:
+          type: integer
+          title: Turn Number
+        turn_revision:
+          type: integer
+          title: Turn Revision
+        state_revision:
+          type: integer
+          title: State Revision
+        last_completed_turn:
+          type: integer
+          title: Last Completed Turn
+        last_audited_turn:
+          type: integer
+          title: Last Audited Turn
+        next_turn_number:
+          type: integer
+          title: Next Turn Number
+        next_cycle_position:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Cycle Position
+        audit_required:
+          type: boolean
+          title: Audit Required
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - turn_id
+      - turn_number
+      - turn_revision
+      - state_revision
+      - last_completed_turn
+      - last_audited_turn
+      - next_turn_number
+      - next_cycle_position
+      - audit_required
+      - next_required_action
+      title: CommitTurnResponse
+    CreateSessionRequest:
+      properties:
+        player_confirmation:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Player Confirmation
+          description: Copy the player's actual message containing the positive word «подтверждаю».
+        novel:
+          type: object
+          title: Novel
+          description: Confirmed title, genre, style, POV and format settings for this novella.
+          properties: {}
+        hidden_lore:
+          type: object
+          title: Hidden Lore
+          description: Director-only truths, secrets and reveal conditions; never player preview text.
+          properties: {}
+        plot_state:
+          type: object
+          title: Plot State
+          description: Active lines, open threads, pending consequences and resolved compact history.
+          properties: {}
+        world_state:
+          type: object
+          title: World State
+          description: Global time, offscreen actions, whereabouts, dangers and location availability.
+          properties: {}
+        scene_state:
+          type: object
+          title: Scene State
+          description: 'Exact current frame: place, people, objects and unfinished moment to continue.'
+          properties: {}
+        characters:
+          items:
+            $ref: '#/components/schemas/CharacterBundle'
+          type: array
+          minItems: 1
+          title: Characters
+          description: Every confirmed card character, including POV and hidden future characters.
+        locations:
+          items:
+            $ref: '#/components/schemas/LocationBundle'
+          type: array
+          title: Locations
+        objects:
+          items:
+            $ref: '#/components/schemas/ObjectBundle'
+          type: array
+          title: Objects
+      type: object
+      required:
+      - player_confirmation
+      - novel
+      - hidden_lore
+      - plot_state
+      - world_state
+      - scene_state
+      - characters
+      title: CreateSessionRequest
+    CreateSessionResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        status:
+          type: string
+          const: active
+          title: Status
+        state_revision:
+          type: integer
+          title: State Revision
+        next_turn_number:
+          type: integer
+          title: Next Turn Number
+        cycle_position:
+          type: integer
+          title: Cycle Position
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - status
+      - state_revision
+      - next_turn_number
+      - cycle_position
+      - next_required_action
+      title: CreateSessionResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LocationBundle:
+      properties:
+        location_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Location Id
+        state:
+          type: object
+          title: State
+          properties: {}
+      type: object
+      required:
+      - location_id
+      title: LocationBundle
+    LocationUpdate:
+      properties:
+        location_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Location Id
+        state:
+          type: object
+          title: State
+          properties: {}
+      type: object
+      required:
+      - location_id
+      - state
+      title: LocationUpdate
+    ObjectBundle:
+      properties:
+        object_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Object Id
+        state:
+          type: object
+          title: State
+          properties: {}
+      type: object
+      required:
+      - object_id
+      title: ObjectBundle
+    ObjectUpdate:
+      properties:
+        object_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Object Id
+        state:
+          type: object
+          title: State
+          properties: {}
+      type: object
+      required:
+      - object_id
+      - state
+      title: ObjectUpdate
+    PacketChunkResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        packet_id:
+          type: string
+          title: Packet Id
+        packet_type:
+          type: string
+          enum:
+          - turn
+          - audit
+          title: Packet Type
+        chunk_index:
+          type: integer
+          title: Chunk Index
+        chunk_count:
+          type: integer
+          title: Chunk Count
+        content:
+          type: string
+          title: Content
+        content_sha256:
+          type: string
+          title: Content Sha256
+        has_more:
+          type: boolean
+          title: Has More
+        next_chunk_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Chunk Index
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - packet_id
+      - packet_type
+      - chunk_index
+      - chunk_count
+      - content
+      - content_sha256
+      - has_more
+      - next_chunk_index
+      - next_required_action
+      title: PacketChunkResponse
+    RuntimeStateUpdates:
+      properties:
+        novel:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Novel
+        hidden_lore:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Hidden Lore
+        plot_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Plot State
+        world_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: World State
+        scene_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Scene State
+        characters:
+          items:
+            $ref: '#/components/schemas/CharacterUpdate'
+          type: array
+          title: Characters
+        locations:
+          items:
+            $ref: '#/components/schemas/LocationUpdate'
+          type: array
+          title: Locations
+        objects:
+          items:
+            $ref: '#/components/schemas/ObjectUpdate'
+          type: array
+          title: Objects
+      type: object
+      title: RuntimeStateUpdates
+    TurnPacketRequest:
+      properties:
+        player_input:
+          type: string
+          maxLength: 20000
+          minLength: 1
+          title: Player Input
+        mode:
+          type: string
+          enum:
+          - new
+          - revise_last
+          title: Mode
+          description: Use new for the next turn; use revise_last to replace the last scene without incrementing
+            turn.
+          default: new
+        client_request_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Client Request Id
+      type: object
+      required:
+      - player_input
+      title: TurnPacketRequest
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+servers:
+- url: https://web-production-4310e.up.railway.app
+  description: Railway production
+security: []

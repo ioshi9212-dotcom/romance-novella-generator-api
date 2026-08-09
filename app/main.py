@@ -1,0 +1,217 @@
+from typing import Any
+
+from fastapi import FastAPI, Query, Request
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
+
+from app.config import get_settings
+from app.models import (
+    ChronologyPageResponse,
+    CommitAuditRequest,
+    CommitAuditResponse,
+    CommitTurnRequest,
+    CommitTurnResponse,
+    CreateSessionRequest,
+    CreateSessionResponse,
+    PacketChunkResponse,
+    TurnPacketRequest,
+)
+from app.service import NovellaService, ServiceError
+
+settings = get_settings()
+app = FastAPI(
+    title="Interactive Novella State Runtime",
+    version="1.0.0",
+    description=(
+        "Session-scoped Railway storage for a Custom GPT visual novella. "
+        "The API stores state and never calls an OpenAI model."
+    ),
+    servers=[{"url": settings.public_base_url, "description": "Railway production"}],
+)
+app.state.service = NovellaService(settings)
+
+
+def service_for(request: Request) -> NovellaService:
+    return request.app.state.service
+
+
+@app.exception_handler(ServiceError)
+async def handle_service_error(_request: Request, exc: ServiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": exc.code, "message": exc.detail}},
+    )
+
+
+@app.get("/health", include_in_schema=False)
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post(
+    "/api/v1/sessions",
+    operation_id="createSession",
+    response_model=CreateSessionResponse,
+    summary="Create one new novella session after player confirmation",
+    description=(
+        "Call only after the player explicitly confirms the setup preview. Returns a random "
+        "session_id that is mandatory for every later action."
+    ),
+)
+def create_session(payload: CreateSessionRequest, request: Request) -> dict[str, Any]:
+    return service_for(request).create_session(payload)
+
+
+@app.post(
+    "/api/v1/sessions/{session_id}/turn-packet",
+    operation_id="getTurnPacket",
+    response_model=PacketChunkResponse,
+    summary="Get the authoritative packet required to write one scene",
+    description=(
+        "Reads the exact session state, rules, builder, chronology and current unaudited turns. "
+        "If the 15-turn audit is due, this action returns AUDIT_REQUIRED and no scene may be written."
+    ),
+)
+def get_turn_packet(
+    session_id: str, payload: TurnPacketRequest, request: Request
+) -> dict[str, Any]:
+    return service_for(request).get_turn_packet(session_id, payload)
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/turn-packets/{packet_id}/chunks/{chunk_index}",
+    operation_id="getTurnPacketChunk",
+    response_model=PacketChunkResponse,
+    summary="Read another ordered chunk of a turn packet",
+)
+def get_turn_packet_chunk(
+    session_id: str,
+    packet_id: str,
+    chunk_index: int,
+    request: Request,
+) -> dict[str, Any]:
+    return service_for(request).get_turn_packet_chunk(
+        session_id, packet_id, chunk_index
+    )
+
+
+@app.post(
+    "/api/v1/sessions/{session_id}/turns/commit",
+    operation_id="commitTurn",
+    response_model=CommitTurnResponse,
+    summary="Atomically commit the generated scene and every state change",
+    description=(
+        "Must succeed before the scene is shown to the player. The scene, chronology, state, "
+        "character knowledge and relationships are stored in one session transaction."
+    ),
+)
+def commit_turn(
+    session_id: str, payload: CommitTurnRequest, request: Request
+) -> dict[str, Any]:
+    return service_for(request).commit_turn(session_id, payload)
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/audit-packet",
+    operation_id="getAuditPacket",
+    response_model=PacketChunkResponse,
+    summary="Get the mandatory packet for the next 15-turn audit",
+    description=(
+        "Returns all 15 complete current turn revisions, the full compact chronology and current "
+        "state. The next scene remains blocked until commitAudit succeeds."
+    ),
+)
+def get_audit_packet(session_id: str, request: Request) -> dict[str, Any]:
+    return service_for(request).get_audit_packet(session_id)
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/audit-packets/{packet_id}/chunks/{chunk_index}",
+    operation_id="getAuditPacketChunk",
+    response_model=PacketChunkResponse,
+    summary="Read another ordered chunk of an audit packet",
+)
+def get_audit_packet_chunk(
+    session_id: str,
+    packet_id: str,
+    chunk_index: int,
+    request: Request,
+) -> dict[str, Any]:
+    return service_for(request).get_audit_packet_chunk(
+        session_id, packet_id, chunk_index
+    )
+
+
+@app.post(
+    "/api/v1/sessions/{session_id}/audits/commit",
+    operation_id="commitAudit",
+    response_model=CommitAuditResponse,
+    summary="Commit a completed 15-turn audit and release the scene gate",
+    description=(
+        "All checklist fields must be true. Repairs, compaction and chronology corrections are "
+        "stored atomically before another turn packet is allowed."
+    ),
+)
+def commit_audit(
+    session_id: str, payload: CommitAuditRequest, request: Request
+) -> dict[str, Any]:
+    return service_for(request).commit_audit(session_id, payload)
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/chronology",
+    operation_id="getChronologyPage",
+    response_model=ChronologyPageResponse,
+    summary="Read the session chronology in order",
+)
+def get_chronology_page(
+    session_id: str,
+    request: Request,
+    cursor: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=200),
+    include_inactive: bool = Query(
+        default=False,
+        description="Include superseded and hidden source events for diagnostics only.",
+    ),
+) -> dict[str, Any]:
+    return service_for(request).get_chronology_page(
+        session_id, cursor, limit, include_inactive
+    )
+
+
+def _ensure_object_properties(value: Any) -> None:
+    if isinstance(value, dict):
+        if value.get("type") == "object" and "properties" not in value:
+            value["properties"] = {}
+        for child in value.values():
+            _ensure_object_properties(child)
+    elif isinstance(value, list):
+        for child in value:
+            _ensure_object_properties(child)
+
+
+def custom_openapi() -> dict[str, Any]:
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    schema["servers"] = [
+        {"url": settings.public_base_url, "description": "Railway production"}
+    ]
+    schema["security"] = []
+    schema["components"] = schema.get("components", {})
+    schema["components"].pop("securitySchemes", None)
+    for path_item in schema.get("paths", {}).values():
+        for operation in path_item.values():
+            if isinstance(operation, dict):
+                operation["security"] = []
+    _ensure_object_properties(schema)
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
