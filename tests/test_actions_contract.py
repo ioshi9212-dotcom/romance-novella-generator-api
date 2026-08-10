@@ -87,9 +87,36 @@ def test_create_session_rejects_incomplete_player_character_and_location(
     incomplete_location["locations"][0]["state"]["canon"].pop("layout")
     assert client.post("/api/v1/sessions", json=incomplete_location).status_code == 422
 
-    missing_director_plan = deepcopy(session_payload)
-    missing_director_plan.pop("director_plan")
-    assert client.post("/api/v1/sessions", json=missing_director_plan).status_code == 422
+
+
+def test_create_session_accepts_legacy_action_without_director_plan(
+    client, service, session_payload
+) -> None:
+    legacy_payload = deepcopy(session_payload)
+    legacy_payload.pop("director_plan")
+
+    response = client.post("/api/v1/sessions", json=legacy_payload)
+
+    assert response.status_code == 200, response.text
+    stored = service.storage.read_json(
+        response.json()["session_id"], "state/director_plan.json"
+    )
+    assert stored["active_threads"] == []
+    assert stored["character_agendas"] == []
+    assert stored["event_windows"] == []
+    assert stored["collision_points"] == []
+    assert stored["offscreen_events"] == []
+    assert stored["consequences_without_pov"] == []
+    assert stored["possible_pov_contacts"] == []
+
+
+def test_openapi_keeps_director_plan_optional_for_legacy_actions() -> None:
+    app.openapi_schema = None
+    schema = app.openapi()
+    request_schema = schema["components"]["schemas"]["CreateSessionRequest"]
+
+    assert "director_plan" in request_schema["properties"]
+    assert "director_plan" not in request_schema["required"]
 
 
 def test_validation_error_does_not_echo_large_rejected_payload(
