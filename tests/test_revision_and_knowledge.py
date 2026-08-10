@@ -1,8 +1,11 @@
+from copy import deepcopy
+
 from tests.conftest import (
     collect_packet,
     commit_next_turn,
     complete_checklist,
     create_session,
+    full_character_card,
     scene_output,
 )
 
@@ -289,6 +292,12 @@ def test_minor_npc_can_be_promoted_with_the_same_id(
     )
     assert first.status_code == 200, first.text
 
+    courier_card = full_character_card(
+        "npc_courier", "unknown", "Повторяющийся курьер с собственной целью."
+    )
+    courier_card["card_level"] = "recurring"
+    courier_card["origin"] = "runtime"
+
     commit_next_turn(
         client,
         session_id,
@@ -297,14 +306,7 @@ def test_minor_npc_can_be_promoted_with_the_same_id(
             "characters": [
                 {
                     "character_id": "npc_courier",
-                    "card": {
-                        "character_id": "npc_courier",
-                        "card_hint": "Повторяющийся курьер с собственной целью.",
-                        "record_status": "active",
-                        "story_status": "active",
-                        "player_visibility": "visible",
-                        "name": "unknown",
-                    },
+                    "card": courier_card,
                     "current_state": {"current_location_id": "loc_home"},
                     "relationships": {"relations": []},
                     "knowledge": {"entries": []},
@@ -316,3 +318,71 @@ def test_minor_npc_can_be_promoted_with_the_same_id(
     assert "npc_courier" in manifest["character_ids"]
     card = service.storage.read_json(session_id, "characters/npc_courier/card.json")
     assert card["character_id"] == "npc_courier"
+
+
+def test_character_card_update_cannot_silently_change_established_facts(
+    client, session_payload
+) -> None:
+    session_id = create_session(client, session_payload)
+    packet = collect_packet(
+        client,
+        session_id,
+        client.post(
+            f"/api/v1/sessions/{session_id}/turn-packet",
+            json={"player_input": "Продолжить разговор"},
+        ),
+    )
+    changed_card = deepcopy(session_payload["characters"][0]["card"])
+    changed_card["appearance"]["eyes"] = "голубые"
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/turns/commit",
+        json={
+            "turn_id": packet["turn_id"],
+            "expected_state_revision": packet["expected_state_revision"],
+            "scene_output": scene_output(1, 1),
+            "summary": "Попытка незаметно изменить канон",
+            "scene_id": "scene_0001",
+            "story_datetime": "2025-09-08T10:01:00",
+            "state_updates": {
+                "characters": [
+                    {"character_id": "char_emily", "card": changed_card}
+                ]
+            },
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "CHARACTER_CARD_FACT_LOSS"
+
+
+def test_location_update_cannot_silently_replace_visual_canon(
+    client, session_payload
+) -> None:
+    session_id = create_session(client, session_payload)
+    packet = collect_packet(
+        client,
+        session_id,
+        client.post(
+            f"/api/v1/sessions/{session_id}/turn-packet",
+            json={"player_input": "Вернуться домой"},
+        ),
+    )
+    changed_location = deepcopy(session_payload["locations"][0]["state"])
+    changed_location["canon"]["layout"] = "три этажа и отдельное восточное крыло"
+    response = client.post(
+        f"/api/v1/sessions/{session_id}/turns/commit",
+        json={
+            "turn_id": packet["turn_id"],
+            "expected_state_revision": packet["expected_state_revision"],
+            "scene_output": scene_output(1, 1),
+            "summary": "Попытка незаметно изменить планировку",
+            "scene_id": "scene_0001",
+            "story_datetime": "2025-09-08T10:01:00",
+            "state_updates": {
+                "locations": [
+                    {"location_id": "loc_home", "state": changed_location}
+                ]
+            },
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "LOCATION_CANON_CONFLICT"

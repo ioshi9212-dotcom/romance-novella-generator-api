@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 
 import yaml
@@ -73,3 +74,19 @@ def test_create_session_requires_positive_player_confirmation(
     response = client.post("/api/v1/sessions", json=negative)
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "PLAYER_CONFIRMATION_REQUIRED"
+
+
+def test_create_session_rejects_incomplete_player_character_and_location(
+    client, session_payload
+) -> None:
+    incomplete_character = deepcopy(session_payload)
+    incomplete_character["characters"][0]["card"].pop("appearance")
+    assert client.post("/api/v1/sessions", json=incomplete_character).status_code == 422
+
+    incomplete_location = deepcopy(session_payload)
+    incomplete_location["locations"][0]["state"]["canon"].pop("layout")
+    assert client.post("/api/v1/sessions", json=incomplete_location).status_code == 422
+
+    missing_director_plan = deepcopy(session_payload)
+    missing_director_plan.pop("director_plan")
+    assert client.post("/api/v1/sessions", json=missing_director_plan).status_code == 422

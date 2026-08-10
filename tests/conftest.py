@@ -10,6 +10,67 @@ from app.main import app
 from app.service import NovellaService
 
 
+def full_character_card(character_id: str, name: str, hint: str) -> dict[str, Any]:
+    return {
+        "character_id": character_id,
+        "card_level": "player_defined",
+        "origin": "player",
+        "card_hint": hint,
+        "record_status": "active",
+        "story_status": "active",
+        "player_visibility": "visible",
+        "identity": {
+            "name": name,
+            "age": "25",
+            "role": "участник тестовой истории",
+            "occupation": "установлено в тестовой карточке",
+        },
+        "appearance": {
+            "height": "средний рост",
+            "build": "среднее телосложение",
+            "hair": "тёмные",
+            "eyes": "карие",
+            "face": "выразительные черты",
+            "skin_and_features": "без особых примет",
+            "movement_and_mannerisms": "двигается спокойно",
+            "clothing_style": "повседневный",
+            "distinguishing_details": ["узнаваемая манера смотреть"],
+            "visual_impression": "сдержанный",
+            "visual_noticeability": "pleasant",
+        },
+        "immediate_scene_goal": "продолжить текущую сцену",
+        "personality": {
+            "outward_mask": "собранный",
+            "inner_character": "самостоятельный и последовательный",
+            "strengths": ["наблюдательность"],
+            "flaws": ["упрямство"],
+            "temperament": "ровный",
+            "internal_conflict": "хочет близости, но бережёт независимость",
+            "behavior_under_pressure": "становится немногословным",
+            "habits": ["следит за временем", "поправляет рукав"],
+            "speech": "говорит коротко",
+        },
+        "preferences": {
+            "likes": ["тишина"],
+            "dislikes": ["давление"],
+            "likes_in_people": ["прямота"],
+            "dislikes_in_people": ["неискренность"],
+        },
+        "biography": ["Прошлое установлено тестовой карточкой."],
+        "skills": ["наблюдение"],
+        "goals": {
+            "personal": "сохранить самостоятельность",
+            "immediate": "продолжить текущую сцену",
+            "toward_pov": "поддерживать установленную связь",
+            "story_function": "проверка постоянства карточки",
+            "possible_arc": "отношения меняются через события",
+        },
+        "hidden_motives": [],
+        "secrets": [],
+        "constraints": ["не меняет установленные факты без причины"],
+    }
+
+
 @pytest.fixture
 def service(tmp_path: Path) -> NovellaService:
     return NovellaService(
@@ -38,6 +99,15 @@ def session_payload() -> dict[str, Any]:
         },
         "hidden_lore": {"facts": [{"fact_id": "secret_1", "value": "hidden"}]},
         "plot_state": {"active_lines": []},
+        "director_plan": {
+            "active_threads": [],
+            "character_agendas": [],
+            "event_windows": [],
+            "collision_points": [],
+            "offscreen_events": [],
+            "consequences_without_pov": [],
+            "possible_pov_contacts": [],
+        },
         "world_state": {"story_datetime": "2025-09-08T10:00:00"},
         "scene_state": {
             "turn_number": 0,
@@ -47,28 +117,18 @@ def session_payload() -> dict[str, Any]:
         "characters": [
             {
                 "character_id": "char_emily",
-                "card": {
-                    "character_id": "char_emily",
-                    "card_hint": "POV, действует прямо и не любит пустые разговоры.",
-                    "record_status": "active",
-                    "story_status": "active",
-                    "player_visibility": "visible",
-                    "name": "Эмили",
-                },
+                "card": full_character_card(
+                    "char_emily", "Эмили", "POV, действует прямо и не любит пустые разговоры."
+                ),
                 "current_state": {"current_location_id": "loc_home"},
                 "relationships": {"relations": []},
                 "knowledge": {"entries": []},
             },
             {
                 "character_id": "char_chloe",
-                "card": {
-                    "character_id": "char_chloe",
-                    "card_hint": "Подруга POV, наблюдательная и разговорчивая.",
-                    "record_status": "active",
-                    "story_status": "active",
-                    "player_visibility": "visible",
-                    "name": "Хлоя",
-                },
+                "card": full_character_card(
+                    "char_chloe", "Хлоя", "Подруга POV, наблюдательная и разговорчивая."
+                ),
                 "current_state": {"current_location_id": "loc_home"},
                 "relationships": {"relations": []},
                 "knowledge": {"entries": []},
@@ -77,7 +137,27 @@ def session_payload() -> dict[str, Any]:
         "locations": [
             {
                 "location_id": "loc_home",
-                "state": {"description": "Дом Эмили"},
+                "state": {
+                    "canon": {
+                        "name": "Дом Эмили",
+                        "purpose": "жилой дом",
+                        "scale": "небольшой",
+                        "layout": "прихожая ведёт в общую комнату",
+                        "zones": ["прихожая", "общая комната"],
+                        "visual_style": "простой жилой интерьер",
+                        "condition": "обжитой",
+                        "color_palette": ["серый", "молочный"],
+                        "materials": ["дерево", "ткань"],
+                        "lighting": "дневной свет и потолочные лампы",
+                        "windows_and_view": "окна выходят во двор",
+                        "entrances": ["главная дверь"],
+                        "permanent_objects": ["стол"],
+                        "signature_details": ["узкая прихожая"],
+                    },
+                    "current_changes": [],
+                    "access": ["доступен жильцам"],
+                    "damage_or_modifications": [],
+                },
             }
         ],
         "objects": [],

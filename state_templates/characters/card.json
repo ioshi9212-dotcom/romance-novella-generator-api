@@ -1,26 +1,35 @@
 {
   "character_id": "char_example",
-  "card_hint": "Кто персонаж, его роль, ключевой характер и главные ограничения.",
+  "card_level": "important",
+  "origin": "director_setup",
+  "card_hint": "Краткая суть, роль и главные ограничения персонажа.",
   "record_status": "active",
   "story_status": "not_introduced",
   "player_visibility": "hidden",
-  "identity": {
-    "name": "unknown",
-    "age": "unknown",
-    "role": "unknown"
+  "identity": {"name": "unknown", "age": "unknown", "role": "unknown", "occupation": "unknown"},
+  "appearance": {
+    "height": "unknown", "build": "unknown", "hair": "unknown", "eyes": "unknown",
+    "face": "unknown", "skin_and_features": "unknown", "movement_and_mannerisms": "unknown",
+    "clothing_style": "unknown", "distinguishing_details": ["unknown"],
+    "visual_impression": "unknown", "visual_noticeability": "unremarkable"
   },
-  "appearance": {},
-  "behavior": {
-    "traits": [],
-    "habits": [],
-    "speech": [],
-    "temperament": "unknown"
+  "immediate_scene_goal": "unknown",
+  "personality": {
+    "outward_mask": "unknown", "inner_character": "unknown", "strengths": ["unknown"],
+    "flaws": ["unknown"], "temperament": "unknown", "internal_conflict": "unknown",
+    "behavior_under_pressure": "unknown", "habits": ["unknown", "unknown"], "speech": "unknown"
   },
-  "biography": [],
+  "preferences": {
+    "likes": ["unknown"], "dislikes": ["unknown"],
+    "likes_in_people": ["unknown"], "dislikes_in_people": ["unknown"]
+  },
+  "biography": ["unknown"],
   "skills": [],
-  "personal_goals": [],
+  "goals": {
+    "personal": "unknown", "immediate": "unknown", "toward_pov": "unknown",
+    "story_function": "unknown", "possible_arc": "unknown"
+  },
   "hidden_motives": [],
   "secrets": [],
-  "story_function": [],
-  "constraints": []
+  "constraints": ["unknown"]
 }

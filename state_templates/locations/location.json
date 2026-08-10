@@ -1,11 +1,15 @@
 {
   "location_id": "loc_example",
-  "description": "unknown",
-  "layout": [],
-  "entrances": [],
-  "rooms_or_zones": [],
-  "permanent_objects": [],
-  "current_changes": [],
-  "access": [],
-  "damage_or_modifications": []
+  "state": {
+    "canon": {
+      "name": "unknown", "purpose": "unknown", "scale": "unknown", "layout": "unknown",
+      "zones": ["unknown"], "visual_style": "unknown", "condition": "unknown",
+      "color_palette": ["unknown"], "materials": ["unknown"], "lighting": "unknown",
+      "windows_and_view": "unknown", "entrances": ["unknown"], "permanent_objects": [],
+      "signature_details": ["unknown"]
+    },
+    "current_changes": [],
+    "access": [],
+    "damage_or_modifications": []
+  }
 }
