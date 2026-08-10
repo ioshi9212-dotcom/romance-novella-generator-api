@@ -10,10 +10,20 @@ def test_rules_and_builder_contain_the_agreed_runtime_contract() -> None:
     assert "собственных knowledge-записей" in rules
     assert "забывать" in rules
     assert "неважный npc" in rules.lower()
+    assert "Чтение хода игрока" in rules
+    assert "строго слева" in rules
+    assert "создаёт реальную паузу" in rules
+    assert "NPC не читают её" in rules
     assert "Ход {turn_number} · цикл {cycle_position}/15" in builder
     assert "прочитать актуальный state" in builder
     assert "На 15/15" in builder
     assert "1500 до 2500" in builder
+    assert "Кинематографичность создавай наблюдаемыми" in builder
+    assert "только произносимые слова: без кавычек" in builder
+    assert "готова выходить; зажигалка при ней" in builder
+    assert "Райан → Эмили — 10/+1 доверие" in builder
+    assert "изменения «без численного сдвига»" in builder
+    assert "Не добавляй после значения пояснение или причину" in builder
 
 
 def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
