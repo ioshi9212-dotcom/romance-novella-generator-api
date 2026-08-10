@@ -19,7 +19,7 @@ class OpenModel(BaseModel):
 
 class CharacterCard(OpenModel):
     character_id: SafeId
-    card_hint: str = Field(min_length=1, max_length=700)
+    card_hint: str = Field(min_length=1, max_length=3_000)
     record_status: Literal["active", "inactive"]
     story_status: Literal[
         "not_introduced",
