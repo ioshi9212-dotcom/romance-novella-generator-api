@@ -1231,7 +1231,8 @@ components:
         director_plan:
           $ref: '#/components/schemas/DirectorPlan'
           description: 'Flexible director-only plan: independent character agendas, event windows, collisions and
-            consequences that can happen without POV.'
+            consequences that can happen without POV. Optional only for compatibility with previously imported GPT
+            Action schemas.'
         world_state:
           type: object
           title: World State
@@ -1265,7 +1266,6 @@ components:
       - novel
       - hidden_lore
       - plot_state
-      - director_plan
       - world_state
       - scene_state
       - characters
