@@ -3,12 +3,17 @@
   "relations": [
     {
       "target_character_id": "char_target",
-      "relationship_status": "unknown",
-      "trust": "unknown",
-      "attraction": "unknown",
-      "irritation": "unknown",
-      "current_tension": "unknown",
+      "relationship_type": "unknown",
+      "relationship_context": "Как и почему эти люди связаны сейчас.",
+      "current_dynamic": "Краткое живое состояние связи на текущий момент.",
+      "dimensions": [
+        {"key": "trust", "label": "доверие", "value": 50},
+        {"key": "attachment", "label": "привязанность", "value": 50},
+        {"key": "tension", "label": "напряжение", "value": 0}
+      ],
       "beliefs_about_target": [],
+      "unresolved_between_them": [],
+      "dynamic_constraints": [],
       "change_reasons": [],
       "last_changed_turn": 0
     }

@@ -873,6 +873,27 @@ class NovellaService:
             )
             turn_id = _new_id(f"turn_{turn_number}", 9)
             packet_id = _new_id("turnpacket", 9)
+            novel_state = before_state.get("novel", {})
+            scene_state = before_state.get("scene_state", {})
+            pov_character_id = novel_state.get("pov_character_id")
+            present_character_ids = list(
+                dict.fromkeys(scene_state.get("present_character_ids", []))
+            )
+            required_full_character_ids = list(
+                dict.fromkeys(
+                    [
+                        character_id
+                        for character_id in [pov_character_id, *present_character_ids]
+                        if character_id
+                    ]
+                )
+            )
+            packet_state = deepcopy(before_state)
+            packet_state["characters"] = [
+                character
+                for character in before_state.get("characters", [])
+                if character.get("character_id") in required_full_character_ids
+            ]
             payload = {
                 "packet_type": "turn",
                 "session_id": session_id,
@@ -886,14 +907,27 @@ class NovellaService:
                 "player_input": request.player_input,
                 "rules": read_runtime_rules(),
                 "scene_builder": read_scene_builder(),
-                "state": before_state,
+                "state": packet_state,
+                "scene_focus": {
+                    "pov_character_id": pov_character_id,
+                    "present_character_ids": present_character_ids,
+                    "required_full_character_ids": required_full_character_ids,
+                    "instruction": (
+                        "Before writing, read each listed character's complete card, "
+                        "current_state, knowledge and directional relationships in state.characters. "
+                        "Only characters physically present in the current scene are included. "
+                        "Keep POV physically and emotionally present without taking major choices away "
+                        "from the player."
+                    ),
+                },
                 "chronology_manifest": chronology_manifest,
                 "chronology": chronology,
                 "turns_since_last_audit": recent_turns,
                 "revising_turn": revising_turn,
                 "instruction": (
-                    "Read every field before writing. Use only character-specific knowledge. "
-                    "Build the complete scene, then commit it before showing it to the player."
+                    "Read every field before writing, with special attention to scene_focus. "
+                    "Use only character-specific knowledge. Build the complete scene, then "
+                    "commit it before showing it to the player."
                 ),
             }
             pending = {

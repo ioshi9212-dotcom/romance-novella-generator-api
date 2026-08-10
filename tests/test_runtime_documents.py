@@ -22,14 +22,20 @@ def test_rules_and_builder_contain_the_agreed_runtime_contract() -> None:
     assert "только произносимые слова: без кавычек" in builder
     assert "предметы, инвентарь или сюжетные" in builder
     assert "{субъект} → {объект}" in builder
-    assert "изменения «без численного сдвига»" in builder
-    assert "Не добавляй после значения пояснение или причину" in builder
+    assert "актуальный срез без дельт" in builder
+    assert "не выдумывай изменение" in builder
     assert "Карточки и рост значимости" in rules
     assert "Режиссёрский план и автономное время" in rules
     assert "Канон локаций" in rules
     assert "Восприятие POV" in rules
     assert "продвинь время до ближайшей" in builder
     assert "Не предлагай продолжение процедуры" in builder
+    assert "scene_focus" in builder
+    assert "невидимой камерой" in builder
+    assert "актуальный срез" in builder
+    assert "не более восьми" in rules
+    assert "не должны автоматически получать «без изменений»" in rules
+    assert "считай эпизод исчерпанным" in rules
 
 
 def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:

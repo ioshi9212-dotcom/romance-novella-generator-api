@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -118,6 +119,52 @@ def test_openapi_keeps_director_plan_optional_for_legacy_actions() -> None:
     assert "director_plan" in request_schema["properties"]
     assert "director_plan" not in request_schema["required"]
 
+
+def test_turn_packet_marks_full_character_bundles_required_for_scene(
+    client, session_payload
+) -> None:
+    offscreen = deepcopy(session_payload["characters"][1])
+    offscreen["character_id"] = "char_ryan"
+    offscreen["card"]["character_id"] = "char_ryan"
+    offscreen["card"]["identity"]["name"] = "Райан"
+    offscreen["current_state"]["current_location_id"] = "loc_elsewhere"
+    session_payload["characters"].append(offscreen)
+    created = client.post("/api/v1/sessions", json=session_payload)
+    assert created.status_code == 200, created.text
+    session_id = created.json()["session_id"]
+
+    first = client.post(
+        f"/api/v1/sessions/{session_id}/turn-packet",
+        json={"player_input": "Продолжить разговор", "mode": "new"},
+    )
+    assert first.status_code == 200, first.text
+    chunks = [first.json()["content"]]
+    for index in range(1, first.json()["chunk_count"]):
+        chunk = client.get(
+            f"/api/v1/sessions/{session_id}/turn-packets/"
+            f"{first.json()['packet_id']}/chunks/{index}"
+        )
+        assert chunk.status_code == 200, chunk.text
+        chunks.append(chunk.json()["content"])
+    packet = json.loads("".join(chunks))
+
+    assert packet["scene_focus"]["pov_character_id"] == "char_emily"
+    assert packet["scene_focus"]["required_full_character_ids"] == [
+        "char_emily",
+        "char_chloe",
+    ]
+    emily = next(
+        item for item in packet["state"]["characters"]
+        if item["character_id"] == "char_emily"
+    )
+    assert emily["card"]["personality"]["inner_character"]
+    assert "current_state" in emily
+    assert "knowledge" in emily
+    assert "relationships" in emily
+    assert {
+        item["character_id"] for item in packet["state"]["characters"]
+    } == {"char_emily", "char_chloe"}
+    assert "char_ryan" in packet["state"]["manifest"]["character_ids"]
 
 def test_validation_error_does_not_echo_large_rejected_payload(
     client, session_payload
