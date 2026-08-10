@@ -18,7 +18,9 @@ def test_rules_and_builder_contain_the_agreed_runtime_contract() -> None:
     assert "прочитать актуальный state" in builder
     assert "На 15/15" in builder
     assert "900 до 2000" in builder
-    assert "Кинематографичность создавай наблюдаемыми" in builder
+    assert "Образность, юмор и необычная" in builder
+    assert "Режиссёрская цель" in builder
+    assert "после которого игроку" in builder
     assert "только произносимые слова: без кавычек" in builder
     assert "предметы, инвентарь или сюжетные" in builder
     assert "{субъект} → {объект}" in builder
@@ -36,6 +38,7 @@ def test_rules_and_builder_contain_the_agreed_runtime_contract() -> None:
     assert "не более восьми" in rules
     assert "не должны автоматически получать «без изменений»" in rules
     assert "считай эпизод исчерпанным" in rules
+    assert "getSceneCharacterBundle" in rules
 
 
 def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
@@ -45,6 +48,9 @@ def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
     assert len(instructions) < 8000
     assert "До явного «подтверждаю» не вызывай Railway" in instructions
     assert "getAuditPacket" in instructions
+    assert "getSceneCharacterBundle" in instructions
+    assert 'runtime_contract_version: "2.0"' in instructions
+    assert "all_chunks_delivered" in instructions
     assert "revise_last" in instructions
 
 

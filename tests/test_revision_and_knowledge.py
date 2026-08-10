@@ -7,6 +7,7 @@ from tests.conftest import (
     create_session,
     full_character_card,
     scene_output,
+    scene_state_update,
 )
 
 
@@ -52,6 +53,7 @@ def test_revision_does_not_increment_turn_and_supersedes_old_event(
                     "event": "Событие новой редакции",
                 }
             ],
+            "state_updates": {"scene_state": scene_state_update(1)},
         },
     )
     assert revised.status_code == 200, revised.text
@@ -89,9 +91,14 @@ def test_knowledge_and_relationships_remain_character_scoped(
         "relations": [
             {
                 "target_character_id": "char_chloe",
-                "relationship_status": "friend",
-                "trust": 10,
+                "relationship_type": "friend",
+                "relationship_context": "Давняя дружба Эмили и Хлои",
+                "current_dynamic": "Эмили доверяет Хлое личный разговор",
+                "dimensions": [
+                    {"key": "trust", "label": "доверие", "value": 60}
+                ],
                 "change_reasons": ["Хлоя сохранила разговор в тайне"],
+                "last_changed_turn": 1,
             }
         ]
     }
@@ -213,6 +220,7 @@ def test_revising_an_audited_turn_invalidates_audit_and_its_corrections(
                     "event": "Новая версия события 15",
                 }
             ],
+            "state_updates": {"scene_state": scene_state_update(15)},
         },
     )
     assert revised.status_code == 200, revised.text
@@ -288,6 +296,7 @@ def test_minor_npc_can_be_promoted_with_the_same_id(
                     ],
                 }
             ],
+            "state_updates": {"scene_state": scene_state_update(1)},
         },
     )
     assert first.status_code == 200, first.text
@@ -343,7 +352,17 @@ def test_character_card_update_cannot_silently_change_established_facts(
             "summary": "Попытка незаметно изменить канон",
             "scene_id": "scene_0001",
             "story_datetime": "2025-09-08T10:01:00",
+            "events": [
+                {
+                    "scene_id": "scene_0001",
+                    "story_datetime": "2025-09-08T10:01:00",
+                    "location_id": "loc_home",
+                    "participants_present": ["char_emily", "char_chloe"],
+                    "event": "Продолжился разговор",
+                }
+            ],
             "state_updates": {
+                "scene_state": scene_state_update(1),
                 "characters": [
                     {"character_id": "char_emily", "card": changed_card}
                 ]
@@ -377,7 +396,17 @@ def test_location_update_cannot_silently_replace_visual_canon(
             "summary": "Попытка незаметно изменить планировку",
             "scene_id": "scene_0001",
             "story_datetime": "2025-09-08T10:01:00",
+            "events": [
+                {
+                    "scene_id": "scene_0001",
+                    "story_datetime": "2025-09-08T10:01:00",
+                    "location_id": "loc_home",
+                    "participants_present": ["char_emily", "char_chloe"],
+                    "event": "Эмили вернулась домой",
+                }
+            ],
             "state_updates": {
+                "scene_state": scene_state_update(1),
                 "locations": [
                     {"location_id": "loc_home", "state": changed_location}
                 ]

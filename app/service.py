@@ -12,6 +12,7 @@ from app.models import (
     CommitTurnRequest,
     CreateSessionRequest,
     RuntimeStateUpdates,
+    SceneCharacterBundleRequest,
     TurnPacketRequest,
 )
 from app.runtime_documents import read_runtime_rules, read_scene_builder
@@ -154,6 +155,22 @@ class NovellaService:
                 "PLAYER_CONFIRMATION_REQUIRED",
                 "createSession is forbidden until the player positively writes «подтверждаю»",
             )
+        if request.runtime_contract_version == "2.0":
+            missing_plan_sections = [
+                name
+                for name, values in (
+                    ("active_threads", request.director_plan.active_threads),
+                    ("character_agendas", request.director_plan.character_agendas),
+                )
+                if not any(bool(item) for item in values)
+            ]
+            if missing_plan_sections:
+                raise ServiceError(
+                    422,
+                    "DIRECTOR_PLAN_INCOMPLETE",
+                    "Runtime contract 2.0 requires substantive director_plan sections: "
+                    + ", ".join(missing_plan_sections),
+                )
         character_ids = [item.character_id for item in request.characters]
         location_ids = [item.location_id for item in request.locations]
         object_ids = [item.object_id for item in request.objects]
@@ -199,10 +216,11 @@ class NovellaService:
             "turns_since_audit": 0,
             "next_turn_number": 1,
             "audit_required": False,
+            "runtime_contract_version": request.runtime_contract_version or "legacy",
         }
         manifest = {
             "session_id": session_id,
-            "schema_version": 1,
+            "schema_version": 2 if request.runtime_contract_version == "2.0" else 1,
             "state_revision": 1,
             "character_ids": character_ids,
             "location_ids": location_ids,
@@ -761,6 +779,8 @@ class NovellaService:
                 "packet_id": packet_id,
                 "chunks": chunks,
                 "content_sha256": digest,
+                "last_delivered_chunk_index": 0,
+                "all_chunks_delivered": len(chunks) == 1,
                 "created_at": now_iso(),
             }
         )
@@ -771,6 +791,72 @@ class NovellaService:
         return self._packet_chunk_response(session_id, pending, 0)
 
     @staticmethod
+    def _last_delivered_chunk_index(pending: dict[str, Any]) -> int:
+        chunks = pending.get("chunks", [])
+        if not chunks:
+            return -1
+        stored = pending.get("last_delivered_chunk_index")
+        if stored is None:
+            # Active packets created before contract 2.0 already returned chunk zero.
+            return 0
+        return min(max(int(stored), 0), len(chunks) - 1)
+
+    @classmethod
+    def _all_packet_chunks_delivered(cls, pending: dict[str, Any]) -> bool:
+        chunks = pending.get("chunks", [])
+        return bool(chunks) and cls._last_delivered_chunk_index(pending) == len(chunks) - 1
+
+    def _deliver_packet_chunk_locked(
+        self,
+        session_id: str,
+        pending: dict[str, Any],
+        *,
+        chunk_index: int,
+        pending_path: str,
+        error_prefix: str,
+    ) -> dict[str, Any]:
+        chunks = pending.get("chunks", [])
+        if chunk_index < 0 or chunk_index >= len(chunks):
+            raise ServiceError(
+                404, "PACKET_CHUNK_NOT_FOUND", "Packet chunk index is out of range"
+            )
+        last_delivered = self._last_delivered_chunk_index(pending)
+        if chunk_index > last_delivered + 1:
+            raise ServiceError(
+                409,
+                f"{error_prefix}_PACKET_CHUNK_OUT_OF_ORDER",
+                f"Read chunk {last_delivered + 1} before requesting chunk {chunk_index}",
+            )
+        if chunk_index == last_delivered + 1:
+            pending["last_delivered_chunk_index"] = chunk_index
+            pending["all_chunks_delivered"] = chunk_index == len(chunks) - 1
+            self.storage._write_json_batch_locked(
+                session_id,
+                {pending_path: pending},
+            )
+        elif "last_delivered_chunk_index" not in pending:
+            pending["last_delivered_chunk_index"] = last_delivered
+            pending["all_chunks_delivered"] = last_delivered == len(chunks) - 1
+            self.storage._write_json_batch_locked(
+                session_id,
+                {pending_path: pending},
+            )
+        return self._packet_chunk_response(session_id, pending, chunk_index)
+
+    @classmethod
+    def _require_all_packet_chunks_delivered(
+        cls, pending: dict[str, Any], *, packet_type: str
+    ) -> None:
+        if cls._all_packet_chunks_delivered(pending):
+            return
+        next_index = cls._last_delivered_chunk_index(pending) + 1
+        raise ServiceError(
+            409,
+            f"{packet_type.upper()}_PACKET_INCOMPLETE",
+            f"Read every {packet_type} packet chunk in order before commit; next chunk is {next_index}",
+        )
+
+    @staticmethod
     def _packet_chunk_response(
         session_id: str, pending: dict[str, Any], chunk_index: int
     ) -> dict[str, Any]:
@@ -779,10 +865,12 @@ class NovellaService:
             raise ServiceError(
                 404, "PACKET_CHUNK_NOT_FOUND", "Packet chunk index is out of range"
             )
-        has_more = chunk_index + 1 < len(chunks)
+        last_delivered = NovellaService._last_delivered_chunk_index(pending)
+        all_chunks_delivered = last_delivered == len(chunks) - 1
+        has_more = not all_chunks_delivered
         packet_type = pending["packet_type"]
         next_action = (
-            f"Call get{packet_type.title()}PacketChunk with chunk_index {chunk_index + 1}."
+            f"Call get{packet_type.title()}PacketChunk with chunk_index {last_delivered + 1}."
             if has_more
             else (
                 "Generate the scene and call commitTurn before replying to the player."
@@ -799,7 +887,9 @@ class NovellaService:
             "content": chunks[chunk_index],
             "content_sha256": pending["content_sha256"],
             "has_more": has_more,
-            "next_chunk_index": chunk_index + 1 if has_more else None,
+            "next_chunk_index": last_delivered + 1 if has_more else None,
+            "delivered_chunk_count": last_delivered + 1,
+            "all_chunks_delivered": all_chunks_delivered,
             "next_required_action": next_action,
         }
 
@@ -926,8 +1016,10 @@ class NovellaService:
                 "revising_turn": revising_turn,
                 "instruction": (
                     "Read every field before writing, with special attention to scene_focus. "
-                    "Use only character-specific knowledge. Build the complete scene, then "
-                    "commit it before showing it to the player."
+                    "Use only character-specific knowledge. If an already-known offscreen "
+                    "character enters because of this turn, load only that character through "
+                    "getSceneCharacterBundle before writing them. Build the complete scene, "
+                    "then commit it before showing it to the player."
                 ),
             }
             pending = {
@@ -940,6 +1032,9 @@ class NovellaService:
                 "player_input": request.player_input,
                 "client_request_id": request.client_request_id,
                 "before_state": before_state,
+                "required_full_character_ids": required_full_character_ids,
+                "loaded_scene_character_ids": [],
+                "scene_character_bundles": {},
             }
             return self._store_packet_locked(
                 session_id,
@@ -964,7 +1059,209 @@ class NovellaService:
                 raise ServiceError(
                     404, "TURN_PACKET_NOT_FOUND", "Active turn packet was not found"
                 )
-            return self._packet_chunk_response(session_id, pending, chunk_index)
+            return self._deliver_packet_chunk_locked(
+                session_id,
+                pending,
+                chunk_index=chunk_index,
+                pending_path="pending_turn.json",
+                error_prefix="TURN",
+            )
+
+    @staticmethod
+    def _scene_character_bundle_response(
+        session_id: str,
+        pending: dict[str, Any],
+        bundle: dict[str, Any],
+        chunk_index: int,
+    ) -> dict[str, Any]:
+        chunks = bundle.get("chunks", [])
+        if chunk_index < 0 or chunk_index >= len(chunks):
+            raise ServiceError(
+                404,
+                "SCENE_CHARACTER_BUNDLE_CHUNK_NOT_FOUND",
+                "Scene character bundle chunk index is out of range",
+            )
+        last_delivered = int(bundle.get("last_delivered_chunk_index", 0))
+        last_delivered = min(max(last_delivered, 0), len(chunks) - 1)
+        all_chunks_delivered = last_delivered == len(chunks) - 1
+        has_more = not all_chunks_delivered
+        next_index = last_delivered + 1 if has_more else None
+        next_action = (
+            f"Call getSceneCharacterBundleChunk with chunk_index {next_index}."
+            if has_more
+            else (
+                "Use this complete dossier only because the character now enters the scene; "
+                "include the final participants in scene_state and call commitTurn."
+            )
+        )
+        return {
+            "session_id": session_id,
+            "turn_id": pending["turn_id"],
+            "packet_id": pending["packet_id"],
+            "bundle_id": bundle["bundle_id"],
+            "character_id": bundle["character_id"],
+            "chunk_index": chunk_index,
+            "chunk_count": len(chunks),
+            "content": chunks[chunk_index],
+            "content_sha256": bundle["content_sha256"],
+            "has_more": has_more,
+            "next_chunk_index": next_index,
+            "delivered_chunk_count": last_delivered + 1,
+            "all_chunks_delivered": all_chunks_delivered,
+            "next_required_action": next_action,
+        }
+
+    def get_scene_character_bundle(
+        self,
+        session_id: str,
+        packet_id: str,
+        character_id: str,
+        request: SceneCharacterBundleRequest,
+    ) -> dict[str, Any]:
+        self._require_session(session_id)
+        with self.storage.session_transaction(session_id):
+            pending = self.storage.read_json(
+                session_id, "pending_turn.json", default={}
+            )
+            if (
+                pending.get("status") != "active"
+                or pending.get("packet_id") != packet_id
+                or pending.get("turn_id") != request.turn_id
+            ):
+                raise ServiceError(
+                    404,
+                    "TURN_PACKET_NOT_FOUND",
+                    "The active turn packet and turn_id were not found",
+                )
+            self._require_all_packet_chunks_delivered(pending, packet_type="turn")
+            if character_id in pending.get("required_full_character_ids", []):
+                raise ServiceError(
+                    409,
+                    "SCENE_CHARACTER_ALREADY_INCLUDED",
+                    "This character's full dossier is already inside the turn packet",
+                )
+
+            existing = pending.setdefault("scene_character_bundles", {}).get(
+                character_id
+            )
+            if isinstance(existing, dict):
+                return self._scene_character_bundle_response(
+                    session_id, pending, existing, 0
+                )
+
+            state = pending.get("before_state", {})
+            character = next(
+                (
+                    item
+                    for item in state.get("characters", [])
+                    if item.get("character_id") == character_id
+                ),
+                None,
+            )
+            if character is None:
+                raise ServiceError(
+                    404,
+                    "SCENE_CHARACTER_NOT_FOUND",
+                    "Only an already-known character from this session can be loaded",
+                )
+
+            payload = {
+                "packet_type": "scene_character_bundle",
+                "session_id": session_id,
+                "turn_id": pending["turn_id"],
+                "character_id": character_id,
+                "entry_reason": request.entry_reason,
+                "character": character,
+                "instruction": (
+                    "Read the complete card, current_state, knowledge and directional "
+                    "relationships before writing this character into the scene. This dossier "
+                    "does not authorize loading any other offscreen character."
+                ),
+            }
+            text = json.dumps(payload, ensure_ascii=False, indent=2)
+            chunks = _split_text(text, self.settings.packet_chunk_chars)
+            bundle = {
+                "bundle_id": _new_id("charbundle", 9),
+                "character_id": character_id,
+                "entry_reason": request.entry_reason,
+                "chunks": chunks,
+                "content_sha256": sha256(text.encode("utf-8")).hexdigest(),
+                "last_delivered_chunk_index": 0,
+                "all_chunks_delivered": len(chunks) == 1,
+                "created_at": now_iso(),
+            }
+            pending["scene_character_bundles"][character_id] = bundle
+            if bundle["all_chunks_delivered"]:
+                loaded = pending.setdefault("loaded_scene_character_ids", [])
+                if character_id not in loaded:
+                    loaded.append(character_id)
+            self.storage._write_json_batch_locked(
+                session_id, {"pending_turn.json": pending}
+            )
+            return self._scene_character_bundle_response(
+                session_id, pending, bundle, 0
+            )
+
+    def get_scene_character_bundle_chunk(
+        self,
+        session_id: str,
+        packet_id: str,
+        bundle_id: str,
+        chunk_index: int,
+    ) -> dict[str, Any]:
+        self._require_session(session_id)
+        with self.storage.session_transaction(session_id):
+            pending = self.storage.read_json(
+                session_id, "pending_turn.json", default={}
+            )
+            if (
+                pending.get("status") != "active"
+                or pending.get("packet_id") != packet_id
+            ):
+                raise ServiceError(
+                    404, "TURN_PACKET_NOT_FOUND", "Active turn packet was not found"
+                )
+            bundle = next(
+                (
+                    item
+                    for item in pending.get("scene_character_bundles", {}).values()
+                    if item.get("bundle_id") == bundle_id
+                ),
+                None,
+            )
+            if bundle is None:
+                raise ServiceError(
+                    404,
+                    "SCENE_CHARACTER_BUNDLE_NOT_FOUND",
+                    "Active scene character bundle was not found",
+                )
+            chunks = bundle.get("chunks", [])
+            if chunk_index < 0 or chunk_index >= len(chunks):
+                raise ServiceError(
+                    404,
+                    "SCENE_CHARACTER_BUNDLE_CHUNK_NOT_FOUND",
+                    "Scene character bundle chunk index is out of range",
+                )
+            last_delivered = int(bundle.get("last_delivered_chunk_index", 0))
+            if chunk_index > last_delivered + 1:
+                raise ServiceError(
+                    409,
+                    "SCENE_CHARACTER_BUNDLE_CHUNK_OUT_OF_ORDER",
+                    f"Read chunk {last_delivered + 1} before requesting chunk {chunk_index}",
+                )
+            if chunk_index == last_delivered + 1:
+                bundle["last_delivered_chunk_index"] = chunk_index
+                bundle["all_chunks_delivered"] = chunk_index == len(chunks) - 1
+                if bundle["all_chunks_delivered"]:
+                    loaded = pending.setdefault("loaded_scene_character_ids", [])
+                    if bundle["character_id"] not in loaded:
+                        loaded.append(bundle["character_id"])
+                self.storage._write_json_batch_locked(
+                    session_id, {"pending_turn.json": pending}
+                )
+            return self._scene_character_bundle_response(
+                session_id, pending, bundle, chunk_index
+            )
 
     @staticmethod
     def _validate_footer(
@@ -1030,6 +1327,76 @@ class NovellaService:
             if key not in {"before_state", "revision_history", "commit_response"}
         }
 
+    @staticmethod
+    def _validate_scene_commit_context(
+        request: CommitTurnRequest,
+        pending: dict[str, Any],
+        before_state: dict[str, Any],
+        turn_number: int,
+    ) -> None:
+        scene_state = request.state_updates.scene_state
+        if scene_state.turn_number != turn_number:
+            raise ServiceError(
+                422,
+                "SCENE_STATE_TURN_MISMATCH",
+                f"scene_state.turn_number must be {turn_number}",
+            )
+
+        pov_character_id = before_state.get("novel", {}).get("pov_character_id")
+        if pov_character_id and pov_character_id not in scene_state.present_character_ids:
+            raise ServiceError(
+                422,
+                "POV_MISSING_FROM_SCENE_STATE",
+                "The POV character must remain physically represented in scene_state",
+            )
+
+        referenced_character_ids = set(scene_state.present_character_ids)
+        referenced_character_ids.update(scene_state.entered_character_ids)
+        referenced_character_ids.update(scene_state.left_character_ids)
+        for event in request.events:
+            referenced_character_ids.update(event.participants_present)
+
+        known_character_ids = set(
+            before_state.get("manifest", {}).get("character_ids", [])
+        )
+        newly_created_character_ids = {
+            update.character_id
+            for update in request.state_updates.characters
+            if update.character_id not in known_character_ids and update.card is not None
+        }
+        available_full_character_ids = set(
+            pending.get("required_full_character_ids", [])
+        )
+        available_full_character_ids.update(
+            pending.get("loaded_scene_character_ids", [])
+        )
+        available_full_character_ids.update(newly_created_character_ids)
+        incomplete_bundles = [
+            character_id
+            for character_id, bundle in pending.get(
+                "scene_character_bundles", {}
+            ).items()
+            if not bool(bundle.get("all_chunks_delivered"))
+        ]
+        if incomplete_bundles:
+            raise ServiceError(
+                409,
+                "SCENE_CHARACTER_BUNDLE_INCOMPLETE",
+                "Finish every requested scene character bundle before commit: "
+                + ", ".join(sorted(incomplete_bundles)),
+            )
+        missing_bundles = sorted(
+            (referenced_character_ids & known_character_ids)
+            - available_full_character_ids
+        )
+        if missing_bundles:
+            raise ServiceError(
+                409,
+                "SCENE_CHARACTER_BUNDLE_REQUIRED",
+                "Load and fully read the scene character bundle before using: "
+                + ", ".join(missing_bundles),
+            )
+
     def commit_turn(
         self, session_id: str, request: CommitTurnRequest
     ) -> dict[str, Any]:
@@ -1064,15 +1431,27 @@ class NovellaService:
                 raise ServiceError(
                     409, "PACKET_REVISION_CONFLICT", "Packet revision is stale"
                 )
+            self._require_all_packet_chunks_delivered(pending, packet_type="turn")
 
             turn_number = int(pending["turn_number"])
             cycle_position = int(pending["cycle_position"])
             self._validate_footer(request.scene_output, turn_number, cycle_position)
             new_state_revision = int(session["state_revision"]) + 1
             before_state = pending["before_state"]
+            self._validate_scene_commit_context(
+                request, pending, before_state, turn_number
+            )
             after_state = self._apply_state_updates(
                 before_state,
                 request.state_updates,
+                session_id=session_id,
+                state_revision=new_state_revision,
+                updated_turn=turn_number,
+            )
+            world_state = deepcopy(after_state.get("world_state", {}))
+            world_state["story_datetime"] = request.story_datetime
+            after_state["world_state"] = _stamp_document(
+                world_state,
                 session_id=session_id,
                 state_revision=new_state_revision,
                 updated_turn=turn_number,
@@ -1152,6 +1531,9 @@ class NovellaService:
                 "scene_id": request.scene_id,
                 "story_datetime": request.story_datetime,
                 "created_event_ids": created_event_ids,
+                "loaded_scene_character_ids": list(
+                    pending.get("loaded_scene_character_ids", [])
+                ),
                 "displayed_state_changes": request.displayed_state_changes,
                 "before_state": before_state,
                 "revision_history": revision_history,
@@ -1280,12 +1662,17 @@ class NovellaService:
                     "directional_relationships",
                     "plot_threads",
                     "hidden_lore_and_reveal_timing",
+                    "director_plan_and_offscreen_consequences",
+                    "character_card_levels_and_promotions",
+                    "location_canon_and_current_changes",
                     "compaction_and_duplicates",
                 ],
                 "instruction": (
                     "Read all 15 full turns, the full compact chronology and all current state. "
                     "Repair omissions, remove obsolete temporary state, compact duplicates, and "
-                    "preserve facts, knowledge sources, relationship causes, player characters and hidden lore."
+                    "preserve facts, knowledge sources, relationship causes, player characters "
+                    "and hidden lore. Explicitly verify director_plan and offscreen consequences, "
+                    "card levels and promotions, and location canon versus temporary changes."
                 ),
             }
             pending = {
@@ -1317,7 +1704,13 @@ class NovellaService:
                 raise ServiceError(
                     404, "AUDIT_PACKET_NOT_FOUND", "Active audit packet was not found"
                 )
-            return self._packet_chunk_response(session_id, pending, chunk_index)
+            return self._deliver_packet_chunk_locked(
+                session_id,
+                pending,
+                chunk_index=chunk_index,
+                pending_path="pending_audit.json",
+                error_prefix="AUDIT",
+            )
 
     def commit_audit(
         self, session_id: str, request: CommitAuditRequest
@@ -1346,6 +1739,7 @@ class NovellaService:
                     "STATE_REVISION_CONFLICT",
                     "State changed after the audit packet was created; request a fresh audit packet",
                 )
+            self._require_all_packet_chunks_delivered(pending, packet_type="audit")
             checklist = request.checklist.model_dump()
             incomplete = [
                 name for name, checked in checklist.items() if checked is not True

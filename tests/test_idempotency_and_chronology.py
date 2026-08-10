@@ -1,4 +1,9 @@
-from tests.conftest import collect_packet, create_session, scene_output
+from tests.conftest import (
+    collect_packet,
+    create_session,
+    scene_output,
+    scene_state_update,
+)
 
 
 def test_turn_packet_and_commit_are_idempotent(client, session_payload) -> None:
@@ -41,6 +46,7 @@ def test_turn_packet_and_commit_are_idempotent(client, session_payload) -> None:
                 "event": "Эмили открыла дверь",
             }
         ],
+        "state_updates": {"scene_state": scene_state_update(1)},
     }
     committed = client.post(
         f"/api/v1/sessions/{session_id}/turns/commit", json=commit_body
@@ -75,6 +81,16 @@ def test_wrong_scene_counter_and_missing_reminder_are_rejected(
         "summary": "Проверка",
         "scene_id": "scene_0001",
         "story_datetime": "2025-09-08T10:01:00",
+        "events": [
+            {
+                "scene_id": "scene_0001",
+                "story_datetime": "2025-09-08T10:01:00",
+                "location_id": "loc_home",
+                "participants_present": ["char_emily", "char_chloe"],
+                "event": "Проверка footer",
+            }
+        ],
+        "state_updates": {"scene_state": scene_state_update(1)},
     }
     wrong = client.post(
         f"/api/v1/sessions/{session_id}/turns/commit",

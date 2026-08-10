@@ -67,6 +67,51 @@ class CharacterGoals(OpenModel):
     possible_arc: str = Field(min_length=1, max_length=1000)
 
 
+class RelationshipDimension(OpenModel):
+    key: SafeId
+    label: str = Field(min_length=1, max_length=100)
+    value: int | float = Field(ge=0, le=100)
+
+
+class DirectedRelationship(OpenModel):
+    target_character_id: SafeId
+    relationship_type: str = Field(min_length=1, max_length=200)
+    relationship_context: str = Field(min_length=1, max_length=1000)
+    current_dynamic: str = Field(min_length=1, max_length=1000)
+    dimensions: list[RelationshipDimension] = Field(
+        default_factory=list,
+        max_length=8,
+        description=(
+            "Zero to eight dimensions chosen for this specific relationship, not a "
+            "universal scale copied to every pair."
+        ),
+    )
+    beliefs_about_target: list[str] = Field(default_factory=list, max_length=30)
+    unresolved_between_them: list[str] = Field(default_factory=list, max_length=30)
+    dynamic_constraints: list[str] = Field(default_factory=list, max_length=20)
+    change_reasons: list[str] = Field(default_factory=list, max_length=50)
+    last_changed_turn: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_unique_dimensions(self) -> "DirectedRelationship":
+        keys = [item.key for item in self.dimensions]
+        if len(keys) != len(set(keys)):
+            raise ValueError("relationship dimension keys must be unique")
+        return self
+
+
+class RelationshipsDocument(OpenModel):
+    owner_character_id: SafeId | None = None
+    relations: list[DirectedRelationship] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_unique_targets(self) -> "RelationshipsDocument":
+        targets = [item.target_character_id for item in self.relations]
+        if len(targets) != len(set(targets)):
+            raise ValueError("directed relationship targets must be unique")
+        return self
+
+
 class CharacterCard(OpenModel):
     character_id: SafeId
     card_level: Literal["noticeable", "recurring", "important", "player_defined"]
@@ -130,8 +175,8 @@ class CharacterBundle(BaseModel):
         default_factory=dict,
         description="Frequently changing location, condition, goal, intention and activity.",
     )
-    relationships: dict[str, Any] = Field(
-        default_factory=dict,
+    relationships: RelationshipsDocument = Field(
+        default_factory=RelationshipsDocument,
         description="Relationships owned by this character and directed toward targets.",
     )
     knowledge: dict[str, Any] = Field(
@@ -185,6 +230,13 @@ class ObjectBundle(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
+    runtime_contract_version: Literal["2.0"] | None = Field(
+        default=None,
+        description=(
+            "Use 2.0 for the current GPT Action contract. The runtime accepts omission only "
+            "for already-installed legacy Action schemas."
+        ),
+    )
     player_confirmation: str = Field(
         min_length=1,
         max_length=500,
@@ -249,6 +301,37 @@ class PacketChunkResponse(BaseModel):
     content_sha256: str
     has_more: bool
     next_chunk_index: int | None
+    delivered_chunk_count: int
+    all_chunks_delivered: bool
+    next_required_action: str
+
+
+class SceneCharacterBundleRequest(BaseModel):
+    turn_id: SafeId
+    entry_reason: str = Field(
+        min_length=1,
+        max_length=1000,
+        description=(
+            "Concrete story reason this already-known offscreen character will physically "
+            "enter the scene produced for this pending turn."
+        ),
+    )
+
+
+class SceneCharacterBundleChunkResponse(BaseModel):
+    session_id: str
+    turn_id: str
+    packet_id: str
+    bundle_id: str
+    character_id: str
+    chunk_index: int
+    chunk_count: int
+    content: str
+    content_sha256: str
+    has_more: bool
+    next_chunk_index: int | None
+    delivered_chunk_count: int
+    all_chunks_delivered: bool
     next_required_action: str
 
 
@@ -269,7 +352,7 @@ class CharacterUpdate(BaseModel):
     card: CharacterCard | None = None
     card_change_reason: str | None = Field(default=None, min_length=1, max_length=1000)
     current_state: dict[str, Any] | None = None
-    relationships: dict[str, Any] | None = None
+    relationships: RelationshipsDocument | None = None
     knowledge: dict[str, Any] | None = None
 
 
@@ -296,6 +379,36 @@ class RuntimeStateUpdates(BaseModel):
     objects: list[ObjectUpdate] = Field(default_factory=list)
 
 
+class CommitSceneState(OpenModel):
+    turn_number: int = Field(ge=1)
+    scene_id: SafeId
+    story_datetime: str = Field(min_length=1, max_length=200)
+    location_id: SafeId
+    present_character_ids: list[SafeId]
+    entered_character_ids: list[SafeId] = Field(default_factory=list)
+    left_character_ids: list[SafeId] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_character_lists(self) -> "CommitSceneState":
+        for label, values in (
+            ("present_character_ids", self.present_character_ids),
+            ("entered_character_ids", self.entered_character_ids),
+            ("left_character_ids", self.left_character_ids),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"{label} must not contain duplicate IDs")
+        return self
+
+
+class CommitTurnStateUpdates(RuntimeStateUpdates):
+    scene_state: CommitSceneState = Field(
+        description=(
+            "Required final frame after this turn. Its turn, scene and story time must match "
+            "the commit envelope."
+        )
+    )
+
+
 class CommitTurnRequest(BaseModel):
     turn_id: SafeId
     expected_state_revision: int = Field(ge=1)
@@ -304,17 +417,30 @@ class CommitTurnRequest(BaseModel):
     scene_id: SafeId
     story_datetime: str
     events: list[ChronologyEventInput] = Field(
-        default_factory=list,
+        min_length=1,
         description="Compact established facts for chronology, never a copy of the whole scene.",
     )
-    state_updates: RuntimeStateUpdates = Field(
-        default_factory=RuntimeStateUpdates,
-        description="Only documents changed by this scene; omitted documents remain unchanged.",
+    state_updates: CommitTurnStateUpdates = Field(
+        description=(
+            "The final scene_state is mandatory; all other documents are supplied only when "
+            "they changed in this scene."
+        ),
     )
     displayed_state_changes: dict[str, Any] = Field(
         default_factory=dict,
         description="The state and relationship changes actually printed in the scene footer.",
     )
+
+    @model_validator(mode="after")
+    def validate_scene_envelope(self) -> "CommitTurnRequest":
+        scene_state = self.state_updates.scene_state
+        if scene_state.scene_id != self.scene_id:
+            raise ValueError("state_updates.scene_state.scene_id must match scene_id")
+        if scene_state.story_datetime != self.story_datetime:
+            raise ValueError(
+                "state_updates.scene_state.story_datetime must match story_datetime"
+            )
+        return self
 
 
 class CommitTurnResponse(BaseModel):
@@ -343,6 +469,9 @@ class AuditChecklist(BaseModel):
     directional_relationships: bool
     plot_threads: bool
     hidden_lore_and_reveal_timing: bool
+    director_plan_and_offscreen_consequences: bool
+    character_card_levels_and_promotions: bool
+    location_canon_and_current_changes: bool
     compaction_and_duplicates: bool
 
 
@@ -365,8 +494,11 @@ class CommitAuditRequest(BaseModel):
     expected_state_revision: int = Field(ge=1)
     checklist: AuditChecklist
     findings: dict[str, Any] = Field(
-        default_factory=dict,
-        description="What was missing, corrected, compacted, closed or promoted during the audit.",
+        min_length=1,
+        description=(
+            "Non-empty audit result: what was verified and what was missing, corrected, "
+            "compacted, closed or promoted."
+        ),
     )
     state_updates: RuntimeStateUpdates = Field(
         default_factory=RuntimeStateUpdates,
