@@ -21,6 +21,7 @@ BASE_STATE_PATHS = {
     "novel": "state/novel.json",
     "hidden_lore": "state/hidden_lore.json",
     "plot_state": "state/plot_state.json",
+    "director_plan": "state/director_plan.json",
     "world_state": "state/world_state.json",
     "scene_state": "state/scene_state.json",
 }
@@ -48,14 +49,15 @@ def _new_id(prefix: str, bytes_count: int = 12) -> str:
 
 
 def _stamp_document(
-    document: dict[str, Any],
+    document: Any,
     *,
     session_id: str,
     state_revision: int,
     updated_turn: int,
     identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    result = deepcopy(document)
+    payload = document.model_dump(mode="json") if hasattr(document, "model_dump") else document
+    result = deepcopy(payload)
     if identity:
         result.update(identity)
     result["session_id"] = session_id
@@ -65,6 +67,45 @@ def _stamp_document(
         "updated_at": now_iso(),
     }
     return result
+
+
+CARD_LEVEL_ORDER = {
+    "noticeable": 1,
+    "recurring": 2,
+    "important": 3,
+    "player_defined": 4,
+}
+
+
+def _stable_card_payload(card: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in card.items()
+        if key
+        not in {
+            "session_id",
+            "_meta",
+            "card_level",
+            "card_hint",
+            "record_status",
+            "story_status",
+            "player_visibility",
+        }
+    }
+
+
+def _facts_preserved(previous: Any, updated: Any) -> bool:
+    """Return true when every established value still exists unchanged in the new card."""
+    if isinstance(previous, dict):
+        return isinstance(updated, dict) and all(
+            key in updated and _facts_preserved(value, updated[key])
+            for key, value in previous.items()
+        )
+    if isinstance(previous, list):
+        return isinstance(updated, list) and all(item in updated for item in previous)
+    if previous in (None, "", "unknown"):
+        return True
+    return previous == updated
 
 
 def _split_text(text: str, chunk_size: int) -> list[str]:
@@ -377,8 +418,37 @@ class NovellaService:
                         "CHARACTER_ID_MISMATCH",
                         f"Card ID does not match update ID for {update.character_id}",
                     )
+                updated_card = update.card.model_dump(mode="json")
+                previous_card = existing.get("card", {})
+                previous_level = previous_card.get("card_level")
+                updated_level = updated_card.get("card_level")
+                if (
+                    previous_level in CARD_LEVEL_ORDER
+                    and updated_level in CARD_LEVEL_ORDER
+                    and CARD_LEVEL_ORDER[updated_level] < CARD_LEVEL_ORDER[previous_level]
+                ):
+                    raise ServiceError(
+                        409,
+                        "CHARACTER_CARD_DOWNGRADE",
+                        f"Character {update.character_id} cannot be downgraded from "
+                        f"{previous_level} to {updated_level}",
+                    )
+                if (
+                    previous_card
+                    and not update.card_change_reason
+                    and not _facts_preserved(
+                        _stable_card_payload(previous_card),
+                        _stable_card_payload(updated_card),
+                    )
+                ):
+                    raise ServiceError(
+                        409,
+                        "CHARACTER_CARD_FACT_LOSS",
+                        f"Updated card for {update.character_id} removes or changes established "
+                        "facts; preserve them or provide card_change_reason for a canonical correction",
+                    )
                 existing["card"] = _stamp_document(
-                    update.card.model_dump(mode="json"),
+                    updated_card,
                     session_id=session_id,
                     state_revision=state_revision,
                     updated_turn=updated_turn,
@@ -420,10 +490,26 @@ class NovellaService:
                 result["manifest"].setdefault("location_ids", []).append(
                     update.location_id
                 )
+            else:
+                previous_canon = locations[update.location_id].get("state", {}).get(
+                    "canon", {}
+                )
+                updated_canon = update.state.canon.model_dump(mode="json")
+                if (
+                    previous_canon
+                    and not update.canon_change_reason
+                    and not _facts_preserved(previous_canon, updated_canon)
+                ):
+                    raise ServiceError(
+                        409,
+                        "LOCATION_CANON_CONFLICT",
+                        f"Updated canon for {update.location_id} removes or changes established "
+                        "details; preserve them or provide canon_change_reason for a canonical correction",
+                    )
             locations[update.location_id] = {
                 "location_id": update.location_id,
                 "state": _stamp_document(
-                    update.state,
+                    update.state.model_dump(mode="json"),
                     session_id=session_id,
                     state_revision=state_revision,
                     updated_turn=updated_turn,

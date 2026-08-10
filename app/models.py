@@ -1,6 +1,6 @@
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 SafeId = Annotated[
     str,
@@ -17,8 +17,60 @@ class OpenModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class CharacterIdentity(OpenModel):
+    name: str = Field(min_length=1, max_length=200)
+    age: str = Field(min_length=1, max_length=100)
+    role: str = Field(min_length=1, max_length=500)
+    occupation: str = Field(min_length=1, max_length=500)
+
+
+class CharacterAppearance(OpenModel):
+    height: str = Field(min_length=1, max_length=200)
+    build: str = Field(min_length=1, max_length=300)
+    hair: str = Field(min_length=1, max_length=300)
+    eyes: str = Field(min_length=1, max_length=300)
+    face: str = Field(min_length=1, max_length=500)
+    skin_and_features: str = Field(min_length=1, max_length=500)
+    movement_and_mannerisms: str = Field(min_length=1, max_length=700)
+    clothing_style: str = Field(min_length=1, max_length=700)
+    distinguishing_details: list[str] = Field(min_length=1, max_length=6)
+    visual_impression: str = Field(min_length=1, max_length=500)
+    visual_noticeability: Literal[
+        "unremarkable", "pleasant", "attractive", "striking", "distinctive"
+    ]
+
+
+class CharacterPersonality(OpenModel):
+    outward_mask: str = Field(min_length=1, max_length=700)
+    inner_character: str = Field(min_length=1, max_length=1000)
+    strengths: list[str] = Field(min_length=1, max_length=8)
+    flaws: list[str] = Field(min_length=1, max_length=8)
+    temperament: str = Field(min_length=1, max_length=400)
+    internal_conflict: str = Field(min_length=1, max_length=1000)
+    behavior_under_pressure: str = Field(min_length=1, max_length=700)
+    habits: list[str] = Field(min_length=2, max_length=6)
+    speech: str = Field(min_length=1, max_length=700)
+
+
+class CharacterPreferences(OpenModel):
+    likes: list[str] = Field(min_length=1, max_length=8)
+    dislikes: list[str] = Field(min_length=1, max_length=8)
+    likes_in_people: list[str] = Field(min_length=1, max_length=6)
+    dislikes_in_people: list[str] = Field(min_length=1, max_length=6)
+
+
+class CharacterGoals(OpenModel):
+    personal: str = Field(min_length=1, max_length=1000)
+    immediate: str = Field(min_length=1, max_length=700)
+    toward_pov: str = Field(min_length=1, max_length=700)
+    story_function: str = Field(min_length=1, max_length=1000)
+    possible_arc: str = Field(min_length=1, max_length=1000)
+
+
 class CharacterCard(OpenModel):
     character_id: SafeId
+    card_level: Literal["noticeable", "recurring", "important", "player_defined"]
+    origin: Literal["player", "director_setup", "runtime"]
     card_hint: str = Field(min_length=1, max_length=3_000)
     record_status: Literal["active", "inactive"]
     story_status: Literal[
@@ -30,6 +82,45 @@ class CharacterCard(OpenModel):
         "retired",
     ]
     player_visibility: Literal["hidden", "partial", "visible"]
+    identity: CharacterIdentity
+    appearance: CharacterAppearance
+    immediate_scene_goal: str = Field(min_length=1, max_length=700)
+    personality: CharacterPersonality | None = None
+    preferences: CharacterPreferences | None = None
+    biography: list[str] = Field(default_factory=list, max_length=12)
+    skills: list[str] = Field(default_factory=list, max_length=12)
+    goals: CharacterGoals | None = None
+    hidden_motives: list[str] = Field(default_factory=list, max_length=8)
+    secrets: list[str] = Field(default_factory=list, max_length=8)
+    constraints: list[str] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_depth_for_level(self) -> "CharacterCard":
+        if self.origin == "player" and self.card_level != "player_defined":
+            raise ValueError("player-origin characters must use player_defined card_level")
+        if self.card_level == "player_defined" and self.origin != "player":
+            raise ValueError("player_defined card_level is reserved for player-origin characters")
+        if self.card_level in {"important", "player_defined"}:
+            missing = [
+                name
+                for name, value in (
+                    ("personality", self.personality),
+                    ("preferences", self.preferences),
+                    ("goals", self.goals),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError(
+                    "important and player-defined cards require: " + ", ".join(missing)
+                )
+            if not self.biography:
+                raise ValueError("important and player-defined cards require biography")
+            if not self.constraints:
+                raise ValueError("important and player-defined cards require constraints")
+        if self.card_level == "recurring" and (self.personality is None or self.goals is None):
+            raise ValueError("recurring cards require personality and goals")
+        return self
 
 
 class CharacterBundle(BaseModel):
@@ -49,9 +140,43 @@ class CharacterBundle(BaseModel):
     )
 
 
+class LocationCanon(OpenModel):
+    name: str = Field(min_length=1, max_length=300)
+    purpose: str = Field(min_length=1, max_length=500)
+    scale: str = Field(min_length=1, max_length=300)
+    layout: str = Field(min_length=1, max_length=1200)
+    zones: list[str] = Field(min_length=1, max_length=20)
+    visual_style: str = Field(min_length=1, max_length=700)
+    condition: str = Field(min_length=1, max_length=500)
+    color_palette: list[str] = Field(min_length=1, max_length=10)
+    materials: list[str] = Field(min_length=1, max_length=10)
+    lighting: str = Field(min_length=1, max_length=700)
+    windows_and_view: str = Field(min_length=1, max_length=700)
+    entrances: list[str] = Field(min_length=1, max_length=12)
+    permanent_objects: list[str] = Field(default_factory=list, max_length=30)
+    signature_details: list[str] = Field(min_length=1, max_length=10)
+
+
+class LocationCard(OpenModel):
+    canon: LocationCanon
+    current_changes: list[str] = Field(default_factory=list, max_length=30)
+    access: list[str] = Field(default_factory=list, max_length=20)
+    damage_or_modifications: list[str] = Field(default_factory=list, max_length=20)
+
+
 class LocationBundle(BaseModel):
     location_id: SafeId
-    state: dict[str, Any] = Field(default_factory=dict)
+    state: LocationCard
+
+
+class DirectorPlan(OpenModel):
+    active_threads: list[dict[str, Any]] = Field(default_factory=list)
+    character_agendas: list[dict[str, Any]] = Field(default_factory=list)
+    event_windows: list[dict[str, Any]] = Field(default_factory=list)
+    collision_points: list[dict[str, Any]] = Field(default_factory=list)
+    offscreen_events: list[dict[str, Any]] = Field(default_factory=list)
+    consequences_without_pov: list[dict[str, Any]] = Field(default_factory=list)
+    possible_pov_contacts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ObjectBundle(BaseModel):
@@ -73,6 +198,12 @@ class CreateSessionRequest(BaseModel):
     )
     plot_state: dict[str, Any] = Field(
         description="Active lines, open threads, pending consequences and resolved compact history."
+    )
+    director_plan: DirectorPlan = Field(
+        description=(
+            "Flexible director-only plan: independent character agendas, event windows, "
+            "collisions and consequences that can happen without POV."
+        )
     )
     world_state: dict[str, Any] = Field(
         description="Global time, offscreen actions, whereabouts, dangers and location availability."
@@ -134,6 +265,7 @@ class ChronologyEventInput(BaseModel):
 class CharacterUpdate(BaseModel):
     character_id: SafeId
     card: CharacterCard | None = None
+    card_change_reason: str | None = Field(default=None, min_length=1, max_length=1000)
     current_state: dict[str, Any] | None = None
     relationships: dict[str, Any] | None = None
     knowledge: dict[str, Any] | None = None
@@ -141,7 +273,8 @@ class CharacterUpdate(BaseModel):
 
 class LocationUpdate(BaseModel):
     location_id: SafeId
-    state: dict[str, Any]
+    state: LocationCard
+    canon_change_reason: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 class ObjectUpdate(BaseModel):
@@ -153,6 +286,7 @@ class RuntimeStateUpdates(BaseModel):
     novel: dict[str, Any] | None = None
     hidden_lore: dict[str, Any] | None = None
     plot_state: dict[str, Any] | None = None
+    director_plan: DirectorPlan | None = None
     world_state: dict[str, Any] | None = None
     scene_state: dict[str, Any] | None = None
     characters: list[CharacterUpdate] = Field(default_factory=list)

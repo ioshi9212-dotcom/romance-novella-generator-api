@@ -17,13 +17,19 @@ def test_rules_and_builder_contain_the_agreed_runtime_contract() -> None:
     assert "Ход {turn_number} · цикл {cycle_position}/15" in builder
     assert "прочитать актуальный state" in builder
     assert "На 15/15" in builder
-    assert "1500 до 2500" in builder
+    assert "900 до 2000" in builder
     assert "Кинематографичность создавай наблюдаемыми" in builder
     assert "только произносимые слова: без кавычек" in builder
-    assert "готова выходить; зажигалка при ней" in builder
-    assert "Райан → Эмили — 10/+1 доверие" in builder
+    assert "предметы, инвентарь или сюжетные" in builder
+    assert "{субъект} → {объект}" in builder
     assert "изменения «без численного сдвига»" in builder
     assert "Не добавляй после значения пояснение или причину" in builder
+    assert "Карточки и рост значимости" in rules
+    assert "Режиссёрский план и автономное время" in rules
+    assert "Канон локаций" in rules
+    assert "Восприятие POV" in rules
+    assert "продвинь время до ближайшей" in builder
+    assert "Не предлагай продолжение процедуры" in builder
 
 
 def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
