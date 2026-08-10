@@ -90,3 +90,29 @@ def test_create_session_rejects_incomplete_player_character_and_location(
     missing_director_plan = deepcopy(session_payload)
     missing_director_plan.pop("director_plan")
     assert client.post("/api/v1/sessions", json=missing_director_plan).status_code == 422
+
+
+def test_validation_error_does_not_echo_large_rejected_payload(
+    client, session_payload
+) -> None:
+    invalid = deepcopy(session_payload)
+    invalid["characters"][0]["card"]["card_hint"] = "x" * 3000
+    invalid["characters"][0]["card"]["biography"] = ["x" * 100_000]
+    invalid["characters"][0]["card"]["personality"] = None
+
+    response = client.post("/api/v1/sessions", json=invalid)
+
+    assert response.status_code == 422
+    assert len(response.content) < 10_000
+    body = response.json()
+    assert body["error"]["code"] == "REQUEST_VALIDATION_FAILED"
+    assert body["error"]["issues"] == [
+        {
+            "location": "body.characters.0.card",
+            "message": (
+                "Value error, important and player-defined cards require: personality"
+            ),
+            "type": "value_error",
+        }
+    ]
+    assert "input" not in response.text
