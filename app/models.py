@@ -200,9 +200,11 @@ class CreateSessionRequest(BaseModel):
         description="Active lines, open threads, pending consequences and resolved compact history."
     )
     director_plan: DirectorPlan = Field(
+        default_factory=DirectorPlan,
         description=(
             "Flexible director-only plan: independent character agendas, event windows, "
-            "collisions and consequences that can happen without POV."
+            "collisions and consequences that can happen without POV. Optional only for "
+            "compatibility with previously imported GPT Action schemas."
         )
     )
     world_state: dict[str, Any] = Field(
