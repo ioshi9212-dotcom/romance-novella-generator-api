@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
@@ -40,6 +41,38 @@ async def handle_service_error(_request: Request, exc: ServiceError) -> JSONResp
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": {"code": exc.code, "message": exc.detail}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return useful validation failures without echoing the submitted novella.
+
+    Pydantic includes the rejected input subtree in every error by default. A
+    model-level error can therefore repeat an entire character card and make a
+    GPT Action response larger than the connector limit.
+    """
+    validation_errors = exc.errors()
+    issues = [
+        {
+            "location": ".".join(str(part) for part in error.get("loc", ())),
+            "message": str(error.get("msg", "Invalid value"))[:1000],
+            "type": str(error.get("type", "validation_error"))[:200],
+        }
+        for error in validation_errors[:50]
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "REQUEST_VALIDATION_FAILED",
+                "message": "The request does not match the required schema.",
+                "issues": issues,
+                "truncated": len(validation_errors) > len(issues),
+            }
+        },
     )
 
 
