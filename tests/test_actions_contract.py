@@ -22,6 +22,8 @@ def test_actions_have_no_auth_and_only_session_scoped_runtime_operations() -> No
         "createSession",
         "getTurnPacket",
         "getTurnPacketChunk",
+        "getSceneCharacterBundle",
+        "getSceneCharacterBundleChunk",
         "commitTurn",
         "getAuditPacket",
         "getAuditPacketChunk",
@@ -111,13 +113,37 @@ def test_create_session_accepts_legacy_action_without_director_plan(
     assert stored["possible_pov_contacts"] == []
 
 
-def test_openapi_keeps_director_plan_optional_for_legacy_actions() -> None:
+def test_openapi_requires_current_contract_but_runtime_keeps_legacy_compatibility() -> None:
     app.openapi_schema = None
     schema = app.openapi()
     request_schema = schema["components"]["schemas"]["CreateSessionRequest"]
 
     assert "director_plan" in request_schema["properties"]
-    assert "director_plan" not in request_schema["required"]
+    assert "director_plan" in request_schema["required"]
+    assert "runtime_contract_version" in request_schema["required"]
+    assert request_schema["properties"]["runtime_contract_version"]["enum"] == [
+        "2.0"
+    ]
+
+
+def test_current_contract_rejects_empty_director_plan(
+    client, session_payload
+) -> None:
+    current = deepcopy(session_payload)
+    current["runtime_contract_version"] = "2.0"
+
+    rejected = client.post("/api/v1/sessions", json=current)
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "DIRECTOR_PLAN_INCOMPLETE"
+
+    current["director_plan"]["active_threads"] = [
+        {"thread_id": "thread_main", "current_pressure": "Начальная ситуация"}
+    ]
+    current["director_plan"]["character_agendas"] = [
+        {"character_id": "char_chloe", "current_goal": "Поговорить с Эмили"}
+    ]
+    accepted = client.post("/api/v1/sessions", json=current)
+    assert accepted.status_code == 200, accepted.text
 
 
 def test_turn_packet_marks_full_character_bundles_required_for_scene(

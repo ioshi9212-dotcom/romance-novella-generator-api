@@ -16,9 +16,14 @@
     "directional_relationships": true,
     "plot_threads": true,
     "hidden_lore_and_reveal_timing": true,
+    "director_plan_and_offscreen_consequences": true,
+    "character_card_levels_and_promotions": true,
+    "location_canon_and_current_changes": true,
     "compaction_and_duplicates": true
   },
-  "findings": {},
+  "findings": {
+    "result": "Что проверено, исправлено, сжато или подтверждено без изменений."
+  },
   "created_correction_event_ids": [],
   "created_compaction_event_ids": []
 }

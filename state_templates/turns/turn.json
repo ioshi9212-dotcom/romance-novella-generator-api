@@ -11,6 +11,7 @@
   "scene_id": "scene_0001",
   "story_datetime": "ISO-8601",
   "created_event_ids": [],
+  "loaded_scene_character_ids": [],
   "displayed_state_changes": {},
   "revision_history": []
 }

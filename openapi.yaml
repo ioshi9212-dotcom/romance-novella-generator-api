@@ -101,6 +101,97 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
       security: []
+  /api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-characters/{character_id}/bundle:
+    post:
+      summary: Load one known offscreen character who will enter the pending scene
+      description: Use only after every turn-packet chunk was read and the story now causes this already-known character
+        to physically enter the scene. Returns only that character's complete card, current state, knowledge and
+        directional relationships. Read every bundle chunk before commitTurn.
+      operationId: getSceneCharacterBundle
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SceneCharacterBundleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SceneCharacterBundleChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-character-bundles/{bundle_id}/chunks/{chunk_index}:
+    get:
+      summary: Read the next ordered chunk of one entering character's dossier
+      description: Read in strict order until all_chunks_delivered is true. commitTurn remains blocked while any
+        requested scene-character bundle is incomplete.
+      operationId: getSceneCharacterBundleChunk
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
+      - name: bundle_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bundle Id
+      - name: chunk_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Chunk Index
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SceneCharacterBundleChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
   /api/v1/sessions/{session_id}/turns/commit:
     post:
       summary: Atomically commit the generated scene and every state change
@@ -319,6 +410,15 @@ components:
         hidden_lore_and_reveal_timing:
           type: boolean
           title: Hidden Lore And Reveal Timing
+        director_plan_and_offscreen_consequences:
+          type: boolean
+          title: Director Plan And Offscreen Consequences
+        character_card_levels_and_promotions:
+          type: boolean
+          title: Character Card Levels And Promotions
+        location_canon_and_current_changes:
+          type: boolean
+          title: Location Canon And Current Changes
         compaction_and_duplicates:
           type: boolean
           title: Compaction And Duplicates
@@ -335,6 +435,9 @@ components:
       - directional_relationships
       - plot_threads
       - hidden_lore_and_reveal_timing
+      - director_plan_and_offscreen_consequences
+      - character_card_levels_and_promotions
+      - location_canon_and_current_changes
       - compaction_and_duplicates
       title: AuditChecklist
     CharacterAppearance:
@@ -432,10 +535,8 @@ components:
           description: Frequently changing location, condition, goal, intention and activity.
           properties: {}
         relationships:
-          type: object
-          title: Relationships
+          $ref: '#/components/schemas/RelationshipsDocument'
           description: Relationships owned by this character and directed toward targets.
-          properties: {}
         knowledge:
           type: object
           title: Knowledge
@@ -759,10 +860,8 @@ components:
           title: Current State
         relationships:
           anyOf:
-          - type: object
-            properties: {}
+          - $ref: '#/components/schemas/RelationshipsDocument'
           - type: 'null'
-          title: Relationships
         knowledge:
           anyOf:
           - type: object
@@ -1024,8 +1123,10 @@ components:
           $ref: '#/components/schemas/AuditChecklist'
         findings:
           type: object
+          minProperties: 1
           title: Findings
-          description: What was missing, corrected, compacted, closed or promoted during the audit.
+          description: 'Non-empty audit result: what was verified and what was missing, corrected, compacted, closed
+            or promoted.'
           properties: {}
         state_updates:
           $ref: '#/components/schemas/RuntimeStateUpdates'
@@ -1048,6 +1149,7 @@ components:
       - audit_id
       - expected_state_revision
       - checklist
+      - findings
       title: CommitAuditRequest
     CommitAuditResponse:
       properties:
@@ -1100,6 +1202,62 @@ components:
       - next_cycle_position
       - next_required_action
       title: CommitAuditResponse
+    CommitSceneState:
+      properties:
+        turn_number:
+          type: integer
+          minimum: 1.0
+          title: Turn Number
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Story Datetime
+        location_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Location Id
+        present_character_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Present Character Ids
+        entered_character_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Entered Character Ids
+        left_character_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Left Character Ids
+      additionalProperties: true
+      type: object
+      required:
+      - turn_number
+      - scene_id
+      - story_datetime
+      - location_id
+      - present_character_ids
+      title: CommitSceneState
     CommitTurnRequest:
       properties:
         turn_id:
@@ -1135,11 +1293,13 @@ components:
           items:
             $ref: '#/components/schemas/ChronologyEventInput'
           type: array
+          minItems: 1
           title: Events
           description: Compact established facts for chronology, never a copy of the whole scene.
         state_updates:
-          $ref: '#/components/schemas/RuntimeStateUpdates'
-          description: Only documents changed by this scene; omitted documents remain unchanged.
+          $ref: '#/components/schemas/CommitTurnStateUpdates'
+          description: The final scene_state is mandatory; all other documents are supplied only when they changed
+            in this scene.
         displayed_state_changes:
           type: object
           title: Displayed State Changes
@@ -1153,6 +1313,8 @@ components:
       - summary
       - scene_id
       - story_datetime
+      - events
+      - state_updates
       title: CommitTurnRequest
     CommitTurnResponse:
       properties:
@@ -1205,8 +1367,67 @@ components:
       - audit_required
       - next_required_action
       title: CommitTurnResponse
+    CommitTurnStateUpdates:
+      properties:
+        novel:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Novel
+        hidden_lore:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Hidden Lore
+        plot_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Plot State
+        director_plan:
+          anyOf:
+          - $ref: '#/components/schemas/DirectorPlan'
+          - type: 'null'
+        world_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: World State
+        scene_state:
+          $ref: '#/components/schemas/CommitSceneState'
+          description: Required final frame after this turn. Its turn, scene and story time must match the commit
+            envelope.
+        characters:
+          items:
+            $ref: '#/components/schemas/CharacterUpdate'
+          type: array
+          title: Characters
+        locations:
+          items:
+            $ref: '#/components/schemas/LocationUpdate'
+          type: array
+          title: Locations
+        objects:
+          items:
+            $ref: '#/components/schemas/ObjectUpdate'
+          type: array
+          title: Objects
+      type: object
+      required:
+      - scene_state
+      title: CommitTurnStateUpdates
     CreateSessionRequest:
       properties:
+        runtime_contract_version:
+          type: string
+          enum:
+          - '2.0'
+          description: Use 2.0 for the current GPT Action contract. The runtime accepts omission only for already-installed
+            legacy Action schemas.
         player_confirmation:
           type: string
           maxLength: 500
@@ -1269,6 +1490,8 @@ components:
       - world_state
       - scene_state
       - characters
+      - runtime_contract_version
+      - director_plan
       title: CreateSessionRequest
     CreateSessionResponse:
       properties:
@@ -1300,6 +1523,74 @@ components:
       - cycle_position
       - next_required_action
       title: CreateSessionResponse
+    DirectedRelationship:
+      properties:
+        target_character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Target Character Id
+        relationship_type:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Relationship Type
+        relationship_context:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Relationship Context
+        current_dynamic:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Current Dynamic
+        dimensions:
+          items:
+            $ref: '#/components/schemas/RelationshipDimension'
+          type: array
+          maxItems: 8
+          title: Dimensions
+          description: Zero to eight dimensions chosen for this specific relationship, not a universal scale copied
+            to every pair.
+        beliefs_about_target:
+          items:
+            type: string
+          type: array
+          maxItems: 30
+          title: Beliefs About Target
+        unresolved_between_them:
+          items:
+            type: string
+          type: array
+          maxItems: 30
+          title: Unresolved Between Them
+        dynamic_constraints:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Dynamic Constraints
+        change_reasons:
+          items:
+            type: string
+          type: array
+          maxItems: 50
+          title: Change Reasons
+        last_changed_turn:
+          type: integer
+          minimum: 0.0
+          title: Last Changed Turn
+          default: 0
+      additionalProperties: true
+      type: object
+      required:
+      - target_character_id
+      - relationship_type
+      - relationship_context
+      - current_dynamic
+      title: DirectedRelationship
     DirectorPlan:
       properties:
         active_threads:
@@ -1587,6 +1878,12 @@ components:
           - type: integer
           - type: 'null'
           title: Next Chunk Index
+        delivered_chunk_count:
+          type: integer
+          title: Delivered Chunk Count
+        all_chunks_delivered:
+          type: boolean
+          title: All Chunks Delivered
         next_required_action:
           type: string
           title: Next Required Action
@@ -1601,8 +1898,56 @@ components:
       - content_sha256
       - has_more
       - next_chunk_index
+      - delivered_chunk_count
+      - all_chunks_delivered
       - next_required_action
       title: PacketChunkResponse
+    RelationshipDimension:
+      properties:
+        key:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Key
+        label:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Label
+        value:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Value
+          ge: 0
+          le: 100
+      additionalProperties: true
+      type: object
+      required:
+      - key
+      - label
+      - value
+      title: RelationshipDimension
+    RelationshipsDocument:
+      properties:
+        owner_character_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Owner Character Id
+        relations:
+          items:
+            $ref: '#/components/schemas/DirectedRelationship'
+          type: array
+          maxItems: 100
+          title: Relations
+      additionalProperties: true
+      type: object
+      title: RelationshipsDocument
     RuntimeStateUpdates:
       properties:
         novel:
@@ -1656,6 +2001,89 @@ components:
           title: Objects
       type: object
       title: RuntimeStateUpdates
+    SceneCharacterBundleChunkResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        turn_id:
+          type: string
+          title: Turn Id
+        packet_id:
+          type: string
+          title: Packet Id
+        bundle_id:
+          type: string
+          title: Bundle Id
+        character_id:
+          type: string
+          title: Character Id
+        chunk_index:
+          type: integer
+          title: Chunk Index
+        chunk_count:
+          type: integer
+          title: Chunk Count
+        content:
+          type: string
+          title: Content
+        content_sha256:
+          type: string
+          title: Content Sha256
+        has_more:
+          type: boolean
+          title: Has More
+        next_chunk_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Chunk Index
+        delivered_chunk_count:
+          type: integer
+          title: Delivered Chunk Count
+        all_chunks_delivered:
+          type: boolean
+          title: All Chunks Delivered
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - turn_id
+      - packet_id
+      - bundle_id
+      - character_id
+      - chunk_index
+      - chunk_count
+      - content
+      - content_sha256
+      - has_more
+      - next_chunk_index
+      - delivered_chunk_count
+      - all_chunks_delivered
+      - next_required_action
+      title: SceneCharacterBundleChunkResponse
+    SceneCharacterBundleRequest:
+      properties:
+        turn_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Turn Id
+        entry_reason:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Entry Reason
+          description: Concrete story reason this already-known offscreen character will physically enter the scene
+            produced for this pending turn.
+      type: object
+      required:
+      - turn_id
+      - entry_reason
+      title: SceneCharacterBundleRequest
     TurnPacketRequest:
       properties:
         player_input:

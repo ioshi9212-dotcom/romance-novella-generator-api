@@ -8,5 +8,6 @@
   "last_audited_turn": 0,
   "turns_since_audit": 0,
   "next_turn_number": 1,
-  "audit_required": false
+  "audit_required": false,
+  "runtime_contract_version": "2.0"
 }

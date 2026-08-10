@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -205,6 +206,30 @@ def scene_output(
     )
 
 
+def scene_state_update(
+    turn_number: int,
+    *,
+    scene_id: str | None = None,
+    story_datetime: str | None = None,
+    location_id: str = "loc_home",
+    present_character_ids: list[str] | None = None,
+    entered_character_ids: list[str] | None = None,
+    left_character_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "turn_number": turn_number,
+        "scene_id": scene_id or f"scene_{turn_number:04d}",
+        "story_datetime": story_datetime
+        or f"2025-09-08T10:{turn_number:02d}:00",
+        "location_id": location_id,
+        "present_character_ids": present_character_ids
+        if present_character_ids is not None
+        else ["char_emily", "char_chloe"],
+        "entered_character_ids": entered_character_ids or [],
+        "left_character_ids": left_character_ids or [],
+    }
+
+
 def commit_next_turn(
     client: TestClient,
     session_id: str,
@@ -222,6 +247,11 @@ def commit_next_turn(
     turn_number = packet["turn_number"]
     cycle_position = packet["cycle_position"]
     event_text = event_text or f"Установленный факт хода {turn_number}"
+    story_datetime = f"2025-09-08T10:{turn_number:02d}:00"
+    final_state_updates = deepcopy(state_updates or {})
+    final_state_updates["scene_state"] = scene_state_update(
+        turn_number, story_datetime=story_datetime
+    )
     response = client.post(
         f"/api/v1/sessions/{session_id}/turns/commit",
         json={
@@ -230,24 +260,17 @@ def commit_next_turn(
             "scene_output": scene_output(turn_number, cycle_position),
             "summary": f"Краткое содержание хода {turn_number}",
             "scene_id": f"scene_{turn_number:04d}",
-            "story_datetime": f"2025-09-08T10:{turn_number:02d}:00",
+            "story_datetime": story_datetime,
             "events": [
                 {
                     "scene_id": f"scene_{turn_number:04d}",
-                    "story_datetime": f"2025-09-08T10:{turn_number:02d}:00",
+                    "story_datetime": story_datetime,
                     "location_id": "loc_home",
                     "participants_present": ["char_emily", "char_chloe"],
                     "event": event_text,
                 }
             ],
-            "state_updates": state_updates
-            or {
-                "scene_state": {
-                    "turn_number": turn_number,
-                    "scene_id": f"scene_{turn_number:04d}",
-                    "present_character_ids": ["char_emily", "char_chloe"],
-                }
-            },
+            "state_updates": final_state_updates,
         },
     )
     assert response.status_code == 200, response.text
@@ -267,5 +290,8 @@ def complete_checklist() -> dict[str, bool]:
         "directional_relationships": True,
         "plot_threads": True,
         "hidden_lore_and_reveal_timing": True,
+        "director_plan_and_offscreen_consequences": True,
+        "character_card_levels_and_promotions": True,
+        "location_canon_and_current_changes": True,
         "compaction_and_duplicates": True,
     }

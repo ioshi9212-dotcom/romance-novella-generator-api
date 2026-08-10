@@ -49,7 +49,7 @@ def test_fifteen_turns_block_the_next_scene_until_full_audit(
             "audit_id": audit_packet["audit_id"],
             "expected_state_revision": audit_packet["expected_state_revision"],
             "checklist": checklist,
-            "findings": {},
+            "findings": {"result": "Проверка намеренно не завершена"},
         },
     )
     assert rejected.status_code == 422

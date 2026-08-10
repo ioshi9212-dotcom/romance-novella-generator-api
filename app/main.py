@@ -15,6 +15,8 @@ from app.models import (
     CreateSessionRequest,
     CreateSessionResponse,
     PacketChunkResponse,
+    SceneCharacterBundleChunkResponse,
+    SceneCharacterBundleRequest,
     TurnPacketRequest,
 )
 from app.service import NovellaService, ServiceError
@@ -125,6 +127,52 @@ def get_turn_packet_chunk(
 ) -> dict[str, Any]:
     return service_for(request).get_turn_packet_chunk(
         session_id, packet_id, chunk_index
+    )
+
+
+@app.post(
+    "/api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-characters/{character_id}/bundle",
+    operation_id="getSceneCharacterBundle",
+    response_model=SceneCharacterBundleChunkResponse,
+    summary="Load one known offscreen character who will enter the pending scene",
+    description=(
+        "Use only after every turn-packet chunk was read and the story now causes this "
+        "already-known character to physically enter the scene. Returns only that character's "
+        "complete card, current state, knowledge and directional relationships. Read every "
+        "bundle chunk before commitTurn."
+    ),
+)
+def get_scene_character_bundle(
+    session_id: str,
+    packet_id: str,
+    character_id: str,
+    payload: SceneCharacterBundleRequest,
+    request: Request,
+) -> dict[str, Any]:
+    return service_for(request).get_scene_character_bundle(
+        session_id, packet_id, character_id, payload
+    )
+
+
+@app.get(
+    "/api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-character-bundles/{bundle_id}/chunks/{chunk_index}",
+    operation_id="getSceneCharacterBundleChunk",
+    response_model=SceneCharacterBundleChunkResponse,
+    summary="Read the next ordered chunk of one entering character's dossier",
+    description=(
+        "Read in strict order until all_chunks_delivered is true. commitTurn remains blocked "
+        "while any requested scene-character bundle is incomplete."
+    ),
+)
+def get_scene_character_bundle_chunk(
+    session_id: str,
+    packet_id: str,
+    bundle_id: str,
+    chunk_index: int,
+    request: Request,
+) -> dict[str, Any]:
+    return service_for(request).get_scene_character_bundle_chunk(
+        session_id, packet_id, bundle_id, chunk_index
     )
 
 
@@ -243,6 +291,26 @@ def custom_openapi() -> dict[str, Any]:
             if isinstance(operation, dict):
                 operation["security"] = []
     _ensure_object_properties(schema)
+    # The deployed server keeps accepting legacy createSession payloads, but every
+    # newly imported Action schema must opt into the current contract and provide a
+    # substantive director plan. This separates backwards compatibility from the
+    # guarantees advertised to the current Custom GPT.
+    create_schema = schema.get("components", {}).get("schemas", {}).get(
+        "CreateSessionRequest", {}
+    )
+    required = create_schema.setdefault("required", [])
+    for field_name in ("runtime_contract_version", "director_plan"):
+        if field_name not in required:
+            required.append(field_name)
+    version_property = create_schema.get("properties", {}).get(
+        "runtime_contract_version"
+    )
+    if isinstance(version_property, dict):
+        description = version_property.get("description")
+        version_property.clear()
+        version_property.update({"type": "string", "enum": ["2.0"]})
+        if description:
+            version_property["description"] = description
     app.openapi_schema = schema
     return schema
 
