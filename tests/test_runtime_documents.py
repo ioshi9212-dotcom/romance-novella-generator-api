@@ -10,6 +10,8 @@ def test_rules_and_builder_keep_writer_first_contract() -> None:
     assert "сценарист интерактивного романа" in rules
     assert "Railway отвечает за память" in rules
     assert "POV — полноценный персонаж" in rules
+    assert "невидимую камеру" in rules
+    assert "каждый смысловой фрагмент" in rules
     assert "не обязан отвечать репликой" in rules
     assert "Как именно этот человек" in rules
     assert "story_direction" in rules
@@ -24,6 +26,9 @@ def test_rules_and_builder_keep_writer_first_contract() -> None:
     assert "Всегда 9 вариантов" in builder
     assert "900–2000" in builder
     assert "третьем лице" in builder
+    assert "Присутствие POV в кадре" in builder
+    assert "POV не камера" in builder
+    assert "нескольких абзацев подряд" in builder
     assert "не обязан постоянно разговаривать" in builder
     assert "Сюжет должен двигаться в масштабе истории" in builder
     assert "произносимые слова" in builder
