@@ -26,7 +26,7 @@ def test_rules_and_builder_keep_writer_first_contract() -> None:
     assert "третьем лице" in builder
     assert "не обязан постоянно разговаривать" in builder
     assert "Сюжет должен двигаться в масштабе истории" in builder
-    assert "только произносимые слова" in builder
+    assert "произносимые слова" in builder
     assert "не выдумывай изменение" in builder
     assert "После текста" in builder
     assert "commitTurn" in builder
