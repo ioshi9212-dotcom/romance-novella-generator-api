@@ -20,6 +20,7 @@ from app.models import (
     TurnPacketRequest,
 )
 from app.service import NovellaService, ServiceError
+from app.writer_service import WriterFirstNovellaService
 
 settings = get_settings()
 app = FastAPI(
@@ -31,7 +32,7 @@ app = FastAPI(
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
 )
-app.state.service = NovellaService(settings)
+app.state.service = WriterFirstNovellaService(settings)
 
 
 def service_for(request: Request) -> NovellaService:
