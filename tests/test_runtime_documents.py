@@ -15,7 +15,7 @@ def test_rules_and_builder_keep_writer_first_contract() -> None:
     assert "story_direction" in rules
     assert "story_memory" in rules
     assert "recent_scene_history" in rules
-    assert "не обязателен" in rules
+    assert "не обязан заметно двигать" in rules
     assert "не превращай роман в симулятор процедуры" in rules.lower()
     assert "Сначала напиши сцену" in rules
     assert "getSceneCharacterBundle" in rules
@@ -45,7 +45,7 @@ def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
     assert "all_chunks_delivered" in instructions
     assert "revise_last" in instructions
     assert "Сначала именно сцену" in instructions
-    assert "не переписывай его каждый ход" in instructions
+    assert "не переписывай его каждый ход" in instructions.lower()
     assert "Служебное напоминание" in instructions
 
 
