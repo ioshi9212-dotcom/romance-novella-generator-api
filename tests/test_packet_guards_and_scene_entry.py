@@ -88,8 +88,8 @@ def test_turn_commit_is_blocked_until_every_chunk_is_delivered_in_order(
     assert blocked.json()["error"]["code"] == "TURN_PACKET_INCOMPLETE"
 
     packet = collect_packet(client, session_id, first)
-    assert "Режиссёрский план и автономное время" in packet["rules"]
-    assert "Режиссёрская цель" in packet["scene_builder"]
+    assert "Персонажи действуют как реальные люди" in packet["rules"]
+    assert "Строго 1500–2500 символов" in packet["scene_builder"]
     assert packet["scene_focus"]["required_full_character_ids"] == [
         "char_emily",
         "char_chloe",
