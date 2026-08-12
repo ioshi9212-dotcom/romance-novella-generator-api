@@ -3,39 +3,32 @@ import json
 from app.runtime_documents import PROJECT_ROOT, read_runtime_rules, read_scene_builder
 
 
-def test_rules_and_builder_keep_writer_first_contract() -> None:
+def test_rules_and_builder_keep_minimal_writer_contract() -> None:
     rules = read_runtime_rules()
     builder = read_scene_builder()
 
     assert "сценарист интерактивного романа" in rules
-    assert "Railway отвечает за память" in rules
-    assert "POV — полноценный персонаж" in rules
-    assert "невидимую камеру" in rules
-    assert "каждый смысловой фрагмент" in rules
-    assert "не обязан отвечать репликой" in rules
-    assert "Как именно этот человек" in rules
-    assert "story_direction" in rules
-    assert "story_memory" in rules
-    assert "recent_scene_history" in rules
-    assert "не обязан заметно двигать" in rules
-    assert "не превращай роман в симулятор процедуры" in rules.lower()
-    assert "Сначала напиши сцену" in rules
+    assert "Railway хранит память" in rules
+    assert "POV — полноценный участник" in rules
+    assert "действуют как реальные люди" in rules
+    assert "не тем, как «правильно» по психологии" in rules
+    assert "третьем лице" in rules
+    assert "Сарказм автора — около 5%" in rules
+    assert "Отношение POV к другим система не назначает" in rules
     assert "getSceneCharacterBundle" in rules
+    assert "commitTurn" in rules
 
+    assert "Строго 1500–2500 символов" in builder
+    assert "Третье лицо" in builder
+    assert "POV всегда присутствует" in builder
+    assert "около 5%" in builder
+    assert "Всегда ровно 9 вариантов" in builder
+    assert "3 действия, 3 реплики, 3 мысли" in builder
+    assert "не для заполнения блока" in builder
+    assert "Райан - доверие 10/+1" in builder
+    assert "Один показатель = одно слово" in builder
+    assert "Отношение POV к другим не показывай" in builder
     assert "Ход {turn_number} · цикл {cycle_position}/15" in builder
-    assert "Всегда 9 вариантов" in builder
-    assert "900–2000" in builder
-    assert "третьем лице" in builder
-    assert "Присутствие POV в кадре" in builder
-    assert "POV не камера" in builder
-    assert "нескольких абзацев подряд" in builder
-    assert "не обязан постоянно разговаривать" in builder
-    assert "Сюжет должен двигаться в масштабе истории" in builder
-    assert "произносимые слова" in builder
-    assert "не выдумывай изменение" in builder.lower()
-    assert "После текста" in builder
-    assert "commitTurn" in builder
-    assert "Перед следующим ходом: прочитать актуальный state" not in builder
 
 
 def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
