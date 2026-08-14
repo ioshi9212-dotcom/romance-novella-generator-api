@@ -22,8 +22,8 @@ def test_rules_and_builder_keep_minimal_writer_contract() -> None:
     assert "Третье лицо" in builder
     assert "POV всегда присутствует" in builder
     assert "около 5%" in builder
-    assert "Всегда ровно 9 вариантов" in builder
-    assert "3 действия, 3 реплики, 3 мысли" in builder
+    assert "Всегда ровно 3 действия, 3 реплики и 3 мысли" in builder
+    assert "В каждом разделе нумерация отдельно: 1, 2, 3" in builder
     assert "не для заполнения блока" in builder
     assert "Райан - доверие 10/+1" in builder
     assert "Один показатель = одно слово" in builder
@@ -42,9 +42,9 @@ def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
     assert 'runtime_contract_version: "2.0"' in instructions
     assert "all_chunks_delivered" in instructions
     assert "revise_last" in instructions
-    assert "Сначала именно сцену" in instructions
-    assert "не переписывай его каждый ход" in instructions.lower()
-    assert "Служебное напоминание" in instructions
+    assert "Сначала напиши полный ответ по `scene_builder`" in instructions
+    assert "director_plan` обновляй только если" in instructions
+    assert "Не показывай JSON" in instructions
 
 
 def test_all_state_templates_are_valid_json() -> None:
