@@ -68,6 +68,54 @@ def test_normal_turn_packet_is_writer_sized_not_audit_sized(
     ]
 
 
+def test_active_arc_update_is_visible_in_the_next_writer_packet(
+    tmp_path, session_payload
+) -> None:
+    client = _writer_client(tmp_path)
+    session_id = create_session(client, session_payload)
+    arc = {
+        "arc_id": "arc_rescue",
+        "status": "active",
+        "started_turn": 1,
+        "premise": "Группа прибыла на вызов",
+        "anchor_facts": ["По исходным данным подтверждены четыре заложника"],
+        "goal": "Завершить операцию и установить судьбу заложников",
+        "current_phase": "проникновение",
+        "unresolved": ["Не найден четвёртый заложник"],
+        "end_conditions": ["Судьба четырёх исходных заложников установлена"],
+        "possible_routes": ["продолжить проникновение", "сменить подход"],
+        "discoveries": [],
+        "last_progress_turn": 1,
+    }
+    commit_next_turn(
+        client,
+        session_id,
+        player_input="Продолжить операцию",
+        state_updates={
+            "plot_state": {
+                "active_lines": [],
+                "active_arcs": [arc],
+                "resolved_arcs": [],
+            }
+        },
+    )
+
+    packet = collect_packet(
+        client,
+        session_id,
+        client.post(
+            f"/api/v1/sessions/{session_id}/turn-packet",
+            json={"player_input": "Осмотреть следующий проход"},
+        ),
+    )
+    active_arcs = packet["story_bible"]["active_plot"]["active_arcs"]
+    assert active_arcs[0]["arc_id"] == "arc_rescue"
+    assert active_arcs[0]["anchor_facts"] == [
+        "По исходным данным подтверждены четыре заложника"
+    ]
+    assert active_arcs[0]["unresolved"] == ["Не найден четвёртый заложник"]
+
+
 def test_writer_runtime_does_not_require_visible_audit_reminder(
     tmp_path, session_payload
 ) -> None:
