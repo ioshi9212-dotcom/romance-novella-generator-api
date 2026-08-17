@@ -17,6 +17,10 @@ def test_rules_and_builder_keep_minimal_writer_contract() -> None:
     assert "Отношение POV к другим система не назначает" in rules
     assert "getSceneCharacterBundle" in rules
     assert "commitTurn" in rules
+    assert "plot_state.active_arcs" in rules
+    assert "anchor_facts" in rules
+    assert "Жёсткого лимита ходов нет" in rules
+    assert "plot_state.resolved_arcs" in rules
 
     assert "Строго 1500–2500 символов" in builder
     assert "Третье лицо" in builder
@@ -24,7 +28,7 @@ def test_rules_and_builder_keep_minimal_writer_contract() -> None:
     assert "около 5%" in builder
     assert "Всегда ровно 3 действия, 3 реплики и 3 мысли" in builder
     assert "В каждом разделе нумерация отдельно: 1, 2, 3" in builder
-    assert "не для заполнения блока" in builder
+    assert "не нейтральные или бытовые действия ради заполнения блока" in builder
     assert "Райан - доверие 10/+1" in builder
     assert "Один показатель = одно слово" in builder
     assert "Отношение POV к другим не показывай" in builder
