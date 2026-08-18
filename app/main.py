@@ -32,6 +32,7 @@ app = FastAPI(
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
 )
+# Harmless source touch: keeps Railway GitHub autodeploy pointed at the latest main runtime.
 app.state.service = EnhancedWriterNovellaService(settings)
 
 
