@@ -18,7 +18,23 @@ from app.writer_service import WriterFirstNovellaService
 class EnhancedWriterNovellaService(WriterFirstNovellaService):
     """Adds small author-facing continuity layers without expanding the public API."""
 
-    ENHANCED_PACKET_VERSION = 2
+    ENHANCED_PACKET_VERSION = 3
+    INTRO_MARKERS = (
+        "познаком",
+        "представил",
+        "представила",
+        "представился",
+        "представилась",
+        "представлены",
+        "обменялись имен",
+        "назвал свое имя",
+        "назвала свое имя",
+        "узнал имя",
+        "узнала имя",
+        "introduced",
+        "met for the first time",
+        "exchanged names",
+    )
 
     @staticmethod
     def _parse_story_datetime(value: Any) -> datetime | None:
@@ -138,9 +154,61 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             ),
         }
 
+    @classmethod
+    def _event_explicitly_introduces_pair(
+        cls,
+        event: dict[str, Any],
+        pov_character_id: str,
+        character_id: str,
+    ) -> bool:
+        participants = {str(item) for item in event.get("participants_present", [])}
+        if pov_character_id not in participants or character_id not in participants:
+            return False
+        text = " ".join(
+            str(event.get(key, ""))
+            for key in ("event", "summary", "fact", "description")
+        ).casefold().replace("ё", "е")
+        if "не познаком" in text or "не представ" in text:
+            return False
+        return any(marker in text for marker in cls.INTRO_MARKERS)
+
     @staticmethod
+    def _has_relationship_evidence(
+        character: dict[str, Any], pov_character_id: str
+    ) -> bool:
+        for relation in character.get("relationships", {}).get("relations", []):
+            if str(relation.get("target_character_id", "")) != pov_character_id:
+                continue
+            if relation.get("dimensions"):
+                return True
+            if relation.get("beliefs_about_target") or relation.get("unresolved_between_them"):
+                return True
+            for key in ("relationship_type", "relationship_context", "current_dynamic"):
+                value = str(relation.get(key, "")).strip()
+                if value:
+                    return True
+        return False
+
+    @staticmethod
+    def _knowledge_mentions_character(
+        owner: dict[str, Any], target_id: str, target_name: str
+    ) -> bool:
+        knowledge = owner.get("knowledge", {})
+        text = json.dumps(knowledge, ensure_ascii=False).casefold().replace("ё", "е")
+        if target_id and target_id.casefold() in text:
+            return True
+        normalized_name = " ".join(target_name.casefold().replace("ё", "е").split())
+        if normalized_name and normalized_name in text:
+            return True
+        first_name = normalized_name.split()[0] if normalized_name else ""
+        return bool(first_name and len(first_name) >= 3 and first_name in text)
+
+    @classmethod
     def _registry_with_continuity(
-        before_state: dict[str, Any], payload: dict[str, Any]
+        cls,
+        before_state: dict[str, Any],
+        payload: dict[str, Any],
+        chronology: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         registry = build_character_registry(before_state.get("characters", []))
         continuity = {
@@ -148,6 +216,17 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             for item in payload.get("character_continuity_index", [])
             if item.get("character_id")
         }
+        characters = {
+            str(item.get("character_id", "")): item
+            for item in before_state.get("characters", [])
+            if item.get("character_id")
+        }
+        pov_character_id = str(before_state.get("novel", {}).get("pov_character_id", ""))
+        pov_character = characters.get(pov_character_id, {})
+        pov_name = str(
+            pov_character.get("card", {}).get("identity", {}).get("name", "")
+        )
+
         for entry in registry:
             character_id = str(entry.get("character_id", ""))
             continuity_entry = continuity.get(character_id, {})
@@ -163,10 +242,57 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             familiarity = entry.get("pov_familiarity")
             if isinstance(familiarity, dict) and familiarity.get("status"):
                 entry["continuity_status"] = familiarity.get("status")
-            elif entry["encountered_with_pov"]:
+                entry["familiarity_source"] = "stored"
+                continue
+
+            character = characters.get(character_id, {})
+            explicit_events = [
+                event
+                for event in chronology
+                if cls._event_explicitly_introduces_pair(
+                    event, pov_character_id, character_id
+                )
+            ]
+            if explicit_events:
+                first_event = min(
+                    explicit_events,
+                    key=lambda item: int(item.get("turn_number", 0) or 0),
+                )
+                entry["continuity_status"] = "acquainted"
+                entry["familiarity_source"] = "legacy_chronology"
+                entry["legacy_familiarity_evidence"] = {
+                    "kind": "explicit_introduction_event",
+                    "turn_number": first_event.get("turn_number"),
+                    "event_id": first_event.get("event_id"),
+                }
+                continue
+
+            shared = entry["encountered_with_pov"]
+            relationship_evidence = cls._has_relationship_evidence(
+                character, pov_character_id
+            )
+            character_name = str(entry.get("name", ""))
+            npc_knows_pov = cls._knowledge_mentions_character(
+                character, pov_character_id, pov_name
+            )
+            pov_knows_npc = cls._knowledge_mentions_character(
+                pov_character, character_id, character_name
+            )
+            if shared and (relationship_evidence or (npc_knows_pov and pov_knows_npc)):
+                entry["continuity_status"] = "legacy_known_relationship"
+                entry["familiarity_source"] = "legacy_state_inference"
+                entry["legacy_familiarity_evidence"] = {
+                    "shared_scene": True,
+                    "directed_relationship_to_pov": relationship_evidence,
+                    "npc_identity_knowledge": npc_knows_pov,
+                    "pov_identity_knowledge": pov_knows_npc,
+                }
+            elif shared:
                 entry["continuity_status"] = "encountered"
+                entry["familiarity_source"] = "legacy_copresence"
             else:
                 entry["continuity_status"] = "not_encountered"
+                entry["familiarity_source"] = "none"
         return registry
 
     @staticmethod
@@ -226,15 +352,23 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
                 "story-start calendar date + 1. If the scene crosses midnight, increment it."
             ),
         }
-        character_registry = self._registry_with_continuity(before_state, payload)
+        _chronology_manifest, _parts, chronology = self._read_chronology_locked(session_id)
+        chronology = self._effective_chronology(chronology)
+        character_registry = self._registry_with_continuity(
+            before_state, payload, chronology
+        )
         novel = payload.setdefault("story_bible", {}).setdefault("novel", {})
         novel["character_registry"] = character_registry
         novel["character_registry_instruction"] = (
-            "Compact authoritative roster. Player-defined characters stay here for the whole "
-            "session; recurring/important runtime NPCs are added automatically. character_id is "
-            "the link to the full card. continuity_status distinguishes merely encountering a "
-            "person from being explicitly acquainted. Do not stage a first meeting again when "
-            "pov_familiarity.status is acquainted."
+            "Compact authoritative roster derived from character cards every turn. Player-defined "
+            "characters stay here for the whole session; recurring/important runtime NPCs appear "
+            "automatically. character_id is the link to the full card. continuity_status is not "
+            "cosmetic: acquainted means a recorded introduction exists; legacy_known_relationship "
+            "means an older session already contains enough shared-scene/relationship evidence that "
+            "the pair must not be reset to strangers; encountered means prior co-presence only and "
+            "does not prove a formal introduction. Never stage a first meeting again for acquainted "
+            "or legacy_known_relationship. During the next mandatory audit, backfill missing "
+            "current_state.pov_familiarity for strong legacy evidence instead of discarding it."
         )
         payload["reserved_character_names"] = {
             "names": self._reserved_name_rows(before_state),
@@ -253,8 +387,10 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             "story_bible.novel.character_registry and reserved_character_names. When POV and a "
             "character explicitly become acquainted, commit an objective chronology event and "
             "set that character current_state.pov_familiarity = {status: acquainted, since_turn: "
-            "current turn}; also update personal knowledge of names/identity according to what each "
-            "person actually learned. Mere co-presence is encountered, not automatically acquainted."
+            "current turn, source: explicit_scene}; also update personal knowledge of names/identity "
+            "according to what each person actually learned. Mere co-presence is encountered, not "
+            "automatically acquainted. For old sessions, acquainted and legacy_known_relationship "
+            "must never be written as a new first meeting."
         ).strip()
 
         text = json.dumps(payload, ensure_ascii=False, indent=2)
