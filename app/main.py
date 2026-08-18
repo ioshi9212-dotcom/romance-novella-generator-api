@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
@@ -34,6 +36,10 @@ app = FastAPI(
 )
 # Harmless source touch: keeps Railway GitHub autodeploy pointed at the latest main runtime.
 app.state.service = EnhancedWriterNovellaService(settings)
+
+# One-time recovery gate. Only the SHA-256 digest is committed; the secret token itself
+# never lives in the public repository. This route is intentionally excluded from OpenAPI.
+_RECOVERY_TOKEN_SHA256 = "6297d6aa76d4489b58f299e3bbd3e546feee74f9b6c35189f597a3a20d8ddf9a"
 
 
 def service_for(request: Request) -> NovellaService:
@@ -83,6 +89,70 @@ async def handle_request_validation_error(
 @app.get("/health", include_in_schema=False)
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/internal/recover-session", include_in_schema=False)
+def recover_session(
+    request: Request,
+    token: str = Query(min_length=16),
+    pov_name: str = Query(min_length=1, max_length=120),
+    last_completed_turn: int = Query(ge=0),
+) -> dict[str, Any] | JSONResponse:
+    """Find a lost session by exact turn and POV name without exposing session listings."""
+
+    supplied_digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(supplied_digest, _RECOVERY_TOKEN_SHA256):
+        return JSONResponse(
+            status_code=403,
+            content={"error": {"code": "RECOVERY_FORBIDDEN", "message": "Invalid token"}},
+        )
+
+    service = service_for(request)
+    wanted_name = pov_name.strip().casefold()
+    matches: list[dict[str, Any]] = []
+    for session_dir in service.storage.sessions_dir.iterdir():
+        if not session_dir.is_dir():
+            continue
+        session_id = session_dir.name
+        try:
+            session = service.storage.read_json(session_id, "session.json", default={})
+            if not isinstance(session, dict):
+                continue
+            if int(session.get("last_completed_turn", -1)) != last_completed_turn:
+                continue
+
+            novel = service.storage.read_json(session_id, "state/novel.json", default={})
+            if not isinstance(novel, dict):
+                novel = {}
+            pov_character_id = str(novel.get("pov_character_id", ""))
+            if not pov_character_id:
+                continue
+            card = service.storage.read_json(
+                session_id,
+                f"characters/{pov_character_id}/card.json",
+                default={},
+            )
+            identity = card.get("identity", {}) if isinstance(card, dict) else {}
+            pov_display_name = str(identity.get("name", "")).strip()
+            if wanted_name not in pov_display_name.casefold():
+                continue
+
+            matches.append(
+                {
+                    "session_id": session_id,
+                    "title": str(novel.get("title", "")),
+                    "pov_character_id": pov_character_id,
+                    "pov_name": pov_display_name,
+                    "last_completed_turn": int(session.get("last_completed_turn", 0)),
+                    "updated_at": session.get("updated_at"),
+                    "audit_required": bool(session.get("audit_required", False)),
+                }
+            )
+        except (FileNotFoundError, OSError, TypeError, ValueError):
+            continue
+
+    matches.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    return {"count": len(matches), "matches": matches[:10]}
 
 
 @app.post(
