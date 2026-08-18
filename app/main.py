@@ -6,6 +6,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.enhanced_writer_service import EnhancedWriterNovellaService
 from app.models import (
     ChronologyPageResponse,
     CommitAuditRequest,
@@ -20,7 +21,6 @@ from app.models import (
     TurnPacketRequest,
 )
 from app.service import NovellaService, ServiceError
-from app.writer_service import WriterFirstNovellaService
 
 settings = get_settings()
 app = FastAPI(
@@ -32,7 +32,7 @@ app = FastAPI(
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
 )
-app.state.service = WriterFirstNovellaService(settings)
+app.state.service = EnhancedWriterNovellaService(settings)
 
 
 def service_for(request: Request) -> NovellaService:
