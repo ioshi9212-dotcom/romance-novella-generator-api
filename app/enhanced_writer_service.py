@@ -19,6 +19,7 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
     """Adds small author-facing continuity layers without expanding the public API."""
 
     ENHANCED_PACKET_VERSION = 3
+    ENHANCED_AUDIT_PACKET_VERSION = 1
     INTRO_MARKERS = (
         "познаком",
         "представил",
@@ -321,6 +322,41 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             )
         return rows
 
+    @staticmethod
+    def _familiarity_backfill_targets(
+        registry: list[dict[str, Any]], pov_character_id: str
+    ) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for entry in registry:
+            character_id = str(entry.get("character_id", ""))
+            if not character_id or character_id == pov_character_id:
+                continue
+            if entry.get("familiarity_source") == "stored":
+                continue
+            status = entry.get("continuity_status")
+            if status == "acquainted":
+                evidence = entry.get("legacy_familiarity_evidence", {})
+                result.append(
+                    {
+                        "character_id": character_id,
+                        "name": entry.get("name"),
+                        "required_status": "acquainted",
+                        "evidence": deepcopy(evidence),
+                    }
+                )
+            elif status == "legacy_known_relationship":
+                result.append(
+                    {
+                        "character_id": character_id,
+                        "name": entry.get("name"),
+                        "required_status": "known_or_acquainted",
+                        "evidence": deepcopy(
+                            entry.get("legacy_familiarity_evidence", {})
+                        ),
+                    }
+                )
+        return result
+
     def _augment_turn_packet_locked(
         self,
         session_id: str,
@@ -363,11 +399,12 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             "Compact authoritative roster derived from character cards every turn. Player-defined "
             "characters stay here for the whole session; recurring/important runtime NPCs appear "
             "automatically. character_id is the link to the full card. continuity_status is not "
-            "cosmetic: acquainted means a recorded introduction exists; legacy_known_relationship "
-            "means an older session already contains enough shared-scene/relationship evidence that "
-            "the pair must not be reset to strangers; encountered means prior co-presence only and "
-            "does not prove a formal introduction. Never stage a first meeting again for acquainted "
-            "or legacy_known_relationship. During the next mandatory audit, backfill missing "
+            "cosmetic: acquainted means a recorded introduction exists; known means stored identity/" 
+            "relationship familiarity; legacy_known_relationship means an older session already "
+            "contains enough shared-scene/relationship evidence that the pair must not be reset to "
+            "strangers; encountered means prior co-presence only and does not prove a formal "
+            "introduction. Never stage a first meeting again for acquainted, known or "
+            "legacy_known_relationship. During the next mandatory audit, backfill missing "
             "current_state.pov_familiarity for strong legacy evidence instead of discarding it."
         )
         payload["reserved_character_names"] = {
@@ -389,8 +426,8 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             "set that character current_state.pov_familiarity = {status: acquainted, since_turn: "
             "current turn, source: explicit_scene}; also update personal knowledge of names/identity "
             "according to what each person actually learned. Mere co-presence is encountered, not "
-            "automatically acquainted. For old sessions, acquainted and legacy_known_relationship "
-            "must never be written as a new first meeting."
+            "automatically acquainted. For old sessions, acquainted, known and "
+            "legacy_known_relationship must never be written as a new first meeting."
         ).strip()
 
         text = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -410,6 +447,80 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
         )
         return self._packet_chunk_response(session_id, pending, 0)
 
+    def _augment_audit_packet_locked(
+        self,
+        session_id: str,
+        pending: dict[str, Any],
+    ) -> dict[str, Any]:
+        if (
+            pending.get("enhanced_audit_packet_version")
+            == self.ENHANCED_AUDIT_PACKET_VERSION
+        ):
+            return self._packet_chunk_response(session_id, pending, 0)
+
+        raw = "".join(pending.get("chunks", []))
+        if not raw:
+            raise ServiceError(500, "AUDIT_PACKET_CORRUPT", "Audit packet has no content")
+        payload = json.loads(raw)
+        state = payload.get("state", {})
+        chronology = payload.get("chronology", [])
+        pov_character_id = str(state.get("novel", {}).get("pov_character_id", ""))
+        continuity_index = self._character_continuity_index_locked(
+            session_id,
+            before_state=state,
+            chronology=chronology,
+            pov_character_id=pov_character_id or None,
+            history_end=int(payload.get("turn_to", 0)),
+        )
+        registry = self._registry_with_continuity(
+            state,
+            {"character_continuity_index": continuity_index},
+            chronology,
+        )
+        backfill_targets = self._familiarity_backfill_targets(
+            registry, pov_character_id
+        )
+        payload["character_familiarity_audit"] = {
+            "registry": registry,
+            "backfill_targets": backfill_targets,
+            "instruction": (
+                "Audit familiarity as canon. For every backfill target, inspect chronology, full "
+                "turns, knowledge and relationships. If required_status is acquainted, write "
+                "current_state.pov_familiarity.status = acquainted. If required_status is "
+                "known_or_acquainted, preserve the fact that they are not strangers: use status "
+                "known unless the audit establishes an explicit introduction, then use acquainted. "
+                "Include source=legacy_audit and useful evidence/turn metadata. Do not backfill "
+                "encountered-only characters as acquainted merely because they shared a room."
+            ),
+        }
+        verification = payload.setdefault("required_findings_verification", {})
+        verification["familiarity_checked_character_ids"] = [
+            item["character_id"] for item in backfill_targets
+        ]
+        payload["instruction"] = (
+            str(payload.get("instruction", ""))
+            + " Also reconcile character_familiarity_audit. Every listed backfill target must "
+            "be checked and persisted in current_state.pov_familiarity before commitAudit. Put "
+            "all target IDs in findings.verification.familiarity_checked_character_ids."
+        ).strip()
+
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        chunks = _split_text(text, self.settings.packet_chunk_chars)
+        pending.update(
+            {
+                "chunks": chunks,
+                "content_sha256": sha256(text.encode("utf-8")).hexdigest(),
+                "last_delivered_chunk_index": 0,
+                "all_chunks_delivered": len(chunks) == 1,
+                "enhanced_audit_packet_version": self.ENHANCED_AUDIT_PACKET_VERSION,
+                "familiarity_backfill_targets": backfill_targets,
+            }
+        )
+        self.storage._write_json_batch_locked(
+            session_id, {"pending_audit.json": pending}
+        )
+        return self._packet_chunk_response(session_id, pending, 0)
+
     def get_turn_packet(self, session_id: str, request: Any) -> dict[str, Any]:
         super().get_turn_packet(session_id, request)
         with self.storage.session_transaction(session_id):
@@ -421,6 +532,18 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
                     409, "TURN_NOT_PENDING", "Turn packet is no longer active"
                 )
             return self._augment_turn_packet_locked(session_id, pending)
+
+    def get_audit_packet(self, session_id: str) -> dict[str, Any]:
+        super().get_audit_packet(session_id)
+        with self.storage.session_transaction(session_id):
+            pending = self.storage.read_json(
+                session_id, "pending_audit.json", default={}
+            )
+            if pending.get("status") != "active":
+                raise ServiceError(
+                    409, "AUDIT_NOT_PENDING", "Audit packet is no longer active"
+                )
+            return self._augment_audit_packet_locked(session_id, pending)
 
     def create_session(self, request: Any) -> dict[str, Any]:
         owner_by_alias: dict[str, str] = {}
@@ -474,3 +597,72 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
                         f"Character name '{alias}' is reserved for {owner_id}; choose a different "
                         f"name for {update.character_id}",
                     )
+
+    @staticmethod
+    def _validate_familiarity_audit_backfill(
+        request: Any,
+        targets: list[dict[str, Any]],
+    ) -> None:
+        verification = request.findings.get("verification", {})
+        checked = {
+            str(item)
+            for item in verification.get("familiarity_checked_character_ids", [])
+        }
+        required_ids = {str(item.get("character_id", "")) for item in targets}
+        missing_checked = sorted(required_ids - checked)
+        if missing_checked:
+            raise ServiceError(
+                422,
+                "AUDIT_FAMILIARITY_INCOMPLETE",
+                "Familiarity audit did not cover: " + ", ".join(missing_checked),
+            )
+
+        updates = {
+            str(item.character_id): item
+            for item in request.state_updates.characters
+        }
+        for target in targets:
+            character_id = str(target.get("character_id", ""))
+            update = updates.get(character_id)
+            current_state = update.current_state if update is not None else None
+            familiarity = (
+                current_state.get("pov_familiarity")
+                if isinstance(current_state, dict)
+                else None
+            )
+            if not isinstance(familiarity, dict):
+                raise ServiceError(
+                    422,
+                    "AUDIT_FAMILIARITY_BACKFILL_REQUIRED",
+                    f"Audit must persist pov_familiarity for {character_id}",
+                )
+            status = str(familiarity.get("status", "")).strip().lower()
+            required = target.get("required_status")
+            allowed = (
+                {"acquainted"}
+                if required == "acquainted"
+                else {"known", "acquainted"}
+            )
+            if status not in allowed:
+                raise ServiceError(
+                    422,
+                    "AUDIT_FAMILIARITY_BACKFILL_REQUIRED",
+                    f"pov_familiarity.status for {character_id} must be one of: "
+                    + ", ".join(sorted(allowed)),
+                )
+
+    def commit_audit(self, session_id: str, request: Any) -> dict[str, Any]:
+        self._require_session(session_id)
+        targets: list[dict[str, Any]] = []
+        with self.storage.session_transaction(session_id):
+            pending = self.storage.read_json(
+                session_id, "pending_audit.json", default={}
+            )
+            if (
+                pending.get("status") == "active"
+                and pending.get("audit_id") == request.audit_id
+            ):
+                targets = list(pending.get("familiarity_backfill_targets", []))
+        if targets:
+            self._validate_familiarity_audit_backfill(request, targets)
+        return super().commit_audit(session_id, request)
