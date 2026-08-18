@@ -7,6 +7,7 @@ from app.enhanced_writer_service import EnhancedWriterNovellaService
 from app.main import app
 from tests.conftest import (
     collect_packet,
+    complete_checklist,
     create_session,
     full_character_card,
     scene_state_update,
@@ -75,6 +76,23 @@ def _commit(
 def _registry_entry(packet: dict, character_id: str) -> dict:
     registry = packet["story_bible"]["novel"]["character_registry"]
     return next(item for item in registry if item["character_id"] == character_id)
+
+
+def _verification(audit_packet: dict) -> dict:
+    targets = audit_packet["audit_targets"]
+    familiarity_ids = [
+        item["character_id"]
+        for item in audit_packet["character_familiarity_audit"]["backfill_targets"]
+    ]
+    return {
+        "turns_checked": targets["turn_numbers"],
+        "chronology_event_ids_checked": targets["chronology_event_ids"],
+        "characters_checked": targets["character_ids"],
+        "knowledge_checked_character_ids": targets["knowledge_character_ids"],
+        "familiarity_checked_character_ids": familiarity_ids,
+        "final_consistency_pass": True,
+        "unresolved_issues": [],
+    }
 
 
 def test_old_session_recovers_explicit_acquaintance_from_chronology(
@@ -251,3 +269,100 @@ def test_reserved_name_cannot_be_reused_and_new_important_npc_enters_registry(
     assert nora["name"] == "Нора Рейн"
     assert nora["card_level"] == "important"
     assert nora["role"].startswith("Новый важный NPC")
+
+
+def test_fifteenth_turn_audit_persists_legacy_acquaintance_before_turn_sixteen(
+    tmp_path, session_payload
+) -> None:
+    client = _client(tmp_path)
+    session_id = create_session(client, session_payload)
+
+    for turn_number in range(1, 16):
+        packet = collect_packet(
+            client,
+            session_id,
+            client.post(
+                f"/api/v1/sessions/{session_id}/turn-packet",
+                json={"player_input": f"Продолжить ход {turn_number}"},
+            ),
+        )
+        event_text = (
+            "Эмили и Хлоя познакомились и обменялись именами"
+            if turn_number == 1
+            else f"Эмили и Хлоя продолжили уже знакомое взаимодействие {turn_number}"
+        )
+        committed = _commit(
+            client,
+            session_id,
+            packet,
+            event_text=event_text,
+        )
+        assert committed.status_code == 200, committed.text
+
+    audit_packet = collect_packet(
+        client,
+        session_id,
+        client.get(f"/api/v1/sessions/{session_id}/audit-packet"),
+    )
+    backfill = audit_packet["character_familiarity_audit"]["backfill_targets"]
+    chloe_target = next(
+        item for item in backfill if item["character_id"] == "char_chloe"
+    )
+    assert chloe_target["required_status"] == "acquainted"
+
+    rejected = client.post(
+        f"/api/v1/sessions/{session_id}/audits/commit",
+        json={
+            "audit_id": audit_packet["audit_id"],
+            "expected_state_revision": audit_packet["expected_state_revision"],
+            "checklist": complete_checklist(),
+            "findings": {
+                "result": "Знакомство проверено, но намеренно не сохранено для теста",
+                "verification": _verification(audit_packet),
+            },
+        },
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "AUDIT_FAMILIARITY_BACKFILL_REQUIRED"
+
+    completed = client.post(
+        f"/api/v1/sessions/{session_id}/audits/commit",
+        json={
+            "audit_id": audit_packet["audit_id"],
+            "expected_state_revision": audit_packet["expected_state_revision"],
+            "checklist": complete_checklist(),
+            "findings": {
+                "result": "Старое знакомство закреплено после полной сверки",
+                "verification": _verification(audit_packet),
+            },
+            "state_updates": {
+                "characters": [
+                    {
+                        "character_id": "char_chloe",
+                        "current_state": {
+                            "pov_familiarity": {
+                                "status": "acquainted",
+                                "source": "legacy_audit",
+                                "since_turn": 1,
+                            }
+                        },
+                    }
+                ]
+            },
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["audit_complete"] is True
+
+    turn_sixteen = collect_packet(
+        client,
+        session_id,
+        client.post(
+            f"/api/v1/sessions/{session_id}/turn-packet",
+            json={"player_input": "Подойти к Хлое после аудита"},
+        ),
+    )
+    chloe = _registry_entry(turn_sixteen, "char_chloe")
+    assert chloe["continuity_status"] == "acquainted"
+    assert chloe["familiarity_source"] == "stored"
+    assert chloe["pov_familiarity"]["source"] == "legacy_audit"
