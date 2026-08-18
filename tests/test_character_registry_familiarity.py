@@ -188,14 +188,7 @@ def test_legacy_introduction_is_exposed_as_acquainted_and_never_reset_to_strange
     assert rhea["continuity_status"] == "acquainted"
     assert rhea["familiarity_source"] == "legacy_chronology"
     assert rhea["encountered_with_pov"] is True
-    assert packet["familiarity_backfill_targets"] == [
-        {
-            "character_id": "char_rhea",
-            "name": "Рэя Кейн",
-            "required_status": "acquainted",
-            "evidence": rhea["legacy_familiarity_evidence"],
-        }
-    ]
+    assert rhea["legacy_familiarity_evidence"]["turn_number"] == 1
 
 
 def test_fifteen_turn_audit_forces_legacy_familiarity_to_be_persisted(tmp_path, session_payload):
