@@ -6,18 +6,19 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Any
 
+from app.character_registry import (
+    build_character_registry,
+    character_name_aliases,
+    reserved_character_names,
+)
 from app.service import NovellaService, ServiceError, _split_text
 from app.writer_service import WriterFirstNovellaService
 
 
 class EnhancedWriterNovellaService(WriterFirstNovellaService):
-    """Adds a small author-facing layer for story-day and relationship causality.
+    """Adds small author-facing continuity layers without expanding the public API."""
 
-    No new public API is required: the extra fields are injected into the existing turn
-    packet before its first chunk is returned.
-    """
-
-    ENHANCED_PACKET_VERSION = 1
+    ENHANCED_PACKET_VERSION = 2
 
     @staticmethod
     def _parse_story_datetime(value: Any) -> datetime | None:
@@ -44,8 +45,6 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
         session_id: str,
         before_state: dict[str, Any],
     ) -> str | None:
-        # Turn one keeps the exact pre-story state, so it is the authoritative fallback
-        # for sessions created before this feature existed.
         first_turn = self.storage.read_json(
             session_id, self._turn_path(1), default={}
         )
@@ -82,7 +81,6 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
         relations: list[dict[str, Any]] = []
         for owner_id in present_ids:
             if owner_id == pov_character_id:
-                # POV -> others is intentionally player-owned and is never assigned by runtime.
                 continue
             owner = characters_by_id.get(owner_id)
             if not owner:
@@ -140,6 +138,63 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
             ),
         }
 
+    @staticmethod
+    def _registry_with_continuity(
+        before_state: dict[str, Any], payload: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        registry = build_character_registry(before_state.get("characters", []))
+        continuity = {
+            str(item.get("character_id")): item
+            for item in payload.get("character_continuity_index", [])
+            if item.get("character_id")
+        }
+        for entry in registry:
+            character_id = str(entry.get("character_id", ""))
+            continuity_entry = continuity.get(character_id, {})
+            entry["encountered_with_pov"] = bool(
+                continuity_entry.get("has_shared_scene_with_pov")
+            )
+            entry["first_shared_scene_with_pov_turn"] = continuity_entry.get(
+                "first_seen_turn"
+            )
+            entry["last_shared_scene_with_pov_turn"] = continuity_entry.get(
+                "last_shared_scene_with_pov_turn"
+            )
+            familiarity = entry.get("pov_familiarity")
+            if isinstance(familiarity, dict) and familiarity.get("status"):
+                entry["continuity_status"] = familiarity.get("status")
+            elif entry["encountered_with_pov"]:
+                entry["continuity_status"] = "encountered"
+            else:
+                entry["continuity_status"] = "not_encountered"
+        return registry
+
+    @staticmethod
+    def _reserved_name_rows(before_state: dict[str, Any]) -> list[dict[str, str]]:
+        by_id = {
+            str(item.get("character_id", "")): item
+            for item in before_state.get("characters", [])
+        }
+        rows: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for alias, character_id in reserved_character_names(
+            before_state.get("characters", [])
+        ).items():
+            key = (alias, character_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            card = by_id.get(character_id, {}).get("card", {})
+            display = str(card.get("identity", {}).get("name", "")).strip()
+            rows.append(
+                {
+                    "reserved_name": alias,
+                    "character_id": character_id,
+                    "display_name": display,
+                }
+            )
+        return rows
+
     def _augment_turn_packet_locked(
         self,
         session_id: str,
@@ -171,12 +226,35 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
                 "story-start calendar date + 1. If the scene crosses midnight, increment it."
             ),
         }
+        character_registry = self._registry_with_continuity(before_state, payload)
+        novel = payload.setdefault("story_bible", {}).setdefault("novel", {})
+        novel["character_registry"] = character_registry
+        novel["character_registry_instruction"] = (
+            "Compact authoritative roster. Player-defined characters stay here for the whole "
+            "session; recurring/important runtime NPCs are added automatically. character_id is "
+            "the link to the full card. continuity_status distinguishes merely encountering a "
+            "person from being explicitly acquainted. Do not stage a first meeting again when "
+            "pov_familiarity.status is acquainted."
+        )
+        payload["reserved_character_names"] = {
+            "names": self._reserved_name_rows(before_state),
+            "instruction": (
+                "Every listed name/first-name alias belongs to its character_id and is reserved. "
+                "Do not assign it to a newly invented NPC. If a new recurring/important NPC is "
+                "needed, choose a different name and create one card/id for that person."
+            ),
+        }
         payload["game_clock"] = game_clock
         payload["relationship_lens"] = self._relationship_lens(before_state)
         payload["instruction"] = (
             str(payload.get("instruction", ""))
             + " Use game_clock for the authoritative Day N header. Use relationship_lens as "
-            "causal input to NPC behavior, not merely as numbers to print after the scene."
+            "causal input to NPC behavior. Before inventing/naming a character, check "
+            "story_bible.novel.character_registry and reserved_character_names. When POV and a "
+            "character explicitly become acquainted, commit an objective chronology event and "
+            "set that character current_state.pov_familiarity = {status: acquainted, since_turn: "
+            "current turn}; also update personal knowledge of names/identity according to what each "
+            "person actually learned. Mere co-presence is encountered, not automatically acquainted."
         ).strip()
 
         text = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -197,8 +275,6 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
         return self._packet_chunk_response(session_id, pending, 0)
 
     def get_turn_packet(self, session_id: str, request: Any) -> dict[str, Any]:
-        # WriterFirst assembles the authoritative packet first. We then enrich that exact
-        # packet before the first chunk reaches the caller.
         super().get_turn_packet(session_id, request)
         with self.storage.session_transaction(session_id):
             pending = self.storage.read_json(
@@ -209,6 +285,21 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
                     409, "TURN_NOT_PENDING", "Turn packet is no longer active"
                 )
             return self._augment_turn_packet_locked(session_id, pending)
+
+    def create_session(self, request: Any) -> dict[str, Any]:
+        owner_by_alias: dict[str, str] = {}
+        for character in request.characters:
+            card = character.card.model_dump(mode="json")
+            for alias in character_name_aliases(card):
+                previous = owner_by_alias.get(alias)
+                if previous and previous != character.character_id:
+                    raise ServiceError(
+                        422,
+                        "CHARACTER_NAME_RESERVED",
+                        f"Character name '{alias}' is already assigned to {previous}",
+                    )
+                owner_by_alias[alias] = character.character_id
+        return super().create_session(request)
 
     @staticmethod
     def _validate_scene_commit_context(
@@ -224,12 +315,26 @@ class EnhancedWriterNovellaService(WriterFirstNovellaService):
         expected_day = EnhancedWriterNovellaService._game_day_for(
             clock.get("story_start_datetime"), request.story_datetime
         )
-        if expected_day is None:
-            return
-        header = "\n".join(request.scene_output.splitlines()[:4])
-        if f"День {expected_day}" not in header:
-            raise ServiceError(
-                422,
-                "GAME_DAY_HEADER_MISMATCH",
-                f"Scene header must display authoritative story day: День {expected_day}",
-            )
+        if expected_day is not None:
+            header = "\n".join(request.scene_output.splitlines()[:4])
+            if f"День {expected_day}" not in header:
+                raise ServiceError(
+                    422,
+                    "GAME_DAY_HEADER_MISMATCH",
+                    f"Scene header must display authoritative story day: День {expected_day}",
+                )
+
+        reserved = reserved_character_names(before_state.get("characters", []))
+        for update in request.state_updates.characters:
+            if update.card is None:
+                continue
+            card = update.card.model_dump(mode="json")
+            for alias in character_name_aliases(card):
+                owner_id = reserved.get(alias)
+                if owner_id and owner_id != update.character_id:
+                    raise ServiceError(
+                        422,
+                        "CHARACTER_NAME_RESERVED",
+                        f"Character name '{alias}' is reserved for {owner_id}; choose a different "
+                        f"name for {update.character_id}",
+                    )
