@@ -1,4 +1,6 @@
 {
+  "memory_scope": "director_only",
+  "character_access": "none_without_reveal_or_acquisition",
   "facts": [],
   "secrets": [],
   "reveal_conditions": [],
