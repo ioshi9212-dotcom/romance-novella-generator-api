@@ -17,6 +17,25 @@ def _stable_client(tmp_path) -> TestClient:
     return TestClient(app)
 
 
+def test_fresh_packet_is_compact_json_before_first_action_response(
+    tmp_path, session_payload
+) -> None:
+    client = _stable_client(tmp_path)
+    session_id = create_session(client, session_payload)
+
+    first = client.post(
+        f"/api/v1/sessions/{session_id}/turn-packet",
+        json={"player_input": "Действие", "mode": "new"},
+    )
+    assert first.status_code == 200, first.text
+    pending = app.state.service.storage.read_json(session_id, "pending_turn.json")
+    raw = "".join(pending["chunks"])
+    assert pending["compact_packet_version"] == 1
+    assert max(len(chunk) for chunk in pending["chunks"]) <= 4000
+    assert "\n" not in raw
+    assert raw.startswith("{") and raw.endswith("}")
+
+
 def test_different_player_message_resumes_existing_incomplete_turn_packet(
     tmp_path, session_payload
 ) -> None:

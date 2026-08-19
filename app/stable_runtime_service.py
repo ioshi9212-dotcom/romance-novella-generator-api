@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+from hashlib import sha256
 from typing import Any
 
 from app.enhanced_writer_service import EnhancedWriterNovellaService
-from app.service import ServiceError
+from app.service import ServiceError, _split_text
 
 
 class StableRuntimeNovellaService(EnhancedWriterNovellaService):
@@ -14,6 +16,8 @@ class StableRuntimeNovellaService(EnhancedWriterNovellaService):
     commitTurn), the next getTurnPacket call resumes that exact pending turn instead of returning
     TURN_ALREADY_PENDING and trapping the chat in technical status messages.
     """
+
+    COMPACT_PACKET_VERSION = 1
 
     @staticmethod
     def _packet_chunk_response(
@@ -47,6 +51,43 @@ class StableRuntimeNovellaService(EnhancedWriterNovellaService):
                 "Complete the audit, call commitAudit, then continue gameplay."
             )
         return response
+
+    def _compact_fresh_packet_locked(
+        self,
+        session_id: str,
+        *,
+        pending_path: str,
+        pending: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Compact JSON before the first Action response actually leaves this method.
+
+        Base/enhanced services serialize packets with indentation for readability. For Custom GPT
+        Actions that whitespace is pure transport cost. Re-serializing the exact same JSON with
+        compact separators preserves every field and value while reducing both total packet size
+        and the number of chunks. This is only done for a freshly-created packet whose chunk zero
+        has not yet been returned to the caller.
+        """
+
+        if pending.get("compact_packet_version") == self.COMPACT_PACKET_VERSION:
+            return pending
+        chunks = pending.get("chunks", [])
+        if not isinstance(chunks, list) or not chunks:
+            return pending
+        raw = "".join(str(chunk) for chunk in chunks)
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return pending
+        compact = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        new_chunks = _split_text(compact, self.settings.packet_chunk_chars)
+        pending["chunks"] = new_chunks
+        pending["content_sha256"] = sha256(compact.encode("utf-8")).hexdigest()
+        pending["last_delivered_chunk_index"] = 0
+        pending["all_chunks_delivered"] = len(new_chunks) == 1
+        pending["compact_packet_version"] = self.COMPACT_PACKET_VERSION
+        pending["compact_packet_chars"] = len(compact)
+        self.storage._write_json_batch_locked(session_id, {pending_path: pending})
+        return pending
 
     def _resume_pending_locked(
         self,
@@ -107,7 +148,21 @@ class StableRuntimeNovellaService(EnhancedWriterNovellaService):
                     packet_type="turn",
                     request_changed=not same_request,
                 )
-        return super().get_turn_packet(session_id, request)
+
+        # Build/augment the fresh packet first, then compact it before returning chunk zero.
+        super().get_turn_packet(session_id, request)
+        with self.storage.session_transaction(session_id):
+            pending = self.storage.read_json(
+                session_id, "pending_turn.json", default={}
+            )
+            if pending.get("status") != "active":
+                raise ServiceError(409, "TURN_NOT_PENDING", "Turn packet is no longer active")
+            pending = self._compact_fresh_packet_locked(
+                session_id,
+                pending_path="pending_turn.json",
+                pending=pending,
+            )
+            return self._packet_chunk_response(session_id, pending, 0)
 
     def get_audit_packet(self, session_id: str) -> dict[str, Any]:
         self._require_session(session_id)
@@ -122,4 +177,17 @@ class StableRuntimeNovellaService(EnhancedWriterNovellaService):
                     pending_path="pending_audit.json",
                     packet_type="audit",
                 )
-        return super().get_audit_packet(session_id)
+
+        super().get_audit_packet(session_id)
+        with self.storage.session_transaction(session_id):
+            pending = self.storage.read_json(
+                session_id, "pending_audit.json", default={}
+            )
+            if pending.get("status") != "active":
+                raise ServiceError(409, "AUDIT_NOT_PENDING", "Audit packet is no longer active")
+            pending = self._compact_fresh_packet_locked(
+                session_id,
+                pending_path="pending_audit.json",
+                pending=pending,
+            )
+            return self._packet_chunk_response(session_id, pending, 0)
