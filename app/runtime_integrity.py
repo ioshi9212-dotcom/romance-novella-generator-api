@@ -3,6 +3,7 @@ from __future__ import annotations
 from hashlib import sha256
 from typing import Any
 
+from app.knowledge_firewall import knowledge_provenance_issues
 from app.service import NovellaService
 
 
@@ -48,6 +49,7 @@ def _packet_report(pending: Any) -> dict[str, Any] | None:
             "runtime_repacked_from_chunk_count"
         ),
         "runtime_chunk_chars": pending.get("runtime_chunk_chars"),
+        "knowledge_firewall_version": pending.get("knowledge_firewall_version"),
         "created_at": pending.get("created_at"),
         "committed_at": pending.get("committed_at"),
     }
@@ -65,6 +67,10 @@ def audit_runtime(service: NovellaService) -> dict[str, Any]:
         "active_pending_turns_incomplete": 0,
         "active_pending_turns_fully_loaded": 0,
         "repacked_pending_packets": 0,
+        "sessions_with_knowledge_issues": 0,
+        "knowledge_provenance_issues": 0,
+        "knowledge_provenance_errors": 0,
+        "knowledge_provenance_review_items": 0,
     }
 
     for session_dir in sorted(service.storage.sessions_dir.iterdir()):
@@ -144,7 +150,12 @@ def audit_runtime(service: NovellaService) -> dict[str, Any]:
                 errors.append(f"missing {relative}")
 
         for character_id in character_ids:
-            for name in ("card.json", "current_state.json", "relationships.json", "knowledge.json"):
+            for name in (
+                "card.json",
+                "current_state.json",
+                "relationships.json",
+                "knowledge.json",
+            ):
                 relative = f"characters/{character_id}/{name}"
                 if not (session_dir / relative).is_file():
                     errors.append(f"missing {relative}")
@@ -196,6 +207,32 @@ def audit_runtime(service: NovellaService) -> dict[str, Any]:
                 if part_id and not (session_dir / "chronology" / f"{part_id}.json").is_file():
                     errors.append(f"missing chronology part {part_id}")
 
+        # Knowledge audit is intentionally read-only. It distinguishes objective chronology from
+        # character-scoped knowledge and flags provenance gaps without inventing a repair.
+        knowledge_issues: list[dict[str, Any]] = []
+        try:
+            with service.storage.session_transaction(session_id):
+                state_bundle = service._read_state_bundle_locked(session_id)
+                _chrono_manifest, _chrono_parts, chronology = service._read_chronology_locked(
+                    session_id
+                )
+                chronology = service._effective_chronology(chronology)
+            knowledge_issues = knowledge_provenance_issues(state_bundle, chronology)
+        except Exception as exc:
+            errors.append(
+                f"knowledge provenance audit failed: {type(exc).__name__}: {exc}"
+            )
+
+        if knowledge_issues:
+            global_counts["sessions_with_knowledge_issues"] += 1
+            global_counts["knowledge_provenance_issues"] += len(knowledge_issues)
+            global_counts["knowledge_provenance_errors"] += sum(
+                1 for item in knowledge_issues if item.get("severity") == "error"
+            )
+            global_counts["knowledge_provenance_review_items"] += sum(
+                1 for item in knowledge_issues if item.get("severity") != "error"
+            )
+
         pending_turn_raw = service.storage.read_json(
             session_id, "pending_turn.json", default={}
         )
@@ -218,7 +255,9 @@ def audit_runtime(service: NovellaService) -> dict[str, Any]:
             pending_mode = (
                 pending_turn_raw.get("mode") if isinstance(pending_turn_raw, dict) else None
             )
-            expected_pending_number = last_completed if pending_mode == "revise_last" else last_completed + 1
+            expected_pending_number = (
+                last_completed if pending_mode == "revise_last" else last_completed + 1
+            )
             if pending_number != expected_pending_number:
                 errors.append(
                     f"active pending turn_number={pending_number}, expected {expected_pending_number}"
@@ -274,6 +313,17 @@ def audit_runtime(service: NovellaService) -> dict[str, Any]:
                 "locations": len(location_ids),
                 "objects": len(object_ids),
                 "chronology_parts": len(chronology_parts),
+            },
+            "knowledge_provenance": {
+                "issue_count": len(knowledge_issues),
+                "error_count": sum(
+                    1 for item in knowledge_issues if item.get("severity") == "error"
+                ),
+                "review_count": sum(
+                    1 for item in knowledge_issues if item.get("severity") != "error"
+                ),
+                "issues": knowledge_issues[:200],
+                "truncated": len(knowledge_issues) > 200,
             },
             "pending_turn": pending_turn,
             "pending_audit": pending_audit,
