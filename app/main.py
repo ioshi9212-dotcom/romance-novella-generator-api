@@ -23,6 +23,16 @@ from app.models import (
     TurnPacketRequest,
 )
 from app.service import NovellaService, ServiceError
+from app.session_transfer import (
+    FinalizeSessionTransferResponse,
+    StartSessionTransferRequest,
+    StartSessionTransferResponse,
+    UploadSessionTransferChunkRequest,
+    UploadSessionTransferChunkResponse,
+    finalize_session_transfer,
+    start_session_transfer,
+    upload_session_transfer_chunk,
+)
 
 settings = get_settings()
 app = FastAPI(
@@ -176,7 +186,13 @@ def recover_session(
                     continue
                 haystack = "\n".join(
                     str(turn.get(key, ""))
-                    for key in ("scene_output", "summary", "player_input", "story_datetime", "scene_id")
+                    for key in (
+                        "scene_output",
+                        "summary",
+                        "player_input",
+                        "story_datetime",
+                        "scene_id",
+                    )
                 ).casefold()
                 if terms and not all(term in haystack for term in terms):
                     continue
@@ -225,6 +241,54 @@ def recover_session(
 )
 def create_session(payload: CreateSessionRequest, request: Request) -> dict[str, Any]:
     return service_for(request).create_session(payload)
+
+
+@app.post(
+    "/api/v1/session-transfers",
+    operation_id="startSessionTransfer",
+    response_model=StartSessionTransferResponse,
+    summary="Start a chunked createSession transfer",
+    description=(
+        "Use when a complete createSession JSON payload is too large for one Action call. "
+        "Split the exact serialized JSON into chunks no larger than max_chunk_chars."
+    ),
+)
+def start_transfer(
+    payload: StartSessionTransferRequest, request: Request
+) -> dict[str, Any]:
+    return start_session_transfer(service_for(request), payload)
+
+
+@app.post(
+    "/api/v1/session-transfers/{transfer_id}/chunks",
+    operation_id="uploadSessionTransferChunk",
+    response_model=UploadSessionTransferChunkResponse,
+    summary="Upload one ordered piece of a large createSession payload",
+    description=(
+        "Upload each substring of the exact serialized createSession JSON. Chunks are idempotent "
+        "when retried with identical content."
+    ),
+)
+def upload_transfer_chunk(
+    transfer_id: str,
+    payload: UploadSessionTransferChunkRequest,
+    request: Request,
+) -> dict[str, Any]:
+    return upload_session_transfer_chunk(service_for(request), transfer_id, payload)
+
+
+@app.post(
+    "/api/v1/session-transfers/{transfer_id}/finalize",
+    operation_id="finalizeSessionTransfer",
+    response_model=FinalizeSessionTransferResponse,
+    summary="Validate the reassembled payload and create the novella session",
+    description=(
+        "Call only after every transfer chunk has been accepted. The server reassembles the exact "
+        "JSON, validates it as CreateSessionRequest, and then creates one session atomically."
+    ),
+)
+def finalize_transfer(transfer_id: str, request: Request) -> dict[str, Any]:
+    return finalize_session_transfer(service_for(request), transfer_id)
 
 
 @app.post(
