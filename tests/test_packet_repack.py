@@ -18,20 +18,21 @@ def _write_pending(path, *, status="active", chunks=None, last_delivered=0):
     return payload
 
 
-def test_repack_preserves_delivered_chunks_and_only_combines_unread_tail(tmp_path):
+def test_repack_preserves_delivered_chunks_and_resplits_only_unread_tail(tmp_path):
     path = tmp_path / "sessions" / "sess_test" / "pending_turn.json"
     old_chunks = ["a" * 12_000, "b" * 12_000, "c" * 12_000, "d" * 12_000]
     _write_pending(path, chunks=old_chunks, last_delivered=1)
 
-    _repack_active_pending_packets(tmp_path, 28_000)
+    _repack_active_pending_packets(tmp_path, 16_000)
 
     stored = json.loads(path.read_text(encoding="utf-8"))
     assert stored["chunks"][:2] == old_chunks[:2]
-    assert stored["chunks"][2] == old_chunks[2] + old_chunks[3]
+    assert all(len(chunk) <= 16_000 for chunk in stored["chunks"][2:])
     assert stored["last_delivered_chunk_index"] == 1
     assert stored["all_chunks_delivered"] is False
     assert stored["runtime_repacked"] is True
     assert stored["runtime_repacked_from_chunk_count"] == 4
+    assert stored["runtime_chunk_chars"] == 16_000
     assert "".join(stored["chunks"]) == "".join(old_chunks)
 
 
@@ -44,13 +45,13 @@ def test_repack_does_not_touch_completed_packets(tmp_path):
         last_delivered=0,
     )
 
-    _repack_active_pending_packets(tmp_path, 28_000)
+    _repack_active_pending_packets(tmp_path, 16_000)
 
     stored = json.loads(path.read_text(encoding="utf-8"))
     assert stored == old
 
 
-def test_get_settings_enforces_production_chunk_floor_and_repacks_existing_packet(
+def test_get_settings_uses_safe_production_chunk_size_and_repacks_existing_packet(
     tmp_path, monkeypatch
 ):
     path = tmp_path / "sessions" / "sess_test" / "pending_audit.json"
@@ -62,10 +63,10 @@ def test_get_settings_enforces_production_chunk_floor_and_repacks_existing_packe
     get_settings.cache_clear()
     try:
         settings = get_settings()
-        assert settings.packet_chunk_chars == 28_000
+        assert settings.packet_chunk_chars == 16_000
         stored = json.loads(path.read_text(encoding="utf-8"))
         assert stored["chunks"][0] == old_chunks[0]
-        assert stored["chunks"][1] == old_chunks[1] + old_chunks[2]
+        assert all(len(chunk) <= 16_000 for chunk in stored["chunks"][1:])
         assert stored["last_delivered_chunk_index"] == 0
         assert "".join(stored["chunks"]) == "".join(old_chunks)
     finally:
