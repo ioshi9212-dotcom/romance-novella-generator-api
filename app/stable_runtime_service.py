@@ -3,50 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 from app.enhanced_writer_service import EnhancedWriterNovellaService
-from app.service import ServiceError, _split_text
+from app.service import ServiceError
 
 
 class StableRuntimeNovellaService(EnhancedWriterNovellaService):
-    """Keep long-session packets readable within one Custom GPT turn.
+    """Production wrapper that makes interrupted long-session Action flows resumable.
 
-    The authoritative full state is still stored in pending_turn.before_state. This layer only
-    changes how already-built packet text is chunked and how strongly the Action response tells
-    the caller to keep reading before replying to the player.
+    Railway remains authoritative. A pending turn is never silently discarded. If ChatGPT ran out
+    of Action budget after reading only part of a packet (or after reading all of it but before
+    commitTurn), the next getTurnPacket call resumes that exact pending turn instead of returning
+    TURN_ALREADY_PENDING and trapping the chat in technical status messages.
     """
-
-    STABILITY_PACKET_VERSION = 1
-
-    def _repack_active_packet_locked(
-        self,
-        session_id: str,
-        *,
-        pending_path: str,
-        pending: dict[str, Any],
-    ) -> dict[str, Any]:
-        if pending.get("status") != "active":
-            return pending
-        chunks = pending.get("chunks", [])
-        if not isinstance(chunks, list) or not chunks:
-            return pending
-
-        raw = "".join(str(chunk) for chunk in chunks)
-        target_chunks = _split_text(raw, self.settings.packet_chunk_chars)
-        already_current = (
-            pending.get("stability_packet_version") == self.STABILITY_PACKET_VERSION
-            and chunks == target_chunks
-        )
-        if already_current:
-            return pending
-
-        previous_count = len(chunks)
-        pending["chunks"] = target_chunks
-        pending["last_delivered_chunk_index"] = 0
-        pending["all_chunks_delivered"] = len(target_chunks) == 1
-        pending["stability_packet_version"] = self.STABILITY_PACKET_VERSION
-        pending["stability_repacked_from_chunk_count"] = previous_count
-        pending["stability_chunk_chars"] = self.settings.packet_chunk_chars
-        self.storage._write_json_batch_locked(session_id, {pending_path: pending})
-        return pending
 
     @staticmethod
     def _packet_chunk_response(
@@ -63,86 +30,96 @@ class StableRuntimeNovellaService(EnhancedWriterNovellaService):
                 else "getAuditPacketChunk"
             )
             response["next_required_action"] = (
-                "Do not reply to the player and do not restart the packet. Immediately call "
-                f"{action} with chunk_index {next_index}, then keep reading in order until "
+                "Do not reply to the player with progress, delay, packet, Railway or save-status "
+                "text. Immediately continue the same operation: call "
+                f"{action} with chunk_index {next_index} and keep reading in order until "
                 "all_chunks_delivered=true."
             )
         elif response["packet_type"] == "turn":
             response["next_required_action"] = (
-                "All turn packet chunks are loaded. Do not send a progress/status message to the "
-                "player. Generate the scene, call commitTurn, and reply only after commit succeeds."
+                "All turn-packet chunks are loaded. Do not send a technical/status reply. "
+                "Generate the scene, call commitTurn, and only after commit succeeds show the "
+                "committed scene to the player."
             )
         else:
             response["next_required_action"] = (
-                "All audit packet chunks are loaded. Do not send a progress/status message to the "
-                "player. Complete the audit and call commitAudit before requesting a turn."
+                "All audit-packet chunks are loaded. Do not send a technical/status reply. "
+                "Complete the audit, call commitAudit, then continue gameplay."
+            )
+        return response
+
+    def _resume_pending_locked(
+        self,
+        session_id: str,
+        *,
+        pending: dict[str, Any],
+        pending_path: str,
+        packet_type: str,
+        request_changed: bool = False,
+    ) -> dict[str, Any]:
+        if pending.get("status") != "active":
+            raise ServiceError(409, "PACKET_NOT_PENDING", "Packet is no longer active")
+        chunks = pending.get("chunks", [])
+        if not isinstance(chunks, list) or not chunks:
+            raise ServiceError(500, "PACKET_CORRUPT", "Active packet has no stored chunks")
+
+        last_delivered = self._last_delivered_chunk_index(pending)
+        if last_delivered < len(chunks) - 1:
+            response = self._deliver_packet_chunk_locked(
+                session_id,
+                pending,
+                chunk_index=last_delivered + 1,
+                pending_path=pending_path,
+                error_prefix=packet_type.upper(),
+            )
+        else:
+            response = self._packet_chunk_response(
+                session_id,
+                pending,
+                last_delivered,
+            )
+
+        if request_changed and packet_type == "turn":
+            response["next_required_action"] = (
+                "An earlier player input already owns the pending unsaved turn. The newest player "
+                "message is not a new gameplay turn yet. Finish reading/committing the existing "
+                "pending turn first. Do not output a technical status message. "
+                + response["next_required_action"]
             )
         return response
 
     def get_turn_packet(self, session_id: str, request: Any) -> dict[str, Any]:
-        super().get_turn_packet(session_id, request)
+        self._require_session(session_id)
         with self.storage.session_transaction(session_id):
             pending = self.storage.read_json(
                 session_id, "pending_turn.json", default={}
             )
-            if pending.get("status") != "active":
-                raise ServiceError(409, "TURN_NOT_PENDING", "Turn packet is no longer active")
-            pending = self._repack_active_packet_locked(
-                session_id,
-                pending_path="pending_turn.json",
-                pending=pending,
-            )
-            return self._packet_chunk_response(session_id, pending, 0)
+            if isinstance(pending, dict) and pending.get("status") == "active":
+                same_request = (
+                    pending.get("player_input") == request.player_input
+                    and pending.get("mode") == request.mode
+                    and pending.get("client_request_id") == request.client_request_id
+                )
+                return self._resume_pending_locked(
+                    session_id,
+                    pending=pending,
+                    pending_path="pending_turn.json",
+                    packet_type="turn",
+                    request_changed=not same_request,
+                )
+        return super().get_turn_packet(session_id, request)
 
     def get_audit_packet(self, session_id: str) -> dict[str, Any]:
-        super().get_audit_packet(session_id)
+        self._require_session(session_id)
         with self.storage.session_transaction(session_id):
             pending = self.storage.read_json(
                 session_id, "pending_audit.json", default={}
             )
-            if pending.get("status") != "active":
-                raise ServiceError(409, "AUDIT_NOT_PENDING", "Audit packet is no longer active")
-            pending = self._repack_active_packet_locked(
-                session_id,
-                pending_path="pending_audit.json",
-                pending=pending,
-            )
-            return self._packet_chunk_response(session_id, pending, 0)
-
-    def get_turn_packet_chunk(
-        self,
-        session_id: str,
-        packet_id: str,
-        chunk_index: int,
-    ) -> dict[str, Any]:
-        pending = self.storage.read_json(session_id, "pending_turn.json", default={})
-        if (
-            isinstance(pending, dict)
-            and pending.get("status") == "active"
-            and pending.get("packet_id") == packet_id
-            and pending.get("stability_packet_version") == self.STABILITY_PACKET_VERSION
-        ):
-            next_index = self._last_delivered_chunk_index(pending) + 1
-            if chunk_index > next_index:
-                # A retry may still remember an index from the pre-repack packet. Serve the
-                # actual next chunk instead of trapping the conversation in an out-of-order loop.
-                chunk_index = next_index
-        return super().get_turn_packet_chunk(session_id, packet_id, chunk_index)
-
-    def get_audit_packet_chunk(
-        self,
-        session_id: str,
-        packet_id: str,
-        chunk_index: int,
-    ) -> dict[str, Any]:
-        pending = self.storage.read_json(session_id, "pending_audit.json", default={})
-        if (
-            isinstance(pending, dict)
-            and pending.get("status") == "active"
-            and pending.get("packet_id") == packet_id
-            and pending.get("stability_packet_version") == self.STABILITY_PACKET_VERSION
-        ):
-            next_index = self._last_delivered_chunk_index(pending) + 1
-            if chunk_index > next_index:
-                chunk_index = next_index
-        return super().get_audit_packet_chunk(session_id, packet_id, chunk_index)
+            if isinstance(pending, dict) and pending.get("status") == "active":
+                return self._resume_pending_locked(
+                    session_id,
+                    pending=pending,
+                    pending_path="pending_audit.json",
+                    packet_type="audit",
+                )
+        return super().get_audit_packet(session_id)
