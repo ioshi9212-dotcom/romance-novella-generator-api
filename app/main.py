@@ -91,13 +91,13 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/internal/recover-session", include_in_schema=False)
+@app.get("/internal/recover-session", include_in_schema=False, response_model=None)
 def recover_session(
     request: Request,
     token: str = Query(min_length=16),
     pov_name: str = Query(min_length=1, max_length=120),
     last_completed_turn: int = Query(ge=0),
-) -> dict[str, Any] | JSONResponse:
+) -> Any:
     """Find a lost session by exact turn and POV name without exposing session listings."""
 
     supplied_digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
