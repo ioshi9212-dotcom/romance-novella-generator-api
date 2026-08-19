@@ -30,7 +30,8 @@ def test_fresh_packet_is_compact_json_before_first_action_response(
     assert first.status_code == 200, first.text
     pending = app.state.service.storage.read_json(session_id, "pending_turn.json")
     raw = "".join(pending["chunks"])
-    assert pending["compact_packet_version"] == 1
+    assert pending["compact_packet_version"] == 2
+    assert pending["knowledge_firewall_version"] == 1
     assert max(len(chunk) for chunk in pending["chunks"]) <= 4000
     assert "\n" not in raw
     assert raw.startswith("{") and raw.endswith("}")
