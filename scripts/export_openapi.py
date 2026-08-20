@@ -1,26 +1,20 @@
-import sys
+"""Export the canonical Custom GPT Actions contract to the tracked YAML file."""
+
 from pathlib import Path
+import sys
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.main import app
+from app.novella_openapi_actions import DEFAULT_PUBLIC_URL, build_openapi_actions  # noqa: E402
 
 
 def main() -> None:
-    schema = app.openapi()
-    target = ROOT / "openapi.yaml"
-    target.write_text(
-        yaml.safe_dump(
-            schema,
-            allow_unicode=True,
-            sort_keys=False,
-            width=110,
-        ),
-        encoding="utf-8",
-    )
+    contract = build_openapi_actions(DEFAULT_PUBLIC_URL)
+    payload = yaml.safe_dump(contract, allow_unicode=True, sort_keys=False, width=100)
+    (ROOT / "openapi.yaml").write_text(payload, encoding="utf-8")
 
 
 if __name__ == "__main__":
