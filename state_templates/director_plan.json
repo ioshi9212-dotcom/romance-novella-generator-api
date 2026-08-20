@@ -1,0 +1,23 @@
+{
+  "active_threads": [
+    {
+      "thread_id": "thread_example",
+      "current_question": "Какое уже установленное напряжение или ожидание развивается?",
+      "current_pressure": "Почему линия важна сейчас?",
+      "status": "active"
+    }
+  ],
+  "character_agendas": [
+    {
+      "character_id": "char_example",
+      "current_goal": "Чего персонаж хочет независимо от POV?",
+      "next_plausible_action": "Что он сделает при сохранении текущих условий?",
+      "conditions": []
+    }
+  ],
+  "event_windows": [],
+  "collision_points": [],
+  "offscreen_events": [],
+  "consequences_without_pov": [],
+  "possible_pov_contacts": []
+}

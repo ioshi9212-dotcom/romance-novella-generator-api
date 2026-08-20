@@ -1,0 +1,10 @@
+{
+  "object_id": "obj_example",
+  "description": "unknown",
+  "owner_character_id": null,
+  "current_location_id": "unknown",
+  "condition": "unknown",
+  "hidden_properties": [],
+  "knowledge_refs_for_witnesses": [],
+  "story_importance": "unknown"
+}
