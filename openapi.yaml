@@ -31,6 +31,92 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
       security: []
+  /api/v1/session-transfers:
+    post:
+      summary: Start a chunked createSession transfer
+      description: Use when a complete createSession JSON payload is too large for one Action call. Split the exact
+        serialized JSON into chunks no larger than max_chunk_chars.
+      operationId: startSessionTransfer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSessionTransferRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartSessionTransferResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/session-transfers/{transfer_id}/chunks:
+    post:
+      summary: Upload one ordered piece of a large createSession payload
+      description: Upload each substring of the exact serialized createSession JSON. Chunks are idempotent when
+        retried with identical content.
+      operationId: uploadSessionTransferChunk
+      parameters:
+      - name: transfer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Transfer Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadSessionTransferChunkRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionTransferChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/session-transfers/{transfer_id}/finalize:
+    post:
+      summary: Validate the reassembled payload and create the novella session
+      description: Call only after every transfer chunk has been accepted. The server reassembles the exact JSON,
+        validates it as CreateSessionRequest, and then creates one session atomically.
+      operationId: finalizeSessionTransfer
+      parameters:
+      - name: transfer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Transfer Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinalizeSessionTransferResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
   /api/v1/sessions/{session_id}/turn-packet:
     post:
       summary: Get the authoritative packet required to write one scene
@@ -1638,6 +1724,39 @@ components:
       additionalProperties: true
       type: object
       title: DirectorPlan
+    FinalizeSessionTransferResponse:
+      properties:
+        transfer_id:
+          type: string
+          title: Transfer Id
+        session_id:
+          type: string
+          title: Session Id
+        status:
+          type: string
+          title: Status
+        state_revision:
+          type: integer
+          title: State Revision
+        next_turn_number:
+          type: integer
+          title: Next Turn Number
+        cycle_position:
+          type: integer
+          title: Cycle Position
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - transfer_id
+      - session_id
+      - status
+      - state_revision
+      - next_turn_number
+      - cycle_position
+      - next_required_action
+      title: FinalizeSessionTransferResponse
     HTTPValidationError:
       properties:
         detail:
@@ -2084,6 +2203,49 @@ components:
       - turn_id
       - entry_reason
       title: SceneCharacterBundleRequest
+    StartSessionTransferRequest:
+      properties:
+        total_chunks:
+          type: integer
+          maximum: 256.0
+          minimum: 1.0
+          title: Total Chunks
+        payload_sha256:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 64
+          - type: 'null'
+          title: Payload Sha256
+      type: object
+      required:
+      - total_chunks
+      title: StartSessionTransferRequest
+    StartSessionTransferResponse:
+      properties:
+        transfer_id:
+          type: string
+          title: Transfer Id
+        total_chunks:
+          type: integer
+          title: Total Chunks
+        max_chunk_chars:
+          type: integer
+          title: Max Chunk Chars
+        next_chunk_index:
+          type: integer
+          title: Next Chunk Index
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - transfer_id
+      - total_chunks
+      - max_chunk_chars
+      - next_chunk_index
+      - next_required_action
+      title: StartSessionTransferResponse
     TurnPacketRequest:
       properties:
         player_input:
@@ -2112,6 +2274,57 @@ components:
       required:
       - player_input
       title: TurnPacketRequest
+    UploadSessionTransferChunkRequest:
+      properties:
+        chunk_index:
+          type: integer
+          minimum: 0.0
+          title: Chunk Index
+        content:
+          type: string
+          maxLength: 8000
+          minLength: 1
+          title: Content
+      type: object
+      required:
+      - chunk_index
+      - content
+      title: UploadSessionTransferChunkRequest
+    UploadSessionTransferChunkResponse:
+      properties:
+        transfer_id:
+          type: string
+          title: Transfer Id
+        accepted_chunk_index:
+          type: integer
+          title: Accepted Chunk Index
+        received_chunks:
+          type: integer
+          title: Received Chunks
+        total_chunks:
+          type: integer
+          title: Total Chunks
+        complete:
+          type: boolean
+          title: Complete
+        next_chunk_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Chunk Index
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - transfer_id
+      - accepted_chunk_index
+      - received_chunks
+      - total_chunks
+      - complete
+      - next_chunk_index
+      - next_required_action
+      title: UploadSessionTransferChunkResponse
     ValidationError:
       properties:
         loc:

@@ -21,6 +21,10 @@
 5. Сохрани возвращённый `session_id`; никогда не проси его у игрока и не придумывай.
 6. Сразу вызови `getTurnPacket` с `Начать стартовую сцену по подтверждённым данным`, дочитай все chunks, напиши сцену, `commitTurn`, затем покажи её игроку.
 
+## Перенос длинной новеллы
+
+При переносе уже идущей истории не урезай канон из-за размера Action. Если полный `createSession` слишком велик или даёт `Unterminated string`, собери один финальный `CreateSessionRequest`, сериализуй в JSON и раздели точный текст на куски ≤6000 символов. Вызови `startSessionTransfer`, затем `uploadSessionTransferChunk` по индексам 0..N-1 без изменения символов, после `complete:true` — `finalizeSessionTransfer`. Только finalize создаёт сессию; обычный `createSession` после него не вызывай. Перенос обязан сохранить текущие plot/knowledge/relationships/hidden_lore/scene_state и продолжить незавершённый кадр. При `TRANSFER_PAYLOAD_INVALID` исправь указанную структуру и начни новый transfer, а не сокращай историю наугад.
+
 ## Каждый игровой ход
 
 1. Вызови `getTurnPacket` с точным вводом игрока.

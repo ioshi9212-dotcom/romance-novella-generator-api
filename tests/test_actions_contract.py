@@ -20,6 +20,9 @@ def test_actions_have_no_auth_and_only_session_scoped_runtime_operations() -> No
     }
     assert operation_ids == {
         "createSession",
+        "startSessionTransfer",
+        "uploadSessionTransferChunk",
+        "finalizeSessionTransfer",
         "getTurnPacket",
         "getTurnPacketChunk",
         "getSceneCharacterBundle",
@@ -89,7 +92,6 @@ def test_create_session_rejects_incomplete_player_character_and_location(
     incomplete_location = deepcopy(session_payload)
     incomplete_location["locations"][0]["state"]["canon"].pop("layout")
     assert client.post("/api/v1/sessions", json=incomplete_location).status_code == 422
-
 
 
 def test_create_session_accepts_legacy_action_without_director_plan(
@@ -180,17 +182,20 @@ def test_turn_packet_marks_full_character_bundles_required_for_scene(
         "char_chloe",
     ]
     emily = next(
-        item for item in packet["state"]["characters"]
+        item
+        for item in packet["state"]["characters"]
         if item["character_id"] == "char_emily"
     )
     assert emily["card"]["personality"]["inner_character"]
     assert "current_state" in emily
     assert "knowledge" in emily
     assert "relationships" in emily
-    assert {
-        item["character_id"] for item in packet["state"]["characters"]
-    } == {"char_emily", "char_chloe"}
+    assert {item["character_id"] for item in packet["state"]["characters"]} == {
+        "char_emily",
+        "char_chloe",
+    }
     assert "char_ryan" in packet["state"]["manifest"]["character_ids"]
+
 
 def test_validation_error_does_not_echo_large_rejected_payload(
     client, session_payload
