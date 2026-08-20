@@ -173,7 +173,12 @@ class CharacterBundle(BaseModel):
     card: CharacterCard = Field(description="Relatively stable character card.")
     current_state: dict[str, Any] = Field(
         default_factory=dict,
-        description="Frequently changing location, condition, goal, intention and activity.",
+        description=(
+            "Full current state. Contract 2.0 requires character_id, current_location_id, "
+            "physical_state, clothing, carried_object_ids, current_goal, nearest_intention, "
+            "offscreen_activity, available_now, present_in_scene, last_action and "
+            "last_updated_turn=0."
+        ),
     )
     relationships: RelationshipsDocument = Field(
         default_factory=RelationshipsDocument,
@@ -181,7 +186,10 @@ class CharacterBundle(BaseModel):
     )
     knowledge: dict[str, Any] = Field(
         default_factory=dict,
-        description="Only facts, partial facts and wrong beliefs known by this character.",
+        description=(
+            "Only facts, partial facts and wrong beliefs known by this character. Contract 2.0 "
+            "requires character_id plus explicit entries and wrong_beliefs arrays."
+        ),
     )
 
 
@@ -215,8 +223,20 @@ class LocationBundle(BaseModel):
 
 
 class DirectorPlan(OpenModel):
-    active_threads: list[dict[str, Any]] = Field(default_factory=list)
-    character_agendas: list[dict[str, Any]] = Field(default_factory=list)
+    active_threads: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Current threads. Every contract 2.0 item needs thread_id, current_question, "
+            "current_pressure and status."
+        ),
+    )
+    character_agendas: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Independent NPC agendas. Every contract 2.0 item needs character_id, current_goal, "
+            "next_plausible_action and a conditions array."
+        ),
+    )
     event_windows: list[dict[str, Any]] = Field(default_factory=list)
     collision_points: list[dict[str, Any]] = Field(default_factory=list)
     offscreen_events: list[dict[str, Any]] = Field(default_factory=list)
@@ -227,6 +247,64 @@ class DirectorPlan(OpenModel):
 class ObjectBundle(BaseModel):
     object_id: SafeId
     state: dict[str, Any] = Field(default_factory=dict)
+
+
+class SetupSourceCoverage(BaseModel):
+    message_index: int = Field(ge=0)
+    stored_in: list[str] = Field(
+        min_length=1,
+        max_length=30,
+        description=(
+            "State paths that preserve the facts from this exact player setup message, for "
+            "example characters.char_emily.card or plot_state.active_lines."
+        ),
+    )
+
+
+class SetupSource(BaseModel):
+    messages: list[str] = Field(
+        min_length=1,
+        max_length=100,
+        description=(
+            "Exact relevant player setup messages in original order and wording. Do not "
+            "beautify, summarize or replace them with generated prose."
+        ),
+    )
+    coverage: list[SetupSourceCoverage] = Field(
+        min_length=1,
+        max_length=100,
+        description="One coverage row for every messages index.",
+    )
+    expected_player_character_ids: list[SafeId] = Field(min_length=1)
+    expected_location_ids: list[SafeId] = Field(min_length=1)
+    final_consistency_pass: Literal[True] = Field(
+        description="Set true only after comparing every setup message with the final payload."
+    )
+
+    @model_validator(mode="after")
+    def validate_complete_coverage(self) -> "SetupSource":
+        if any(not message.strip() for message in self.messages):
+            raise ValueError("setup_source messages must not contain blank items")
+        if len(self.expected_player_character_ids) != len(
+            set(self.expected_player_character_ids)
+        ):
+            raise ValueError("setup_source expected player character IDs must be unique")
+        if len(self.expected_location_ids) != len(set(self.expected_location_ids)):
+            raise ValueError("setup_source expected location IDs must be unique")
+        indexes = [item.message_index for item in self.coverage]
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("setup_source coverage message_index values must be unique")
+        expected = set(range(len(self.messages)))
+        actual = set(indexes)
+        if actual != expected:
+            missing = sorted(expected - actual)
+            extra = sorted(actual - expected)
+            raise ValueError(
+                f"setup_source coverage must match every message; missing={missing}, extra={extra}"
+            )
+        if sum(len(message) for message in self.messages) > 120_000:
+            raise ValueError("setup_source messages exceed 120000 total characters")
+        return self
 
 
 class CreateSessionRequest(BaseModel):
@@ -242,14 +320,33 @@ class CreateSessionRequest(BaseModel):
         max_length=500,
         description="Copy the player's actual message containing the positive word «подтверждаю».",
     )
+    setup_source: SetupSource | None = Field(
+        default=None,
+        description=(
+            "Required by runtime contract 2.0. Preserve the player's exact setup wording and "
+            "map every source message to the state sections where its facts were stored. Omission "
+            "is accepted only for installed legacy schemas."
+        ),
+    )
     novel: dict[str, Any] = Field(
-        description="Confirmed title, genre, style, POV and format settings for this novella."
+        description=(
+            "Complete confirmed settings. Contract 2.0 requires title, genre, tone, style, "
+            "pov_character_id, narration, choices_enabled, scene_length_chars {min,max,scope}, "
+            "player_constraints and content_constraints."
+        )
     )
     hidden_lore: dict[str, Any] = Field(
-        description="Director-only truths, secrets and reveal conditions; never player preview text."
+        description=(
+            "Director-only state with explicit facts, secrets, reveal_conditions, "
+            "false_versions_in_world and protected_until arrays; never player preview text."
+        )
     )
     plot_state: dict[str, Any] = Field(
-        description="Active lines, open threads, pending consequences and resolved compact history."
+        description=(
+            "Requires active_lines, open_threads, pending_consequences, foreshadowing, "
+            "resolved_history and next_pressure_points arrays. At least one live direction must "
+            "be concrete."
+        )
     )
     director_plan: DirectorPlan = Field(
         default_factory=DirectorPlan,
@@ -260,10 +357,18 @@ class CreateSessionRequest(BaseModel):
         )
     )
     world_state: dict[str, Any] = Field(
-        description="Global time, offscreen actions, whereabouts, dangers and location availability."
+        description=(
+            "Requires story_datetime plus explicit global_situation, character_whereabouts, "
+            "offscreen_actions, active_dangers and location_availability arrays."
+        )
     )
     scene_state: dict[str, Any] = Field(
-        description="Exact current frame: place, people, objects and unfinished moment to continue."
+        description=(
+            "Exact current frame. Contract 2.0 requires turn_number=0, scene_id, story_datetime, "
+            "location_id, zone, present/entered/left character arrays, positions, objects, "
+            "clothing, lighting, weather, doors/windows, sounds, unfinished actions and "
+            "continue_from."
+        )
     )
     characters: list[CharacterBundle] = Field(
         min_length=1,

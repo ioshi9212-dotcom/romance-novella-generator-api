@@ -22,6 +22,26 @@ def _writer_client(tmp_path) -> TestClient:
     return TestClient(app)
 
 
+def test_opening_packet_keeps_exact_confirmed_setup_source(
+    tmp_path, session_payload
+) -> None:
+    client = _writer_client(tmp_path)
+    session_id = create_session(client, session_payload)
+
+    packet = collect_packet(
+        client,
+        session_id,
+        client.post(
+            f"/api/v1/sessions/{session_id}/turn-packet",
+            json={"player_input": "Начать стартовую сцену по подтверждённым данным"},
+        ),
+    )
+
+    source = packet["story_bible"]["confirmed_setup_source"]
+    assert source["messages"] == session_payload["setup_source"]["messages"]
+    assert source["coverage"] == session_payload["setup_source"]["coverage"]
+
+
 def test_normal_turn_packet_is_writer_sized_not_audit_sized(
     tmp_path, session_payload
 ) -> None:

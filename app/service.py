@@ -16,6 +16,7 @@ from app.models import (
     TurnPacketRequest,
 )
 from app.runtime_documents import read_runtime_rules, read_scene_builder
+from app.session_completeness import create_session_completeness_issues
 from app.storage import JsonStorage
 
 BASE_STATE_PATHS = {
@@ -171,6 +172,22 @@ class NovellaService:
                     "Runtime contract 2.0 requires substantive director_plan sections: "
                     + ", ".join(missing_plan_sections),
                 )
+            completeness_issues = create_session_completeness_issues(request)
+            if completeness_issues:
+                shown = completeness_issues[:40]
+                suffix = (
+                    f"; and {len(completeness_issues) - len(shown)} more issue(s)"
+                    if len(completeness_issues) > len(shown)
+                    else ""
+                )
+                raise ServiceError(
+                    422,
+                    "SESSION_SETUP_INCOMPLETE",
+                    "Railway refused to create an abbreviated novella. Fill every required "
+                    "setup section and retry: "
+                    + "; ".join(shown)
+                    + suffix,
+                )
         character_ids = [item.character_id for item in request.characters]
         location_ids = [item.location_id for item in request.locations]
         object_ids = [item.object_id for item in request.objects]
@@ -205,6 +222,23 @@ class NovellaService:
             )
 
         created_at = now_iso()
+        setup_source_payload = (
+            request.setup_source.model_dump(mode="json")
+            if request.setup_source is not None
+            else None
+        )
+        setup_source_sha256 = (
+            sha256(
+                json.dumps(
+                    setup_source_payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if setup_source_payload is not None
+            else None
+        )
         session = {
             "session_id": session_id,
             "status": "active",
@@ -220,12 +254,13 @@ class NovellaService:
         }
         manifest = {
             "session_id": session_id,
-            "schema_version": 2 if request.runtime_contract_version == "2.0" else 1,
+            "schema_version": 3 if request.runtime_contract_version == "2.0" else 1,
             "state_revision": 1,
             "character_ids": character_ids,
             "location_ids": location_ids,
             "object_ids": object_ids,
             "audit_ids": [],
+            "setup_source_sha256": setup_source_sha256,
             "updated_at": created_at,
         }
         chronology_manifest = {
@@ -257,6 +292,13 @@ class NovellaService:
         for key, path in BASE_STATE_PATHS.items():
             writes[path] = _stamp_document(
                 getattr(request, key),
+                session_id=session_id,
+                state_revision=1,
+                updated_turn=0,
+            )
+        if setup_source_payload is not None:
+            writes["state/setup_source.json"] = _stamp_document(
+                setup_source_payload,
                 session_id=session_id,
                 state_revision=1,
                 updated_turn=0,

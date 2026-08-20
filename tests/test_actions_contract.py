@@ -5,6 +5,26 @@ from pathlib import Path
 import yaml
 
 from app.main import app
+from tests.conftest import create_current_session
+
+
+def _finalize_current_payload(client, payload):
+    current = deepcopy(payload)
+    current["runtime_contract_version"] = "2.0"
+    raw = json.dumps(current, ensure_ascii=False, separators=(",", ":"))
+    chunks = [raw[index : index + 1000] for index in range(0, len(raw), 1000)]
+    started = client.post(
+        "/api/v1/session-transfers", json={"total_chunks": len(chunks)}
+    )
+    assert started.status_code == 200, started.text
+    transfer_id = started.json()["transfer_id"]
+    for index, content in enumerate(chunks):
+        uploaded = client.post(
+            f"/api/v1/session-transfers/{transfer_id}/chunks",
+            json={"chunk_index": index, "content": content},
+        )
+        assert uploaded.status_code == 200, uploaded.text
+    return client.post(f"/api/v1/session-transfers/{transfer_id}/finalize")
 
 
 def test_actions_have_no_auth_and_only_session_scoped_runtime_operations() -> None:
@@ -20,6 +40,9 @@ def test_actions_have_no_auth_and_only_session_scoped_runtime_operations() -> No
     }
     assert operation_ids == {
         "createSession",
+        "startSessionTransfer",
+        "uploadSessionTransferChunk",
+        "finalizeSessionTransfer",
         "getTurnPacket",
         "getTurnPacketChunk",
         "getSceneCharacterBundle",
@@ -120,6 +143,8 @@ def test_openapi_requires_current_contract_but_runtime_keeps_legacy_compatibilit
 
     assert "director_plan" in request_schema["properties"]
     assert "director_plan" in request_schema["required"]
+    assert "setup_source" in request_schema["properties"]
+    assert "setup_source" in request_schema["required"]
     assert "runtime_contract_version" in request_schema["required"]
     assert request_schema["properties"]["runtime_contract_version"]["enum"] == [
         "2.0"
@@ -132,18 +157,32 @@ def test_current_contract_rejects_empty_director_plan(
     current = deepcopy(session_payload)
     current["runtime_contract_version"] = "2.0"
 
-    rejected = client.post("/api/v1/sessions", json=current)
+    direct = client.post("/api/v1/sessions", json=current)
+    assert direct.status_code == 409
+    assert direct.json()["error"]["code"] == "SESSION_TRANSFER_REQUIRED"
+
+    rejected = _finalize_current_payload(client, current)
     assert rejected.status_code == 422
     assert rejected.json()["error"]["code"] == "DIRECTOR_PLAN_INCOMPLETE"
 
     current["director_plan"]["active_threads"] = [
-        {"thread_id": "thread_main", "current_pressure": "Начальная ситуация"}
+        {
+            "thread_id": "thread_main",
+            "current_question": "Что нарушило обычное утро?",
+            "current_pressure": "Начальная ситуация требует реакции",
+            "status": "active",
+        }
     ]
     current["director_plan"]["character_agendas"] = [
-        {"character_id": "char_chloe", "current_goal": "Поговорить с Эмили"}
+        {
+            "character_id": "char_chloe",
+            "current_goal": "Поговорить с Эмили",
+            "next_plausible_action": "Начать неудобный разговор",
+            "conditions": [],
+        }
     ]
-    accepted = client.post("/api/v1/sessions", json=current)
-    assert accepted.status_code == 200, accepted.text
+    accepted = create_current_session(client, current)
+    assert accepted["creation_verified"] is True
 
 
 def test_turn_packet_marks_full_character_bundles_required_for_scene(

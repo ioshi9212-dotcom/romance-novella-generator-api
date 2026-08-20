@@ -755,6 +755,20 @@ class WriterFirstNovellaService(NovellaService):
                     "character who actually saw/heard/received it, not only the addressee."
                 ),
             }
+            if turn_number == 1:
+                setup_source = self.storage.read_json(
+                    session_id, "state/setup_source.json", default={}
+                )
+                if isinstance(setup_source, dict) and setup_source:
+                    payload["story_bible"]["confirmed_setup_source"] = self._clean(
+                        setup_source
+                    )
+                    payload["instruction"] += (
+                        " For the opening scene, compare the structured setup with "
+                        "story_bible.confirmed_setup_source. Its player messages preserve the "
+                        "player's exact wording and win over a generated paraphrase; do not omit "
+                        "a mapped confirmed fact."
+                    )
             pending = {
                 "turn_id": turn_id,
                 "turn_number": turn_number,

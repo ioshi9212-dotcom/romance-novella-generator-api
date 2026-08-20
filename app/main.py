@@ -23,6 +23,16 @@ from app.models import (
     TurnPacketRequest,
 )
 from app.service import NovellaService, ServiceError
+from app.session_transfer import (
+    FinalizeSessionTransferResponse,
+    StartSessionTransferRequest,
+    StartSessionTransferResponse,
+    UploadSessionTransferChunkRequest,
+    UploadSessionTransferChunkResponse,
+    finalize_session_transfer,
+    start_session_transfer,
+    upload_session_transfer_chunk,
+)
 
 settings = get_settings()
 app = FastAPI(
@@ -217,14 +227,72 @@ def recover_session(
     "/api/v1/sessions",
     operation_id="createSession",
     response_model=CreateSessionResponse,
-    summary="Create one new novella session after player confirmation",
+    summary="Legacy direct creation of one novella session",
     description=(
-        "Call only after the player explicitly confirms the setup preview. Returns a random "
-        "session_id that is mandatory for every later action."
+        "Kept only for already-installed legacy Action schemas. Current runtime contract 2.0 "
+        "must use startSessionTransfer, upload every chunk, and finalizeSessionTransfer so a "
+        "large setup cannot be silently abbreviated."
     ),
 )
 def create_session(payload: CreateSessionRequest, request: Request) -> dict[str, Any]:
+    if payload.runtime_contract_version == "2.0":
+        raise ServiceError(
+            409,
+            "SESSION_TRANSFER_REQUIRED",
+            "Do not send current novella setup in one createSession call. Serialize the full "
+            "CreateSessionRequest, call startSessionTransfer, upload every ordered chunk, then "
+            "call finalizeSessionTransfer. Do not shorten any confirmed data.",
+        )
     return service_for(request).create_session(payload)
+
+
+@app.post(
+    "/api/v1/session-transfers",
+    operation_id="startSessionTransfer",
+    response_model=StartSessionTransferResponse,
+    summary="Start verified transfer of a complete confirmed novella",
+    description=(
+        "For runtime contract 2.0, serialize one complete CreateSessionRequest as JSON and split "
+        "the exact text into ordered chunks no larger than max_chunk_chars."
+    ),
+)
+def start_transfer(
+    payload: StartSessionTransferRequest, request: Request
+) -> dict[str, Any]:
+    return start_session_transfer(service_for(request), payload)
+
+
+@app.post(
+    "/api/v1/session-transfers/{transfer_id}/chunks",
+    operation_id="uploadSessionTransferChunk",
+    response_model=UploadSessionTransferChunkResponse,
+    summary="Store the next exact piece of the confirmed novella",
+    description=(
+        "Upload every substring in order from chunk_index 0. Identical retries are safe; skipped "
+        "or changed chunks are rejected."
+    ),
+)
+def upload_transfer_chunk(
+    transfer_id: str,
+    payload: UploadSessionTransferChunkRequest,
+    request: Request,
+) -> dict[str, Any]:
+    return upload_session_transfer_chunk(service_for(request), transfer_id, payload)
+
+
+@app.post(
+    "/api/v1/session-transfers/{transfer_id}/finalize",
+    operation_id="finalizeSessionTransfer",
+    response_model=FinalizeSessionTransferResponse,
+    summary="Validate, persist and verify the complete novella",
+    description=(
+        "Only this operation creates a runtime-contract 2.0 session. It reassembles the exact "
+        "JSON, rejects abbreviated state, atomically stores every document, and verifies them "
+        "before returning session_id."
+    ),
+)
+def finalize_transfer(transfer_id: str, request: Request) -> dict[str, Any]:
+    return finalize_session_transfer(service_for(request), transfer_id)
 
 
 @app.post(
@@ -425,7 +493,7 @@ def custom_openapi() -> dict[str, Any]:
         "CreateSessionRequest", {}
     )
     required = create_schema.setdefault("required", [])
-    for field_name in ("runtime_contract_version", "director_plan"):
+    for field_name in ("runtime_contract_version", "setup_source", "director_plan"):
         if field_name not in required:
             required.append(field_name)
     version_property = create_schema.get("properties", {}).get(

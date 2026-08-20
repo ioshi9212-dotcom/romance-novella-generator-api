@@ -44,6 +44,12 @@ def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
     assert "getAuditPacket" in instructions
     assert "getSceneCharacterBundle" in instructions
     assert 'runtime_contract_version: "2.0"' in instructions
+    assert "startSessionTransfer" in instructions
+    assert "uploadSessionTransferChunk" in instructions
+    assert "finalizeSessionTransfer" in instructions
+    assert "creation_verified: true" in instructions
+    assert "setup_source.messages" in instructions
+    assert "дословно скопируй все сообщения игрока" in instructions
     assert "all_chunks_delivered" in instructions
     assert "revise_last" in instructions
     assert "Сначала напиши полный ответ по `scene_builder`" in instructions
