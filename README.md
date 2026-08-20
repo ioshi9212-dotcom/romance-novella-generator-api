@@ -11,8 +11,11 @@ Custom GPT пишет сцены. Railway ничего не генерирует
 - API-ключ и OpenAI API не используются.
 - В GPT Actions выбирается `Authentication: None`; в `openapi.yaml` стоит
   `security: []`.
-- До явного «подтверждаю» Railway не вызывается; `createSession` дополнительно
-  отклоняет запрос без положительного сообщения игрока в `player_confirmation`.
+- До явного «подтверждаю» Railway не вызывается. Текущий контракт 2.0 передаёт
+  полный подтверждённый `CreateSessionRequest` кусками, а finalize отклоняет пустые
+  и сокращённые разделы, проверяет все записанные документы и только потом выдаёт ID.
+- Прямой `createSession` оставлен только для уже установленных legacy-схем. Он
+  дополнительно отклоняет запрос без положительного `player_confirmation`.
 - `session_id` создаёт Railway после подтверждения; этот ID обязателен во всех
   последующих Actions.
 - Нет `latestSession`, общей активной сессии и списка чужих сессий.
@@ -23,6 +26,8 @@ Custom GPT пишет сцены. Railway ничего не генерирует
   выдаётся только его полное досье; его chunks также обязательны.
 - Заданные игроком и важные персонажи проходят структурную проверку полной карточки;
   повышение NPC сохраняет прежний ID и установленные факты.
+- Точные исходные сообщения игрока сохраняются отдельно в `setup_source`; coverage
+  обязан связать каждое сообщение с заполненными разделами и всеми заданными героями.
 - Значимые локации хранят постоянный визуальный canon отдельно от временных
   изменений, а автономные планы персонажей — в отдельном director_plan.
 - После каждого 15-го хода следующая сцена блокируется до полной сверки последних
@@ -50,7 +55,9 @@ Custom GPT пишет сцены. Railway ничего не генерирует
 «начнём»
   → вопросы и одно превью без Railway
   → «подтверждаю»
-  → createSession
+  → startSessionTransfer
+  → uploadSessionTransferChunk (все куски по порядку)
+  → finalizeSessionTransfer (creation_verified: true)
   → getTurnPacket (+ все chunks)
   → при входе известного персонажа: getSceneCharacterBundle (+ все chunks)
   → GPT собирает сцену
@@ -92,7 +99,10 @@ packet и отклоняет commit с неправильным footer.
 
 | operationId | Назначение |
 |---|---|
-| `createSession` | Создать сессию только после подтверждения превью |
+| `createSession` | Legacy: прямое создание для ранее установленных схем |
+| `startSessionTransfer` | Начать перенос полного подтверждённого setup |
+| `uploadSessionTransferChunk` | Сохранить следующий точный кусок setup |
+| `finalizeSessionTransfer` | Проверить полноту, записать и перечитать все документы |
 | `getTurnPacket` | Получить обязательный state-пакет перед сценой |
 | `getTurnPacketChunk` | Дочитать большой turn packet по порядку |
 | `getSceneCharacterBundle` | Получить досье одного известного персонажа, который входит в сцену |
@@ -113,13 +123,15 @@ packet и отклоняет commit с неправильным footer.
 /data/sessions/{session_id}/
 ├── session.json
 ├── manifest.json
+├── creation_receipt.json
 ├── state/
 │   ├── novel.json
 │   ├── hidden_lore.json
 │   ├── plot_state.json
 │   ├── director_plan.json
 │   ├── world_state.json
-│   └── scene_state.json
+│   ├── scene_state.json
+│   └── setup_source.json
 ├── characters/{character_id}/
 │   ├── card.json
 │   ├── current_state.json
@@ -180,8 +192,9 @@ DATA_DIR=./data .venv/bin/uvicorn app.main:app --reload
 1. Вставить содержимое `gpt/custom_gpt_instructions.md` в Instructions.
 2. В Actions импортировать `openapi.yaml`.
 3. Выбрать `Authentication: None`.
-4. Убедиться, что среди доступных Actions появились `getSceneCharacterBundle` и
-   `getSceneCharacterBundleChunk`, затем нажать Test у каждой новой операции.
+4. Убедиться, что среди доступных Actions появились `startSessionTransfer`,
+   `uploadSessionTransferChunk`, `finalizeSessionTransfer`, `getSceneCharacterBundle`
+   и `getSceneCharacterBundleChunk`, затем нажать Test у каждой новой операции.
 5. Не добавлять API key и не включать методы списка/последней сессии.
 6. Начать новый чат словом «начнём», проверить превью и только затем написать
    «подтверждаю».

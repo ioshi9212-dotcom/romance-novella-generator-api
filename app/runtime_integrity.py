@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from hashlib import sha256
 from typing import Any
 
@@ -139,9 +140,35 @@ def audit_runtime(service: NovellaService) -> dict[str, Any]:
             "state/scene_state.json",
             "chronology/manifest.json",
         ]
+        schema_version = int(manifest.get("schema_version", 1) or 1)
+        if schema_version >= 3:
+            required_root_paths.append("state/setup_source.json")
         for relative in required_root_paths:
             if not (session_dir / relative).is_file():
                 errors.append(f"missing {relative}")
+
+        if schema_version >= 3 and (session_dir / "state/setup_source.json").is_file():
+            setup_source = service.storage.read_json(
+                session_id, "state/setup_source.json", default={}
+            )
+            if not isinstance(setup_source, dict):
+                errors.append("state/setup_source.json is not an object")
+            else:
+                source_payload = {
+                    key: value
+                    for key, value in setup_source.items()
+                    if key not in {"session_id", "_meta"}
+                }
+                source_digest = sha256(
+                    json.dumps(
+                        source_payload,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                if source_digest != manifest.get("setup_source_sha256"):
+                    errors.append("setup_source digest disagrees with manifest")
 
         for character_id in character_ids:
             for name in ("card.json", "current_state.json", "relationships.json", "knowledge.json"):

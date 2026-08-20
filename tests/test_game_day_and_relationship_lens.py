@@ -181,6 +181,6 @@ def test_relationship_lens_keeps_multiple_causal_dimensions_instead_of_generic_i
     assert "generic fallback" in packet["relationship_lens"]["instruction"]
 
     builder = packet["scene_builder"]
-    assert "День {game_day}" in builder
-    assert "Отношения NPC — часть причин их поведения" in builder
-    assert "Не используй `интерес` как универсальный показатель" in builder
+    assert "День недели, ДД.ММ.ГГГГ, ЧЧ:ММ" in builder
+    assert "## Отношения" in builder
+    assert "Показывай только актуальные отношения" in builder

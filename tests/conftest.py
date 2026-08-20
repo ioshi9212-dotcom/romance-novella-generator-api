@@ -72,6 +72,28 @@ def full_character_card(character_id: str, name: str, hint: str) -> dict[str, An
     }
 
 
+def full_current_state(
+    character_id: str,
+    *,
+    present_in_scene: bool,
+    current_location_id: str = "loc_home",
+) -> dict[str, Any]:
+    return {
+        "character_id": character_id,
+        "current_location_id": current_location_id,
+        "physical_state": ["здоров"],
+        "clothing": ["повседневная одежда"],
+        "carried_object_ids": [],
+        "current_goal": "разобраться в начальной ситуации",
+        "nearest_intention": "отреагировать на происходящее в стартовой сцене",
+        "offscreen_activity": "до начала сцены занимался обычными делами",
+        "available_now": present_in_scene,
+        "present_in_scene": present_in_scene,
+        "last_action": "вошёл в исходный кадр истории",
+        "last_updated_turn": 0,
+    }
+
+
 @pytest.fixture
 def service(tmp_path: Path) -> NovellaService:
     return NovellaService(
@@ -93,13 +115,60 @@ def client(service: NovellaService) -> TestClient:
 def session_payload() -> dict[str, Any]:
     return {
         "player_confirmation": "Подтверждаю",
+        "setup_source": {
+            "messages": [
+                "Игрок задал Эмили как POV, Хлою как её подругу, домашнюю стартовую "
+                "локацию и начальную загадку для напряжённой живой истории."
+            ],
+            "coverage": [
+                {
+                    "message_index": 0,
+                    "stored_in": [
+                        "novel",
+                        "plot_state.active_lines",
+                        "characters.char_emily.card",
+                        "characters.char_chloe.card",
+                        "locations.loc_home.canon",
+                    ],
+                }
+            ],
+            "expected_player_character_ids": ["char_emily", "char_chloe"],
+            "expected_location_ids": ["loc_home"],
+            "final_consistency_pass": True,
+        },
         "novel": {
             "title": "Тестовая новелла",
             "pov_character_id": "char_emily",
             "genre": ["mystery"],
+            "tone": "напряжённый, но живой",
+            "style": "кинематографичная интерактивная проза",
+            "narration": "third_person_limited",
+            "choices_enabled": True,
+            "scene_length_chars": {
+                "min": 1500,
+                "max": 2500,
+                "scope": "main_scene_only",
+            },
+            "player_constraints": ["не решать важные выборы за POV"],
+            "content_constraints": [],
         },
-        "hidden_lore": {"facts": [{"fact_id": "secret_1", "value": "hidden"}]},
-        "plot_state": {"active_lines": []},
+        "hidden_lore": {
+            "facts": [{"fact_id": "secret_1", "value": "hidden"}],
+            "secrets": [],
+            "reveal_conditions": [],
+            "false_versions_in_world": [],
+            "protected_until": [],
+        },
+        "plot_state": {
+            "active_lines": [
+                {"line_id": "line_main", "current_pressure": "начальная загадка"}
+            ],
+            "open_threads": [],
+            "pending_consequences": [],
+            "foreshadowing": [],
+            "resolved_history": [],
+            "next_pressure_points": [],
+        },
         "director_plan": {
             "active_threads": [],
             "character_agendas": [],
@@ -109,11 +178,38 @@ def session_payload() -> dict[str, Any]:
             "consequences_without_pov": [],
             "possible_pov_contacts": [],
         },
-        "world_state": {"story_datetime": "2025-09-08T10:00:00"},
+        "world_state": {
+            "story_datetime": "2025-09-08T10:00:00",
+            "global_situation": ["обычное утро нарушает начальная загадка"],
+            "character_whereabouts": [
+                {"character_id": "char_emily", "location_id": "loc_home"},
+                {"character_id": "char_chloe", "location_id": "loc_home"},
+            ],
+            "offscreen_actions": [],
+            "active_dangers": [],
+            "location_availability": [
+                {"location_id": "loc_home", "status": "available"}
+            ],
+        },
         "scene_state": {
             "turn_number": 0,
             "scene_id": "scene_0000",
+            "story_datetime": "2025-09-08T10:00:00",
+            "location_id": "loc_home",
+            "zone": "общая комната",
             "present_character_ids": ["char_emily", "char_chloe"],
+            "entered_character_ids": [],
+            "left_character_ids": [],
+            "positions": ["Эмили и Хлоя находятся в общей комнате"],
+            "important_objects": [],
+            "clothing": ["повседневная одежда"],
+            "lighting": "утренний дневной свет",
+            "weather": "ясно",
+            "doors_and_windows": [],
+            "active_sounds": ["тихий шум двора"],
+            "unfinished_actions": ["разговор ещё не начался"],
+            "last_spoken_line": "",
+            "continue_from": "первый момент исходной ситуации",
         },
         "characters": [
             {
@@ -121,18 +217,36 @@ def session_payload() -> dict[str, Any]:
                 "card": full_character_card(
                     "char_emily", "Эмили", "POV, действует прямо и не любит пустые разговоры."
                 ),
-                "current_state": {"current_location_id": "loc_home"},
-                "relationships": {"relations": []},
-                "knowledge": {"entries": []},
+                "current_state": full_current_state(
+                    "char_emily", present_in_scene=True
+                ),
+                "relationships": {
+                    "owner_character_id": "char_emily",
+                    "relations": [],
+                },
+                "knowledge": {
+                    "character_id": "char_emily",
+                    "entries": [],
+                    "wrong_beliefs": [],
+                },
             },
             {
                 "character_id": "char_chloe",
                 "card": full_character_card(
                     "char_chloe", "Хлоя", "Подруга POV, наблюдательная и разговорчивая."
                 ),
-                "current_state": {"current_location_id": "loc_home"},
-                "relationships": {"relations": []},
-                "knowledge": {"entries": []},
+                "current_state": full_current_state(
+                    "char_chloe", present_in_scene=True
+                ),
+                "relationships": {
+                    "owner_character_id": "char_chloe",
+                    "relations": [],
+                },
+                "knowledge": {
+                    "character_id": "char_chloe",
+                    "entries": [],
+                    "wrong_beliefs": [],
+                },
             },
         ],
         "locations": [
@@ -169,6 +283,32 @@ def create_session(client: TestClient, payload: dict[str, Any]) -> str:
     response = client.post("/api/v1/sessions", json=payload)
     assert response.status_code == 200, response.text
     return response.json()["session_id"]
+
+
+def create_current_session(
+    client: TestClient, payload: dict[str, Any], *, chunk_chars: int = 1000
+) -> dict[str, Any]:
+    payload = deepcopy(payload)
+    payload["runtime_contract_version"] = "2.0"
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    chunks = [
+        raw[index : index + chunk_chars]
+        for index in range(0, len(raw), chunk_chars)
+    ]
+    started = client.post(
+        "/api/v1/session-transfers", json={"total_chunks": len(chunks)}
+    )
+    assert started.status_code == 200, started.text
+    transfer_id = started.json()["transfer_id"]
+    for index, content in enumerate(chunks):
+        uploaded = client.post(
+            f"/api/v1/session-transfers/{transfer_id}/chunks",
+            json={"chunk_index": index, "content": content},
+        )
+        assert uploaded.status_code == 200, uploaded.text
+    finalized = client.post(f"/api/v1/session-transfers/{transfer_id}/finalize")
+    assert finalized.status_code == 200, finalized.text
+    return finalized.json()
 
 
 def collect_packet(
