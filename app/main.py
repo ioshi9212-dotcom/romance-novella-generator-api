@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
@@ -8,7 +6,6 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.enhanced_writer_service import EnhancedWriterNovellaService
 from app.models import (
     ChronologyPageResponse,
     CommitAuditRequest,
@@ -23,6 +20,7 @@ from app.models import (
     TurnPacketRequest,
 )
 from app.service import NovellaService, ServiceError
+from app.writer_service import WriterFirstNovellaService
 
 settings = get_settings()
 app = FastAPI(
@@ -34,11 +32,7 @@ app = FastAPI(
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
 )
-app.state.service = EnhancedWriterNovellaService(settings)
-
-# One-time recovery gate. Only the SHA-256 digest is committed; the secret token itself
-# never lives in the public repository. This route is intentionally excluded from OpenAPI.
-_RECOVERY_TOKEN_SHA256 = "6297d6aa76d4489b58f299e3bbd3e546feee74f9b6c35189f597a3a20d8ddf9a"
+app.state.service = WriterFirstNovellaService(settings)
 
 
 def service_for(request: Request) -> NovellaService:
@@ -57,7 +51,12 @@ async def handle_service_error(_request: Request, exc: ServiceError) -> JSONResp
 async def handle_request_validation_error(
     _request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    """Return useful validation failures without echoing the submitted novella."""
+    """Return useful validation failures without echoing the submitted novella.
+
+    Pydantic includes the rejected input subtree in every error by default. A
+    model-level error can therefore repeat an entire character card and make a
+    GPT Action response larger than the connector limit.
+    """
     validation_errors = exc.errors()
     issues = [
         {
@@ -83,134 +82,6 @@ async def handle_request_validation_error(
 @app.get("/health", include_in_schema=False)
 def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-def _recovery_token_ok(token: str) -> bool:
-    supplied_digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    return hmac.compare_digest(supplied_digest, _RECOVERY_TOKEN_SHA256)
-
-
-@app.get("/internal/recover-session", include_in_schema=False, response_model=None)
-def recover_session(
-    request: Request,
-    token: str = Query(min_length=16),
-    pov_name: str | None = Query(default=None, min_length=1, max_length=120),
-    last_completed_turn: int | None = Query(default=None, ge=0),
-    turn_number: int | None = Query(default=None, ge=1),
-    contains: str | None = Query(default=None, min_length=1, max_length=300),
-    title_contains: str | None = Query(default=None, min_length=1, max_length=160),
-) -> Any:
-    """Recover a lost session by metadata and/or actual stored turn content."""
-
-    if not _recovery_token_ok(token):
-        return JSONResponse(
-            status_code=403,
-            content={"error": {"code": "RECOVERY_FORBIDDEN", "message": "Invalid token"}},
-        )
-
-    service = service_for(request)
-    wanted_name = pov_name.strip().casefold() if pov_name else None
-    wanted_title = title_contains.strip().casefold() if title_contains else None
-    terms = [
-        part.strip().casefold()
-        for part in (contains or "").split("|")
-        if part.strip()
-    ]
-    matches: list[dict[str, Any]] = []
-
-    for session_dir in service.storage.sessions_dir.iterdir():
-        if not session_dir.is_dir():
-            continue
-        session_id = session_dir.name
-        try:
-            session = service.storage.read_json(session_id, "session.json", default={})
-            if not isinstance(session, dict):
-                continue
-            if (
-                last_completed_turn is not None
-                and int(session.get("last_completed_turn", -1)) != last_completed_turn
-            ):
-                continue
-
-            novel = service.storage.read_json(session_id, "state/novel.json", default={})
-            if not isinstance(novel, dict):
-                novel = {}
-            title = str(novel.get("title", ""))
-            if wanted_title and wanted_title not in title.casefold():
-                continue
-
-            pov_character_id = str(novel.get("pov_character_id", ""))
-            pov_display_name = ""
-            if pov_character_id:
-                card = service.storage.read_json(
-                    session_id,
-                    f"characters/{pov_character_id}/card.json",
-                    default={},
-                )
-                identity = card.get("identity", {}) if isinstance(card, dict) else {}
-                pov_display_name = str(identity.get("name", "")).strip()
-            if wanted_name and wanted_name not in pov_display_name.casefold():
-                continue
-
-            matched_turns: list[dict[str, Any]] = []
-            if turn_number is not None:
-                turn_numbers = [turn_number]
-            elif terms:
-                turns_dir = session_dir / "turns"
-                turn_numbers = []
-                if turns_dir.is_dir():
-                    for turn_path in sorted(turns_dir.glob("turn_*.json")):
-                        stem = turn_path.stem.removeprefix("turn_")
-                        if stem.isdigit():
-                            turn_numbers.append(int(stem))
-            else:
-                turn_numbers = []
-
-            for candidate_turn in turn_numbers:
-                turn = service.storage.read_json(
-                    session_id,
-                    f"turns/turn_{candidate_turn:06d}.json",
-                    default={},
-                )
-                if not isinstance(turn, dict) or not turn:
-                    continue
-                haystack = "\n".join(
-                    str(turn.get(key, ""))
-                    for key in ("scene_output", "summary", "player_input", "story_datetime", "scene_id")
-                ).casefold()
-                if terms and not all(term in haystack for term in terms):
-                    continue
-                scene_output = str(turn.get("scene_output", ""))
-                matched_turns.append(
-                    {
-                        "turn_number": int(turn.get("turn_number", candidate_turn)),
-                        "story_datetime": turn.get("story_datetime"),
-                        "scene_id": turn.get("scene_id"),
-                        "summary": str(turn.get("summary", ""))[:600],
-                        "scene_preview": scene_output[:900],
-                    }
-                )
-
-            if (turn_number is not None or terms) and not matched_turns:
-                continue
-
-            matches.append(
-                {
-                    "session_id": session_id,
-                    "title": title,
-                    "pov_character_id": pov_character_id,
-                    "pov_name": pov_display_name,
-                    "last_completed_turn": int(session.get("last_completed_turn", 0)),
-                    "updated_at": session.get("updated_at"),
-                    "audit_required": bool(session.get("audit_required", False)),
-                    "matched_turns": matched_turns[:20],
-                }
-            )
-        except (FileNotFoundError, OSError, TypeError, ValueError):
-            continue
-
-    matches.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
-    return {"count": len(matches), "matches": matches[:30]}
 
 
 @app.post(
@@ -421,6 +292,10 @@ def custom_openapi() -> dict[str, Any]:
             if isinstance(operation, dict):
                 operation["security"] = []
     _ensure_object_properties(schema)
+    # The deployed server keeps accepting legacy createSession payloads, but every
+    # newly imported Action schema must opt into the current contract and provide a
+    # substantive director plan. This separates backwards compatibility from the
+    # guarantees advertised to the current Custom GPT.
     create_schema = schema.get("components", {}).get("schemas", {}).get(
         "CreateSessionRequest", {}
     )
