@@ -1,184 +1,191 @@
-# Romance Novella Generator API — GPT Actions v9.4-session-chunks
+# Novella Generator Runtime
 
-Генератор интерактивных новелл для связки:
+Railway-runtime для интерактивной визуальной новеллы в Custom GPT.
 
-```txt
-Custom GPT = писатель и сборщик bootstrap-preview
-Railway API = память, state, проверки, preview gate, сборка контекста
-GitHub = код, правила, схемы и промпты
+Custom GPT пишет сцены. Railway ничего не генерирует и не вызывает OpenAI API: он
+хранит изолированное состояние каждой новеллы, выдаёт обязательный пакет перед
+сценой и атомарно сохраняет результат хода.
+
+## Зафиксированный контракт
+
+- API-ключ и OpenAI API не используются.
+- В GPT Actions выбирается `Authentication: None`; в `openapi.yaml` стоит
+  `security: []`.
+- До явного «подтверждаю» Railway не вызывается; `createSession` дополнительно
+  отклоняет запрос без положительного сообщения игрока в `player_confirmation`.
+- `session_id` создаёт Railway после подтверждения; этот ID обязателен во всех
+  последующих Actions.
+- Нет `latestSession`, общей активной сессии и списка чужих сессий.
+- Перед каждой сценой GPT получает актуальные rules, builder, state, хронологию,
+  полные ходы текущего цикла и полные досье только POV и текущих участников.
+- Commit физически заблокирован, пока Railway не выдал по порядку все chunks пакета.
+  Для известного отсутствующего персонажа, который входит в новую сцену, отдельно
+  выдаётся только его полное досье; его chunks также обязательны.
+- Заданные игроком и важные персонажи проходят структурную проверку полной карточки;
+  повышение NPC сохраняет прежний ID и установленные факты.
+- Значимые локации хранят постоянный визуальный canon отдельно от временных
+  изменений, а автономные планы персонажей — в отдельном director_plan.
+- После каждого 15-го хода следующая сцена блокируется до полной сверки последних
+  15 ходов.
+- Один commit сохраняет сцену, хронологию и все изменения state одной транзакцией.
+- Каждый ход обязан сохранить хотя бы один компактный факт и полный scene_state
+  финального кадра; номер хода, scene_id, время и присутствие POV проверяет сервер.
+- Переписывание последней сцены создаёт новую редакцию того же хода. Если ход уже
+  проверен, соответствующий audit аннулируется и должен быть проведён снова.
+
+## Главные файлы режиссуры
+
+- [`rules/rules.md`](rules/rules.md) — короткая модель поведения персонажей,
+  границы знаний, постоянство карточных персонажей и жизнь NPC.
+- [`rules/scene_builder.md`](rules/scene_builder.md) — единственный builder внешнего
+  вида сцены, верхнего/нижнего блока, вариантов и footer.
+- [`gpt/custom_gpt_instructions.md`](gpt/custom_gpt_instructions.md) — короткий
+  runtime-порядок Actions для редактора Custom GPT.
+
+Правила поведения и формат сцены не размножаются по отдельным prompt-файлам.
+
+## Игровой цикл
+
+```text
+«начнём»
+  → вопросы и одно превью без Railway
+  → «подтверждаю»
+  → createSession
+  → getTurnPacket (+ все chunks)
+  → при входе известного персонажа: getSceneCharacterBundle (+ все chunks)
+  → GPT собирает сцену
+  → commitTurn
+  → игрок видит только сцену
 ```
 
-В репозитории нет готового канона, персонажей, лора или истории. Всё конкретное создаётся при старте новой сессии и сохраняется в Railway volume только после подтверждения пользователем.
+После 15-го сохранённого хода:
 
-## Что изменилось в v9
-
-- Добавлен обязательный launch-flow с preview перед первой сценой.
-- Канонический старт передаётся одним `createBootstrapPreview`: GPT присылает цельный `bootstrap_json`, а Railway достраивает технический state и возвращает preview.
-- `confirmBootstrapPreview` после явного подтверждения пользователя раскладывает персонажей/знания/отношения по state-файлам и активирует сессию.
-- Первая сцена пишется только после подтверждения preview.
-- `story_plan.json` усилен: цель новеллы, цель героини, центральный конфликт, центральный вопрос, opening intent, character_arcs, relationship_focus, open_threads.
-- Сохранена архитектура v8: персонажи и их state создаются динамически внутри каждой сессии по generated `character_id`.
-
-## Railway variables
-
-```env
-DATA_DIR=/app/runtime
-ENGINE_VERSION=novella-generator-gpt-actions-v9.4-session-chunks
-DEFAULT_LANGUAGE=ru
+```text
+getTurnPacket → AUDIT_REQUIRED
+  → getAuditPacket (+ все chunks)
+  → сверка 15 полных ходов, state и всей компактной хронологии
+  → commitAudit
+  → audit_complete: true
+  → getTurnPacket
+  → следующая сцена
 ```
 
-`DATA_DIR` должен указывать на Railway Volume mount path. Если volume примонтирован в `/app/runtime`, оставляй `DATA_DIR=/app/runtime`.
+Backend не полагается на обещание в prompt: `getTurnPacket` физически возвращает
+ошибку, пока audit-шлюз не закрыт, а оба commit отклоняются, пока сервер не выдал
+все chunks соответствующего пакета.
 
-Текущая Actions-схема рассчитана на `Authentication: None`, поэтому `API_KEY`
-в этом deployment не задаётся. Если позже понадобится закрытый deployment, при
-заданном `API_KEY` все endpoints кроме `/health` потребуют header:
+## Счётчики в сцене
 
-```txt
-X-API-Key: your-long-random-secret
+Внизу каждого игрового ответа builder требует:
+
+```text
+Ход 56 · цикл 1/15
+↻ Перед следующим ходом: прочитать актуальный state. На 15/15 — сверить последние
+15 ходов с Railway, дописать пропущенное, удалить устаревшее и сжать завершённое;
+только после успешной сверки писать следующую сцену.
 ```
 
-`session_id` остаётся приватным идентификатором: его нельзя публиковать вместе с
-debug-ответами.
+Общий номер и позиция цикла хранятся отдельно. Runtime передаёт оба значения в turn
+packet и отклоняет commit с неправильным footer.
 
-## Launch flow
+## Actions
 
-```txt
-User: начнем
-↓
-GPT calls GET /api/v1/start-questionnaire
-↓
-User answers in ordinary text, one or several messages, or chooses «Рандом»
-↓
-GPT calls POST /api/v1/sessions with the exact answer in raw_start_text
-↓
-API returns bootstrap_prompt, session remains bootstrap_pending
-↓
-GPT builds one bootstrap_json and calls POST /api/v1/sessions/{session_id}/bootstrap-preview
-↓
-API derives technical runtime state, performs structural validation and returns a spoiler-free preview; source-fidelity heuristics are diagnostic warnings only
-↓
-Большой preview возвращается безопасными chunks; потерянный первый ответ восстанавливается с chunk 0 по metadata из debugSessionDump
-↓
-User confirms or asks edits
-↓
-If edits: GPT sends one updated bootstrap_json to the same preview endpoint
-↓
-If confirmed: GPT calls POST /api/v1/sessions/{session_id}/bootstrap-confirm
-↓
-API writes state files and session becomes active
-↓
-GPT calls POST /api/v1/sessions/{session_id}/turn with player_input="(начать первую сцену)"
-↓
-API returns current state, active/nearby cards and only eligible event-driven entrance candidates
-↓
-An unknown future person is represented only by a short seed; one complete card may be created atomically when that person actually enters a scene
-↓
-GPT sends flat scene fields without rendered_text to apply-turn-result
-↓
-Railway renders, atomically saves and retains the visible scene
-↓
-GPT shows message_to_user; if delivery was lost, getLastScene returns it without a new turn
+| operationId | Назначение |
+|---|---|
+| `createSession` | Создать сессию только после подтверждения превью |
+| `getTurnPacket` | Получить обязательный state-пакет перед сценой |
+| `getTurnPacketChunk` | Дочитать большой turn packet по порядку |
+| `getSceneCharacterBundle` | Получить досье одного известного персонажа, который входит в сцену |
+| `getSceneCharacterBundleChunk` | Дочитать досье входящего персонажа по порядку |
+| `commitTurn` | Атомарно сохранить сцену и все изменения хода |
+| `getAuditPacket` | Получить 15 полных ходов и state для обязательной сверки |
+| `getAuditPacketChunk` | Дочитать большой audit packet по порядку |
+| `commitAudit` | Сохранить исправления/сжатие и снять audit-шлюз |
+| `getChronologyPage` | Прочитать хронологию с начала до конца страницами |
+
+Схема для импорта в GPT Actions: [`openapi.yaml`](openapi.yaml).
+
+## Хранение на Railway
+
+Живые данные находятся только в volume:
+
+```text
+/data/sessions/{session_id}/
+├── session.json
+├── manifest.json
+├── state/
+│   ├── novel.json
+│   ├── hidden_lore.json
+│   ├── plot_state.json
+│   ├── director_plan.json
+│   ├── world_state.json
+│   └── scene_state.json
+├── characters/{character_id}/
+│   ├── card.json
+│   ├── current_state.json
+│   ├── relationships.json
+│   └── knowledge.json
+├── chronology/
+│   ├── manifest.json
+│   └── chronology_0001.json
+├── turns/turn_000001.json
+├── audits/{audit_id}.json
+├── locations/{location_id}.json
+└── objects/{object_id}.json
 ```
 
-## Session state layout
+Хронология хранит компактные факты, а не копию сцены. Полный ввод игрока и полный
+игровой ответ остаются в файле хода. Шаблоны всех документов находятся в
+[`state_templates/`](state_templates/).
 
-```txt
-DATA_DIR/
-  sessions/
-    <session_id>/
-      session.json
-      user_request.json
-      protagonist.json
-      story_plan.json
-      director_bible.json
-      current_state.json
-      npc_state.json
-      future_locks.json
-      continuity.json
-      scene_history.json
-      turns.json
-      last_scene_output.json
-      characters_index.json
-      characters/
-        <character_id>.json
-      state/
-        knowledge_index.json
-        relationship_index.json
-        knowledge/
-          <character_id>.json
-        relationship_pairs/
-          <a>__<b>.json
-```
+Во время audit повторяющиеся записи можно заменить одной активной компактной
+сводкой. Исходные события не удаляются с диска: обычные packets их больше не тянут,
+а диагностический `getChronologyPage?include_inactive=true` по-прежнему их видит.
+Если audit аннулирован исправлением хода, его сводка становится неактивной и исходные
+события автоматически возвращаются в рабочую хронологию.
 
-Один уже известный или появившийся персонаж = одна полная поведенческая карточка в `characters/<character_id>.json`; в сценический prompt попадает её компактная версия только тогда, когда персонаж нужен текущей сцене. Неизвестные будущие люди остаются короткими seeds в `future_locks.json` до фактического появления.
+Каждый документ привязан к `session_id`. Идентификаторы и пути проверяются; кэш и
+транзакционные блокировки также сессионные. Незавершённая файловая транзакция при
+следующем обращении откатывается целиком.
 
-Знания = субъективная память конкретного персонажа в `state/knowledge/<character_id>.json`: что видел, слышал, как понял, что запомнил, где может ошибаться.
-
-Отношения = парный файл `state/relationship_pairs/<a>__<b>.json` с общими scores и направленными взглядами `a_view_of_b` / `b_view_of_a`.
-
-## Visible scene format
-
-```md
-🎭 <Название истории> · <дата / день>
-🕒 <время> · 📍 <локация>
-🌦️ Погода: <погода / атмосфера>
-⚙️ Состояние сцены: <физический контекст>
-
-✦ <имя персонажа игрока> · <видимое состояние>
-🧥 <одежда>
-◈ <инвентарь / предметы при себе / рядом>
-
-━━━━━━━━━━━━━━━━━━━━
-```
-
-Диалог:
-
-```md
-**Name** — Реплика. *(короткая ремарка)* Продолжение реплики.
-```
-
-## Main endpoints
-
-```txt
-GET  /health
-GET  /api/v1/start-questionnaire
-POST /api/v1/sessions
-GET  /api/v1/sessions
-GET  /api/v1/sessions/latest
-GET  /api/v1/sessions/{session_id}
-GET  /api/v1/sessions/{session_id}/memory
-POST /api/v1/sessions/{session_id}/bootstrap-preview
-GET  /api/v1/sessions/{session_id}/bootstrap-preview-chunk
-POST /api/v1/sessions/{session_id}/bootstrap-confirm
-GET  /api/v1/sessions/{session_id}/scene-contract
-POST /api/v1/sessions/{session_id}/turn
-POST /api/v1/sessions/{session_id}/advance-time
-GET  /api/v1/sessions/{session_id}/turn-prompt-chunk
-POST /api/v1/sessions/{session_id}/apply-turn-result
-GET  /api/v1/sessions/{session_id}/last-scene
-GET  /api/v1/sessions/{session_id}/debug-dump
-```
-
-Каноническая Action-схема доступна по `GET /openapi-actions.json`. Стабильная
-ссылка для импорта в редактор GPT — `GET /openapi-actions.yaml`.
-Отслеживаемый `openapi.yaml` пересобирается командой `python scripts/export_openapi.py`.
-
-## Local run
+## Локальный запуск
 
 ```bash
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+python -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+DATA_DIR=./data .venv/bin/uvicorn app.main:app --reload
 ```
 
-## Tests and CI
-
-Локальный запуск тестов:
+Проверки:
 
 ```bash
-pip install -r requirements.txt
-pip install pytest==8.3.4 httpx==0.28.1
-python -m pytest -q
+.venv/bin/python -m pytest -q
+.venv/bin/python scripts/export_openapi.py
 ```
 
-GitHub Actions запускает тот же набор тестов на Python 3.11 при push в `main` и `agent/**`, а также для pull request в `main`.
-Перед слиянием изменений проверка `Tests / Python 3.11` должна завершиться успешно.
+## Railway
+
+1. Подключить этот репозиторий к Railway.
+2. Подключить persistent volume к `/data`.
+3. Задать `DATA_DIR=/data`.
+4. Оставить один worker: файловые транзакции рассчитаны на один Railway service.
+5. Проверить `GET /health`.
+
+`railway.json` и `Procfile` уже содержат команду запуска. Текущий production server
+в Action-схеме: `https://web-production-4310e.up.railway.app`. Если Railway выдаст
+другой домен, изменить `PUBLIC_BASE_URL` и заново выполнить export.
+
+## Подключение Custom GPT
+
+1. Вставить содержимое `gpt/custom_gpt_instructions.md` в Instructions.
+2. В Actions импортировать `openapi.yaml`.
+3. Выбрать `Authentication: None`.
+4. Убедиться, что среди доступных Actions появились `getSceneCharacterBundle` и
+   `getSceneCharacterBundleChunk`, затем нажать Test у каждой новой операции.
+5. Не добавлять API key и не включать методы списка/последней сессии.
+6. Начать новый чат словом «начнём», проверить превью и только затем написать
+   «подтверждаю».
+
+Endpoint публичный, поэтому `session_id` генерируется как длинное случайное значение
+и фактически является единственным способом адресовать конкретную историю. Его нельзя
+показывать другим пользователям или подменять ID из другого чата.
