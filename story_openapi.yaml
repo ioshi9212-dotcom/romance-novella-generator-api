@@ -1,0 +1,158 @@
+openapi: 3.1.0
+info:
+  title: Novella Story Library
+  version: 1.0.0
+  description: Persistent verified master-story library for the novella runtime.
+servers:
+  - url: https://web-production-4310e.up.railway.app
+security: []
+paths:
+  /api/v1/stories:
+    get:
+      operationId: listStories
+      summary: List saved master stories
+      security: []
+      responses:
+        '200':
+          description: Saved stories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  stories:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        story_id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        revision: {type: integer}
+                        character_count: {type: integer}
+                        pov_character_id: {type: [string, 'null']}
+  /api/v1/stories/{story_id}/draft:
+    put:
+      operationId: writeStoryDraft
+      summary: Write or completely rewrite a story master draft
+      description: Store exact source text and complete structured master state. Every rewrite increments revision and resets readback verification.
+      security: []
+      parameters:
+        - in: path
+          name: story_id
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, source_text, template]
+              properties:
+                title: {type: string}
+                source_text:
+                  type: string
+                  description: Exact full source supplied by the player. Do not summarize or rewrite.
+                template:
+                  type: object
+                  description: Complete master state. Must contain novel, hidden_lore, plot_state, director_plan, world_state, scene_state and characters. May contain locations and objects.
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Draft stored; read it back before verification.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/stories/{story_id}/readback:
+    get:
+      operationId: getStoryReadbackChunk
+      summary: Read one exact chunk of the currently saved story
+      description: Start at chunk 0 and request chunks strictly in order through next_chunk_index until all_chunks_delivered is true. Compare all content to source_text before verification.
+      security: []
+      parameters:
+        - in: path
+          name: story_id
+          required: true
+          schema: {type: string}
+        - in: query
+          name: chunk_index
+          required: false
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        '200':
+          description: Exact readback chunk
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  story_id: {type: string}
+                  revision: {type: integer}
+                  chunk_index: {type: integer}
+                  chunk_count: {type: integer}
+                  content: {type: string}
+                  content_sha256: {type: string}
+                  has_more: {type: boolean}
+                  next_chunk_index: {type: [integer, 'null']}
+                  delivered_chunk_count: {type: integer}
+                  all_chunks_delivered: {type: boolean}
+  /api/v1/stories/{story_id}/verify:
+    post:
+      operationId: verifyStory
+      summary: Finalize only after complete ordered readback has zero discrepancies
+      description: Verification is physically rejected until every current readback chunk was delivered in order. If anything is missing, distorted or contradictory, call writeStoryDraft again and repeat the entire readback. Both issue lists must be empty and final_consistency_pass true for the current revision/hash.
+      security: []
+      parameters:
+        - in: path
+          name: story_id
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision, content_sha256, missing_items, conflicts, final_consistency_pass]
+              properties:
+                revision: {type: integer}
+                content_sha256: {type: string}
+                missing_items:
+                  type: array
+                  items: {type: string}
+                conflicts:
+                  type: array
+                  items: {type: string}
+                final_consistency_pass: {type: boolean}
+      responses:
+        '200':
+          description: Story verified and unlocked for sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/stories/{story_id}/sessions:
+    post:
+      operationId: createSessionFromStory
+      summary: Create a fresh session from a verified master story
+      description: Copies the verified master state directly into a new mutable session without re-normalizing or reinterpreting the story.
+      security: []
+      parameters:
+        - in: path
+          name: story_id
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Fresh session created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+components: {}
