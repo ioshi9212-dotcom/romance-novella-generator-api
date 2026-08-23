@@ -36,7 +36,7 @@ paths:
     put:
       operationId: writeStoryDraft
       summary: Write or completely rewrite a story master draft
-      description: Store the exact source text and the complete structured master state. Any rewrite increments revision and resets verification.
+      description: Store exact source text and complete structured master state. Every rewrite increments revision and resets readback verification.
       security: []
       parameters:
         - in: path
@@ -71,7 +71,7 @@ paths:
     get:
       operationId: getStoryReadbackChunk
       summary: Read one exact chunk of the currently saved story
-      description: Read chunk 0 and continue through next_chunk_index until has_more is false. Compare all content to source_text before verification.
+      description: Start at chunk 0 and request chunks strictly in order through next_chunk_index until all_chunks_delivered is true. Compare all content to source_text before verification.
       security: []
       parameters:
         - in: path
@@ -98,11 +98,13 @@ paths:
                   content_sha256: {type: string}
                   has_more: {type: boolean}
                   next_chunk_index: {type: [integer, 'null']}
+                  delivered_chunk_count: {type: integer}
+                  all_chunks_delivered: {type: boolean}
   /api/v1/stories/{story_id}/verify:
     post:
       operationId: verifyStory
-      summary: Finalize only after complete readback has zero discrepancies
-      description: If anything is missing, distorted or contradictory, call writeStoryDraft again and repeat the entire readback. Verification is rejected unless both issue lists are empty and final_consistency_pass is true for the current revision/hash.
+      summary: Finalize only after complete ordered readback has zero discrepancies
+      description: Verification is physically rejected until every current readback chunk was delivered in order. If anything is missing, distorted or contradictory, call writeStoryDraft again and repeat the entire readback. Both issue lists must be empty and final_consistency_pass true for the current revision/hash.
       security: []
       parameters:
         - in: path
