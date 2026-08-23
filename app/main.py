@@ -26,9 +26,9 @@ from app.story_routes import router as story_router
 settings = get_settings()
 app = FastAPI(
     title="Interactive Novella State Runtime",
-    version="2.1.0",
+    version="2.0.0",
     description=(
-        "Session-scoped Railway storage plus a persistent verified master-story library. "
+        "Session-scoped Railway storage for a Custom GPT visual novella. "
         "The API stores state and never calls an OpenAI model."
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
@@ -53,6 +53,12 @@ async def handle_service_error(_request: Request, exc: ServiceError) -> JSONResp
 async def handle_request_validation_error(
     _request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    """Return useful validation failures without echoing the submitted novella.
+
+    Pydantic includes the rejected input subtree in every error by default. A
+    model-level error can therefore repeat an entire character card and make a
+    GPT Action response larger than the connector limit.
+    """
     validation_errors = exc.errors()
     issues = [
         {
@@ -85,6 +91,13 @@ def health() -> dict[str, str]:
     operation_id="createSession",
     response_model=CreateSessionResponse,
     summary="Create one new novella session after player confirmation",
+    description=(
+        "Call exactly once, only after the player explicitly writes «подтверждаю». Send the "
+        "entire confirmed setup in this one request. Railway preserves the supplied canon, "
+        "normalizes safe internal IDs and fills only technical omissions that would otherwise "
+        "break storage. A successful response returns the real session_id; retain it and "
+        "immediately call getTurnPacket to start the first scene."
+    ),
 )
 def create_session(payload: CreateSessionRequest, request: Request) -> dict[str, Any]:
     return service_for(request).create_session(payload)
@@ -95,6 +108,13 @@ def create_session(payload: CreateSessionRequest, request: Request) -> dict[str,
     operation_id="getTurnPacket",
     response_model=PacketChunkResponse,
     summary="Get the authoritative packet required to write one scene",
+    description=(
+        "Call for the first scene immediately after createSession and once for every exact player "
+        "input after that. Railway returns chunk 0 of the authoritative rules, scene_builder, "
+        "state, cards and continuity packet. Follow next_required_action and call "
+        "getTurnPacketChunk in order until all_chunks_delivered=true before writing the scene. "
+        "If the 15-turn audit is due, this action returns AUDIT_REQUIRED and no scene may be written."
+    ),
 )
 def get_turn_packet(
     session_id: str, payload: TurnPacketRequest, request: Request
@@ -124,6 +144,12 @@ def get_turn_packet_chunk(
     operation_id="getSceneCharacterBundle",
     response_model=SceneCharacterBundleChunkResponse,
     summary="Load one known offscreen character who will enter the pending scene",
+    description=(
+        "Use only after every turn-packet chunk was read and the story now causes this "
+        "already-known character to physically enter the scene. Returns only that character's "
+        "complete card, current state, knowledge and directional relationships. Read every "
+        "bundle chunk before commitTurn."
+    ),
 )
 def get_scene_character_bundle(
     session_id: str,
@@ -142,6 +168,10 @@ def get_scene_character_bundle(
     operation_id="getSceneCharacterBundleChunk",
     response_model=SceneCharacterBundleChunkResponse,
     summary="Read the next ordered chunk of one entering character's dossier",
+    description=(
+        "Read in strict order until all_chunks_delivered is true. commitTurn remains blocked "
+        "while any requested scene-character bundle is incomplete."
+    ),
 )
 def get_scene_character_bundle_chunk(
     session_id: str,
@@ -160,6 +190,11 @@ def get_scene_character_bundle_chunk(
     operation_id="commitTurn",
     response_model=CommitTurnResponse,
     summary="Atomically commit the generated scene and every state change",
+    description=(
+        "Call only after every required turn-packet and entering-character chunk was read. Must "
+        "succeed before the scene is shown to the player. The scene, chronology, state, character "
+        "knowledge and relationships are stored in one session transaction."
+    ),
 )
 def commit_turn(
     session_id: str, payload: CommitTurnRequest, request: Request
@@ -172,6 +207,10 @@ def commit_turn(
     operation_id="getAuditPacket",
     response_model=PacketChunkResponse,
     summary="Get the mandatory packet for the next 15-turn audit",
+    description=(
+        "Returns all 15 complete current turn revisions, the full compact chronology and current "
+        "state. The next scene remains blocked until commitAudit succeeds."
+    ),
 )
 def get_audit_packet(session_id: str, request: Request) -> dict[str, Any]:
     return service_for(request).get_audit_packet(session_id)
@@ -199,6 +238,10 @@ def get_audit_packet_chunk(
     operation_id="commitAudit",
     response_model=CommitAuditResponse,
     summary="Commit a completed 15-turn audit and release the scene gate",
+    description=(
+        "All checklist fields must be true. Repairs, compaction and chronology corrections are "
+        "stored atomically before another turn packet is allowed."
+    ),
 )
 def commit_audit(
     session_id: str, payload: CommitAuditRequest, request: Request
@@ -217,7 +260,10 @@ def get_chronology_page(
     request: Request,
     cursor: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=200),
-    include_inactive: bool = Query(default=False),
+    include_inactive: bool = Query(
+        default=False,
+        description="Include superseded and hidden source events for diagnostics only.",
+    ),
 ) -> dict[str, Any]:
     return service_for(request).get_chronology_page(
         session_id, cursor, limit, include_inactive
@@ -255,6 +301,10 @@ def custom_openapi() -> dict[str, Any]:
             if isinstance(operation, dict):
                 operation["security"] = []
     _ensure_object_properties(schema)
+    # The deployed server keeps accepting legacy createSession payloads, but every
+    # newly imported Action schema must opt into the current contract and provide a
+    # substantive director plan. This separates backwards compatibility from the
+    # guarantees advertised to the current Custom GPT.
     create_schema = schema.get("components", {}).get("schemas", {}).get(
         "CreateSessionRequest", {}
     )
