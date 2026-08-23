@@ -1,0 +1,13 @@
+{
+  "session_id": "sess_generated_by_railway",
+  "status": "active",
+  "created_at": "ISO-8601",
+  "updated_at": "ISO-8601",
+  "state_revision": 1,
+  "last_completed_turn": 0,
+  "last_audited_turn": 0,
+  "turns_since_audit": 0,
+  "next_turn_number": 1,
+  "audit_required": false,
+  "runtime_contract_version": "2.0"
+}

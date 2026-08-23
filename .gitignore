@@ -1,9 +1,12 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.venv/
 .coverage
 htmlcov/
-
-# Local runtime sessions and test data.
+.venv/
+venv/
+.env
+.DS_Store
 data/
+.gh-config/
+.tools/

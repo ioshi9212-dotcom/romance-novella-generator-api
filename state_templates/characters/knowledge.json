@@ -1,0 +1,18 @@
+{
+  "character_id": "char_example",
+  "entries": [
+    {
+      "knowledge_id": "know_0001",
+      "fact": "unknown",
+      "acquisition_type": "unknown",
+      "source_character_id": null,
+      "event_id": null,
+      "learned_at": "unknown",
+      "belief_accuracy": "unknown",
+      "confidence": "unknown",
+      "limits": [],
+      "status": "active"
+    }
+  ],
+  "wrong_beliefs": []
+}

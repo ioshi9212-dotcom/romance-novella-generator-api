@@ -1,1593 +1,2160 @@
 openapi: 3.1.0
 info:
-  title: Romance Novella Generator API
-  version: gpt-actions-v9.4-session-chunks
-  description: One-preview launch with chunked bootstrap prompt delivery. Create one session, read every
-    bootstrap prompt chunk, build one preview, confirm it, then use chunked processTurn and flat applyTurnResult.
-    Railway retains full prompts, state and visible scenes.
-servers:
-- url: https://web-production-4310e.up.railway.app
-security: []
-components:
-  schemas:
-    SceneResponse:
-      type: object
-      properties:
-        response_version:
-          const: novella.scene_response.v1
-        player_input:
-          type: string
-          minLength: 1
-        scene:
-          type: object
-          properties:
-            header:
-              type: object
-              properties:
-                story_title:
-                  type: string
-                  minLength: 1
-                date:
-                  type: string
-                  minLength: 1
-                time:
-                  type: string
-                  minLength: 1
-                location:
-                  type: string
-                  minLength: 1
-                weather:
-                  type: string
-                  minLength: 1
-                scene_state:
-                  type: string
-                  minLength: 1
-                player_name:
-                  type: string
-                  minLength: 1
-                visible_state:
-                  type: string
-                  minLength: 1
-                outfit:
-                  type: string
-                  minLength: 1
-                inventory:
-                  type: string
-                  minLength: 1
-              additionalProperties: false
-              required:
-              - story_title
-              - date
-              - time
-              - location
-              - weather
-              - scene_state
-              - player_name
-              - visible_state
-              - outfit
-              - inventory
-            body:
-              type: string
-              minLength: 500
-              description: Complete prose and dialogue. Railway builds the visible rendered scene from
-                this body; do not send rendered_text.
-            player_options:
-              type: object
-              properties:
-                actions:
-                  type: array
-                  minItems: 3
-                  maxItems: 3
-                  items:
-                    type: string
-                    minLength: 1
-                dialogue:
-                  type: array
-                  minItems: 3
-                  maxItems: 3
-                  items:
-                    type: string
-                    minLength: 1
-                thoughts:
-                  type: array
-                  minItems: 3
-                  maxItems: 3
-                  items:
-                    type: string
-                    minLength: 1
-              additionalProperties: false
-              required:
-              - actions
-              - dialogue
-              - thoughts
-            status_panel:
-              type: object
-              properties:
-                hunger:
-                  type: string
-                fatigue:
-                  type: string
-                injuries:
-                  type: string
-                emotional_state:
-                  type: string
-                skills:
-                  type: string
-                custom:
-                  type: array
-                  minItems: 2
-                  maxItems: 2
-                  items:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                        enum:
-                        - story_slot_1
-                        - story_slot_2
-                      label:
-                        type: string
-                      value:
-                        type: string
-                    additionalProperties: false
-                    required:
-                    - id
-                    - label
-                    - value
-              additionalProperties: false
-              required:
-              - hunger
-              - fatigue
-              - injuries
-              - emotional_state
-              - skills
-              - custom
-            relationships_panel:
-              type: array
-              items:
-                type: object
-                properties:
-                  pair_id:
-                    type:
-                    - string
-                    - 'null'
-                  label:
-                    type: string
-                  value:
-                    type: string
-                additionalProperties: false
-                required:
-                - label
-                - value
-          additionalProperties: false
-          required:
-          - header
-          - body
-          - player_options
-          - status_panel
-          - relationships_panel
-        summary:
-          type: string
-          minLength: 1
-        important_facts:
-          type: array
-          items:
-            type: string
-        witnesses:
-          type: array
-          items:
-            oneOf:
-            - type: string
-            - type: object
-              properties: {}
-              additionalProperties: true
-        proposed_updates:
-          type: object
-          properties:
-            scene_state_patch:
-              type: object
-              properties: {}
-              additionalProperties: true
-            continuity_patch:
-              type: object
-              properties: {}
-              additionalProperties: true
-            relationship_patches:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            knowledge_patches:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            npc_state_patches:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            director_bible_patches:
-              oneOf:
-              - type: object
-                properties: {}
-                additionalProperties: true
-              - type: array
-                maxItems: 0
-                items:
-                  type: object
-                  properties: {}
-                  additionalProperties: true
-              description: Use an object; use {} when there are no director updates. Legacy empty [] is
-                tolerated.
-            new_or_updated_characters:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-          additionalProperties: false
-          required:
-          - scene_state_patch
-          - continuity_patch
-          - relationship_patches
-          - knowledge_patches
-          - npc_state_patches
-          - director_bible_patches
-          - new_or_updated_characters
-        safety_checks:
-          type: object
-          properties:
-            used_only_loaded_characters:
-              const: true
-            respected_knowledge_boundaries:
-              const: true
-            no_hidden_future_reveal:
-              const: true
-            no_major_player_character_choice:
-              const: true
-            respected_player_input_order:
-              const: true
-            showed_only_scene_relationships:
-              const: true
-            header_has_no_focus_or_active_list:
-              const: true
-            notes:
-              type: array
-              items:
-                type: string
-          additionalProperties: false
-          required:
-          - used_only_loaded_characters
-          - respected_knowledge_boundaries
-          - no_hidden_future_reveal
-          - no_major_player_character_choice
-          - respected_player_input_order
-          - showed_only_scene_relationships
-          - header_has_no_focus_or_active_list
-        time_skip_result:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: false
-      required:
-      - response_version
-      - player_input
-      - scene
-      - summary
-      - important_facts
-      - witnesses
-      - proposed_updates
-      - safety_checks
-    CreateSessionRequest:
-      type: object
-      properties:
-        raw_start_text:
-          type: string
-          minLength: 1
-          description: The one canonical setup field. Copy the user's complete questionnaire answer verbatim
-            into this string; do not split it into title, genre, protagonist or other Action kwargs. Partial
-            answers are valid and the bootstrap generator fills every unspecified detail.
-        mode:
-          type: string
-          enum:
-          - gpt_actions
-          - debug_stub
-          default: gpt_actions
-      additionalProperties: false
-      required:
-      - raw_start_text
-    CreateSessionResponse:
-      type: object
-      properties:
-        session_id:
-          type:
-          - string
-          - 'null'
-        status:
-          type: string
-        mode:
-          type: string
-        bootstrap_prompt:
-          type:
-          - string
-          - 'null'
-          description: Full prompt when one chunk is enough; otherwise chunk 0. Fetch all remaining chunks
-            before building preview.
-        bootstrap_prompt_bytes:
-          type: integer
-          minimum: 0
-        bootstrap_prompt_sha256:
-          type:
-          - string
-          - 'null'
-        bootstrap_prompt_chunk_count:
-          type: integer
-          minimum: 0
-        has_more_bootstrap_prompt_chunks:
-          type: boolean
-        questionnaire:
-          type:
-          - string
-          - 'null'
-        files_created:
-          type: array
-          items:
-            type: string
-      additionalProperties: true
-      required:
-      - session_id
-      - status
-      - mode
-      - bootstrap_prompt
-      - bootstrap_prompt_bytes
-      - bootstrap_prompt_sha256
-      - bootstrap_prompt_chunk_count
-      - has_more_bootstrap_prompt_chunks
-      - questionnaire
-      - files_created
-    BootstrapPromptChunkResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        bootstrap_prompt_sha256:
-          type: string
-          minLength: 64
-          maxLength: 64
-        bootstrap_prompt_bytes:
-          type: integer
-          minimum: 0
-        chunk_index:
-          type: integer
-          minimum: 0
-        chunk_count:
-          type: integer
-          minimum: 1
-        bootstrap_prompt_chunk:
-          type: string
-          description: One ordered prompt fragment. Append to chunk 0 from createSession without separators
-            or edits.
-        has_more:
-          type: boolean
-        next_chunk_index:
-          type:
-          - integer
-          - 'null'
-          minimum: 0
-        diagnostics:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: true
-      required:
-      - session_id
-      - status
-      - bootstrap_prompt_sha256
-      - bootstrap_prompt_bytes
-      - chunk_index
-      - chunk_count
-      - bootstrap_prompt_chunk
-      - has_more
-      - next_chunk_index
-      - diagnostics
-    BootstrapPreviewRequest:
-      type: object
-      properties:
-        bootstrap_json:
-          type: object
-          properties: {}
-          additionalProperties: true
-          description: One complete bootstrap object created from bootstrap_prompt. Keep every root section
-            inside this object. Partial user input is valid; invent unspecified story details.
-      additionalProperties: false
-      required:
-      - bootstrap_json
-    BootstrapPreviewResponse:
-      type: object
-      properties:
-        message_to_user:
-          type: string
-          description: Full preview for inline responses; chunk 0 when has_more_preview_chunks=true. Do
-            not show chunk 0 alone.
-        session_id:
-          type: string
-        status:
-          type: string
-        must_show_to_user:
-          type: boolean
-        wait_for_confirmation:
-          type: boolean
-        next_user_action:
-          type: string
-        can_confirm:
-          type: boolean
-        preview_id:
-          type: string
-          minLength: 1
-        preview_chars:
-          type: integer
-          minimum: 0
-        preview_chunk_index:
-          type: integer
-          minimum: 0
-        preview_chunk_count:
-          type: integer
-          minimum: 1
-        has_more_preview_chunks:
-          type: boolean
-        next_preview_chunk_index:
-          type:
-          - integer
-          - 'null'
-          minimum: 0
-        diagnostics:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: true
-      required:
-      - message_to_user
-      - session_id
-      - status
-      - must_show_to_user
-      - wait_for_confirmation
-      - next_user_action
-      - can_confirm
-      - preview_id
-      - preview_chars
-      - preview_chunk_index
-      - preview_chunk_count
-      - has_more_preview_chunks
-      - next_preview_chunk_index
-    BootstrapPreviewChunkResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        preview_id:
-          type: string
-          minLength: 1
-        preview_chars:
-          type: integer
-          minimum: 0
-        chunk_index:
-          type: integer
-          minimum: 0
-        chunk_count:
-          type: integer
-          minimum: 1
-        preview_chunk:
-          type: string
-          description: One ordered fragment. Concatenate with chunk 0 and every other fragment before
-            showing the preview.
-        has_more:
-          type: boolean
-        next_chunk_index:
-          type:
-          - integer
-          - 'null'
-          minimum: 0
-        must_show_to_user:
-          type: boolean
-        ready_to_show_full_preview:
-          type: boolean
-        can_confirm:
-          type: boolean
-        diagnostics:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: true
-      required:
-      - session_id
-      - status
-      - preview_id
-      - preview_chars
-      - chunk_index
-      - chunk_count
-      - preview_chunk
-      - has_more
-      - next_chunk_index
-      - must_show_to_user
-      - ready_to_show_full_preview
-      - can_confirm
-    BootstrapConfirmRequest:
-      type: object
-      properties:
-        confirmation_text:
-          type: string
-          minLength: 1
-          description: Exact latest user confirmation message.
-      additionalProperties: false
-      required:
-      - confirmation_text
-    BootstrapConfirmResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        committed:
-          type: boolean
-        files_created:
-          type: array
-          items:
-            type: string
-      additionalProperties: true
-      required:
-      - session_id
-      - status
-      - committed
-      - files_created
-    TurnRequest:
-      type: object
-      properties:
-        player_input:
-          type: string
-          minLength: 1
-          description: Exact latest player input. Use '(начать первую сцену)' only immediately after bootstrap
-            confirmation.
-        mode:
-          type: string
-          enum:
-          - gpt_actions
-          - debug_stub
-          default: gpt_actions
-      additionalProperties: false
-      required:
-      - player_input
-    AdvanceTimeRequest:
-      type: object
-      properties:
-        player_input:
-          type: string
-          minLength: 1
-          description: Exact latest user request selecting time skip.
-        skip_mode:
-          type: string
-          enum:
-          - nearest_event
-          - duration
-          default: nearest_event
-        unit:
-          type:
-          - string
-          - 'null'
-          enum:
-          - hours
-          - days
-          - weeks
-          - months
-          - null
-        amount:
-          type:
-          - integer
-          - 'null'
-          minimum: 1
-          maximum: 365
-      additionalProperties: false
-      required:
-      - player_input
-    TurnResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        scene:
-          type:
-          - string
-          - 'null'
-        scene_prompt:
-          type:
-          - string
-          - 'null'
-        scene_prompt_chunk:
-          type:
-          - string
-          - 'null'
-        prompt_chunk_index:
-          type: integer
-        prompt_chunk_count:
-          type: integer
-          minimum: 1
-        has_more_prompt_chunks:
-          type: boolean
-        next_prompt_chunk_index:
-          type:
-          - integer
-          - 'null'
-        turn_id:
-          type:
-          - string
-          - 'null'
-        expected_turn_number:
-          type:
-          - integer
-          - 'null'
-        diagnostics:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: true
-      required:
-      - session_id
-      - status
-      - scene
-      - scene_prompt
-      - scene_prompt_chunk
-      - prompt_chunk_index
-      - prompt_chunk_count
-      - has_more_prompt_chunks
-      - next_prompt_chunk_index
-      - turn_id
-      - expected_turn_number
-      - diagnostics
-    TurnPromptChunkResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        turn_id:
-          type: string
-        chunk_index:
-          type: integer
-        chunk_count:
-          type: integer
-        scene_prompt_chunk:
-          type: string
-        has_more:
-          type: boolean
-        next_chunk_index:
-          type:
-          - integer
-          - 'null'
-        diagnostics:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: false
-      required:
-      - session_id
-      - turn_id
-      - chunk_index
-      - chunk_count
-      - scene_prompt_chunk
-      - has_more
-    DebugSessionDumpResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        server:
-          type: object
-          properties: {}
-          additionalProperties: true
-        session:
-          type: object
-          properties: {}
-          additionalProperties: true
-        current_state:
-          type: object
-          properties: {}
-          additionalProperties: true
-        story_plan:
-          type: object
-          properties: {}
-          additionalProperties: true
-        characters:
-          type: object
-          properties: {}
-          additionalProperties: true
-        knowledge:
-          type: object
-          properties: {}
-          additionalProperties: true
-        relationships:
-          type: object
-          properties: {}
-          additionalProperties: true
-        history:
-          type: object
-          properties: {}
-          additionalProperties: true
-        pending_turn:
-          type: object
-          properties: {}
-          additionalProperties: true
-        diagnostics:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: false
-      required:
-      - session_id
-      - status
-      - server
-      - session
-      - current_state
-      - story_plan
-      - characters
-      - knowledge
-      - relationships
-      - history
-      - pending_turn
-    ApplyTurnResultRequest:
-      type: object
-      properties:
-        turn_id:
-          type: string
-          minLength: 1
-          description: Exact turn_id returned by processTurn.
-        response_version:
-          const: novella.scene_response.v1
-        player_input:
-          type: string
-          minLength: 1
-        scene:
-          type: object
-          properties:
-            header:
-              type: object
-              properties:
-                story_title:
-                  type: string
-                  minLength: 1
-                date:
-                  type: string
-                  minLength: 1
-                time:
-                  type: string
-                  minLength: 1
-                location:
-                  type: string
-                  minLength: 1
-                weather:
-                  type: string
-                  minLength: 1
-                scene_state:
-                  type: string
-                  minLength: 1
-                player_name:
-                  type: string
-                  minLength: 1
-                visible_state:
-                  type: string
-                  minLength: 1
-                outfit:
-                  type: string
-                  minLength: 1
-                inventory:
-                  type: string
-                  minLength: 1
-              additionalProperties: false
-              required:
-              - story_title
-              - date
-              - time
-              - location
-              - weather
-              - scene_state
-              - player_name
-              - visible_state
-              - outfit
-              - inventory
-            body:
-              type: string
-              minLength: 500
-              description: Complete prose and dialogue. Railway builds the visible rendered scene from
-                this body; do not send rendered_text.
-            player_options:
-              type: object
-              properties:
-                actions:
-                  type: array
-                  minItems: 3
-                  maxItems: 3
-                  items:
-                    type: string
-                    minLength: 1
-                dialogue:
-                  type: array
-                  minItems: 3
-                  maxItems: 3
-                  items:
-                    type: string
-                    minLength: 1
-                thoughts:
-                  type: array
-                  minItems: 3
-                  maxItems: 3
-                  items:
-                    type: string
-                    minLength: 1
-              additionalProperties: false
-              required:
-              - actions
-              - dialogue
-              - thoughts
-            status_panel:
-              type: object
-              properties:
-                hunger:
-                  type: string
-                fatigue:
-                  type: string
-                injuries:
-                  type: string
-                emotional_state:
-                  type: string
-                skills:
-                  type: string
-                custom:
-                  type: array
-                  minItems: 2
-                  maxItems: 2
-                  items:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                        enum:
-                        - story_slot_1
-                        - story_slot_2
-                      label:
-                        type: string
-                      value:
-                        type: string
-                    additionalProperties: false
-                    required:
-                    - id
-                    - label
-                    - value
-              additionalProperties: false
-              required:
-              - hunger
-              - fatigue
-              - injuries
-              - emotional_state
-              - skills
-              - custom
-            relationships_panel:
-              type: array
-              items:
-                type: object
-                properties:
-                  pair_id:
-                    type:
-                    - string
-                    - 'null'
-                  label:
-                    type: string
-                  value:
-                    type: string
-                additionalProperties: false
-                required:
-                - label
-                - value
-          additionalProperties: false
-          required:
-          - header
-          - body
-          - player_options
-          - status_panel
-          - relationships_panel
-        summary:
-          type: string
-          minLength: 1
-        important_facts:
-          type: array
-          items:
-            type: string
-        witnesses:
-          type: array
-          items:
-            oneOf:
-            - type: string
-            - type: object
-              properties: {}
-              additionalProperties: true
-        proposed_updates:
-          type: object
-          properties:
-            scene_state_patch:
-              type: object
-              properties: {}
-              additionalProperties: true
-            continuity_patch:
-              type: object
-              properties: {}
-              additionalProperties: true
-            relationship_patches:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            knowledge_patches:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            npc_state_patches:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-            director_bible_patches:
-              oneOf:
-              - type: object
-                properties: {}
-                additionalProperties: true
-              - type: array
-                maxItems: 0
-                items:
-                  type: object
-                  properties: {}
-                  additionalProperties: true
-              description: Use an object; use {} when there are no director updates. Legacy empty [] is
-                tolerated.
-            new_or_updated_characters:
-              type: array
-              items:
-                type: object
-                properties: {}
-                additionalProperties: true
-          additionalProperties: false
-          required:
-          - scene_state_patch
-          - continuity_patch
-          - relationship_patches
-          - knowledge_patches
-          - npc_state_patches
-          - director_bible_patches
-          - new_or_updated_characters
-        safety_checks:
-          type: object
-          properties:
-            used_only_loaded_characters:
-              const: true
-            respected_knowledge_boundaries:
-              const: true
-            no_hidden_future_reveal:
-              const: true
-            no_major_player_character_choice:
-              const: true
-            respected_player_input_order:
-              const: true
-            showed_only_scene_relationships:
-              const: true
-            header_has_no_focus_or_active_list:
-              const: true
-            notes:
-              type: array
-              items:
-                type: string
-          additionalProperties: false
-          required:
-          - used_only_loaded_characters
-          - respected_knowledge_boundaries
-          - no_hidden_future_reveal
-          - no_major_player_character_choice
-          - respected_player_input_order
-          - showed_only_scene_relationships
-          - header_has_no_focus_or_active_list
-        time_skip_result:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: false
-      required:
-      - turn_id
-      - response_version
-      - player_input
-      - scene
-      - summary
-      - important_facts
-      - witnesses
-      - proposed_updates
-      - safety_checks
-    ApplyTurnResultResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        status:
-          type: string
-        turn_id:
-          type: string
-        message_to_user:
-          type: string
-        must_show_to_user:
-          type: boolean
-        replayed:
-          type: boolean
-        saved_turn_number:
-          type: integer
-          minimum: 0
-        applied:
-          type: object
-          properties: {}
-          additionalProperties: true
-        rejected:
-          type: array
-          items:
-            type: object
-            properties: {}
-            additionalProperties: true
-        next_builder_hints:
-          type: object
-          properties: {}
-          additionalProperties: true
-      additionalProperties: true
-      required:
-      - session_id
-      - status
-      - turn_id
-      - message_to_user
-      - must_show_to_user
-      - replayed
-      - saved_turn_number
-      - applied
-      - rejected
-      - next_builder_hints
-    LastSceneResponse:
-      type: object
-      properties:
-        session_id:
-          type: string
-        available:
-          type: boolean
-        turn_id:
-          type:
-          - string
-          - 'null'
-        saved_turn_number:
-          type:
-          - integer
-          - 'null'
-          minimum: 0
-        message_to_user:
-          type: string
-        must_show_to_user:
-          type: boolean
-        recovered_from:
-          type: string
-        summary:
-          type:
-          - string
-          - 'null'
-        body_excerpt:
-          type:
-          - string
-          - 'null'
-      additionalProperties: false
-      required:
-      - session_id
-      - available
-      - message_to_user
-      - must_show_to_user
-      - recovered_from
+  title: Interactive Novella State Runtime
+  description: Session-scoped Railway storage for a Custom GPT visual novella. The API stores state and never calls
+    an OpenAI model.
+  version: 2.0.0
 paths:
-  /health:
-    get:
-      operationId: health
-      summary: Check API health. This is a technical check only; do not continue a scene.
-      security: []
-      responses:
-        '200': &id001
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/start-questionnaire:
-    get:
-      operationId: getStartQuestionnaire
-      summary: Get the visible start questionnaire when the user gave too little setup.
-      responses:
-        '200': *id001
   /api/v1/sessions:
     post:
+      summary: Create one new novella session after player confirmation
+      description: Call exactly once, only after the player explicitly writes «подтверждаю». Send the entire confirmed
+        setup in this one request. Railway preserves the supplied canon, normalizes safe internal IDs and fills
+        only technical omissions that would otherwise break storage. A successful response returns the real session_id;
+        retain it and immediately call getTurnPacket to start the first scene.
       operationId: createSession
-      summary: Create one session from exactly raw_start_text. Never split questionnaire fields. Return
-        prompt chunk 0; read the rest with getBootstrapPromptChunk and never recreate it.
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateSessionRequest'
+        required: true
       responses:
         '200':
-          description: Session created with bounded bootstrap prompt transport, or questionnaire required.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateSessionResponse'
-  /api/v1/sessions/{session_id}/bootstrap-prompt-chunk:
-    get:
-      operationId: getBootstrapPromptChunk
-      summary: Get one stored bootstrap prompt chunk. Start at index 1 because createSession returned
-        chunk 0; concatenate all chunks before building preview and never call createSession again.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turn-packet:
+    post:
+      summary: Get the authoritative packet required to write one scene
+      description: Call for the first scene immediately after createSession and once for every exact player input
+        after that. Railway returns chunk 0 of the authoritative rules, scene_builder, state, cards and continuity
+        packet. Follow next_required_action and call getTurnPacketChunk in order until all_chunks_delivered=true
+        before writing the scene. If the 15-turn audit is due, this action returns AUDIT_REQUIRED and no scene may
+        be written.
+      operationId: getTurnPacket
       parameters:
       - name: session_id
         in: path
         required: true
         schema:
           type: string
-          minLength: 1
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TurnPacketRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turn-packets/{packet_id}/chunks/{chunk_index}:
+    get:
+      summary: Read another ordered chunk of a turn packet
+      operationId: getTurnPacketChunk
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
       - name: chunk_index
-        in: query
+        in: path
         required: true
         schema:
           type: integer
-          minimum: 1
-        description: Ordered zero-based chunk index; normally start at 1.
-      - name: bootstrap_prompt_sha256
+          title: Chunk Index
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-characters/{character_id}/bundle:
+    post:
+      summary: Load one known offscreen character who will enter the pending scene
+      description: Use only after every turn-packet chunk was read and the story now causes this already-known character
+        to physically enter the scene. Returns only that character's complete card, current state, knowledge and
+        directional relationships. Read every bundle chunk before commitTurn.
+      operationId: getSceneCharacterBundle
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SceneCharacterBundleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SceneCharacterBundleChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-character-bundles/{bundle_id}/chunks/{chunk_index}:
+    get:
+      summary: Read the next ordered chunk of one entering character's dossier
+      description: Read in strict order until all_chunks_delivered is true. commitTurn remains blocked while any
+        requested scene-character bundle is incomplete.
+      operationId: getSceneCharacterBundleChunk
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
+      - name: bundle_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bundle Id
+      - name: chunk_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Chunk Index
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SceneCharacterBundleChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/turns/commit:
+    post:
+      summary: Atomically commit the generated scene and every state change
+      description: Call only after every required turn-packet and entering-character chunk was read. Must succeed
+        before the scene is shown to the player. The scene, chronology, state, character knowledge and relationships
+        are stored in one session transaction.
+      operationId: commitTurn
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitTurnRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitTurnResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/audit-packet:
+    get:
+      summary: Get the mandatory packet for the next 15-turn audit
+      description: Returns all 15 complete current turn revisions, the full compact chronology and current state.
+        The next scene remains blocked until commitAudit succeeds.
+      operationId: getAuditPacket
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/audit-packets/{packet_id}/chunks/{chunk_index}:
+    get:
+      summary: Read another ordered chunk of an audit packet
+      operationId: getAuditPacketChunk
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: packet_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Packet Id
+      - name: chunk_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Chunk Index
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacketChunkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/audits/commit:
+    post:
+      summary: Commit a completed 15-turn audit and release the scene gate
+      description: All checklist fields must be true. Repairs, compaction and chronology corrections are stored
+        atomically before another turn packet is allowed.
+      operationId: commitAudit
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitAuditRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitAuditResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /api/v1/sessions/{session_id}/chronology:
+    get:
+      summary: Read the session chronology in order
+      operationId: getChronologyPage
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: cursor
         in: query
         required: false
         schema:
-          type: string
-          minLength: 64
-          maxLength: 64
-        description: Optional exact hash returned by createSession to reject stale prompt reads.
-      responses:
-        '200':
-          description: Bootstrap prompt chunk
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BootstrapPromptChunkResponse'
-        '404':
-          description: Stored prompt or session not found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '409':
-          description: Prompt no longer available or hash is stale
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '416':
-          description: Chunk index out of range
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}:
-    get:
-      operationId: getSession
-      summary: Get one session status by session_id.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      responses:
-        '200': *id001
-        '404':
-          description: Session not found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/debug-dump:
-    get:
-      operationId: debugSessionDump
-      summary: Compact technical debug dump for bootstrap_pending, bootstrap_review_pending or active.
-        Do not use it for normal scene continuation.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      responses:
-        '200':
-          description: Debug session dump
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DebugSessionDumpResponse'
-        '404':
-          description: Session not found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '409':
-          description: Session status is not debuggable
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/bootstrap-preview:
-    post:
-      operationId: createBootstrapPreview
-      summary: Submit one complete bootstrap object, let Railway normalize technical state, and create
-        the spoiler-free preview. Partial questionnaires are valid.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BootstrapPreviewRequest'
-      responses:
-        '200':
-          description: Bootstrap preview created.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BootstrapPreviewResponse'
-        '409':
-          description: Session cannot accept a preview.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '422':
-          description: Bootstrap is structurally invalid.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/bootstrap-preview-chunk:
-    get:
-      operationId: getBootstrapPreviewChunk
-      summary: Get one stored bootstrap preview fragment. Start at chunk_index=1 because preview creation
-        already returned chunk 0. Concatenate every fragment before showing anything to the user.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      - name: chunk_index
-        in: query
-        required: true
-        schema:
           type: integer
           minimum: 0
-        description: Zero-based preview chunk index. Normally start at 1 because preview creation returned
-          chunk 0; start at 0 when recovering a lost/ResponseTooLarge preview response from debugSessionDump.
-      - name: preview_id
+          default: 0
+          title: Cursor
+      - name: limit
         in: query
-        required: true
-        schema:
-          type: string
-          minLength: 1
-        description: Exact preview_id returned by the latest preview response.
-      responses:
-        '200':
-          description: Bootstrap preview chunk
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BootstrapPreviewChunkResponse'
-        '404':
-          description: Stored preview not found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '409':
-          description: Stale preview_id or preview no longer awaiting review
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '416':
-          description: Chunk index out of range
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/bootstrap-confirm:
-    post:
-      operationId: confirmBootstrapPreview
-      summary: Commit pending bootstrap after explicit user confirmation.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BootstrapConfirmRequest'
-      responses:
-        '200':
-          description: Bootstrap committed.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BootstrapConfirmResponse'
-        '409':
-          description: Preview not confirmed or wrong session status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/turn:
-    post:
-      operationId: processTurn
-      summary: Build one compact/chunked scene prompt. Returns the pending turn_id; applyTurnResult must
-        use that exact id.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TurnRequest'
-      responses:
-        '200':
-          description: Pending turn and first prompt chunk.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TurnResponse'
-        '409':
-          description: Session inactive or another different turn is pending.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '422':
-          description: Empty input
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/advance-time:
-    post:
-      operationId: advanceTime
-      summary: Create a guarded time-skip prompt only after the scene saved a natural pause.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AdvanceTimeRequest'
-      responses:
-        '200':
-          description: Pending time-skip turn and first prompt chunk.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TurnResponse'
-        '409':
-          description: Time skip blocked or another turn is pending.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '422':
-          description: Invalid time skip request.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/turn-prompt-chunk:
-    get:
-      operationId: getTurnPromptChunk
-      summary: Get one stored prompt chunk after processTurn returns more than one chunk.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
-          type: string
-          minLength: 1
-      - name: turn_id
-        in: query
-        required: true
-        schema:
-          type: string
-          minLength: 1
-        description: Exact turn_id returned by processTurn.
-      - name: chunk_index
-        in: query
-        required: true
+        required: false
         schema:
           type: integer
+          maximum: 200
           minimum: 1
-        description: Start at 1 because processTurn already returned chunk 0.
-      responses:
-        '200':
-          description: Prompt chunk
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TurnPromptChunkResponse'
-        '409':
-          description: Missing/stale pending turn
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '416':
-          description: Chunk index out of range
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/apply-turn-result:
-    post:
-      operationId: applyTurnResult
-      summary: 'Validate and atomically save flat scene fields. Do not send rendered_text: Railway builds
-        it. Repeating the same turn_id safely replays the saved response; final assistant answer is message_to_user.'
-      parameters:
-      - name: session_id
-        in: path
-        required: true
+          default: 100
+          title: Limit
+      - name: include_inactive
+        in: query
+        required: false
         schema:
-          type: string
-          minLength: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApplyTurnResultRequest'
+          type: boolean
+          description: Include superseded and hidden source events for diagnostics only.
+          default: false
+          title: Include Inactive
+        description: Include superseded and hidden source events for diagnostics only.
       responses:
         '200':
-          description: Turn saved.
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApplyTurnResultResponse'
-        '409':
-          description: Missing, stale, duplicate or mismatched turn_id
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
+                $ref: '#/components/schemas/ChronologyPageResponse'
         '422':
-          description: Invalid scene_response
+          description: Validation Error
           content:
             application/json:
               schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-  /api/v1/sessions/{session_id}/last-scene:
-    get:
-      operationId: getLastScene
-      summary: Recover the most recently saved visible scene after a missing/oversized Action response.
-        This never creates a turn or changes state. Show message_to_user only when available=true.
-      parameters:
-      - name: session_id
-        in: path
-        required: true
-        schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+components:
+  schemas:
+    AuditChecklist:
+      properties:
+        events_and_consequences:
+          type: boolean
+          title: Events And Consequences
+        time_and_movement:
+          type: boolean
+          title: Time And Movement
+        scene_and_physical_state:
+          type: boolean
+          title: Scene And Physical State
+        character_current_states:
+          type: boolean
+          title: Character Current States
+        character_continuity:
+          type: boolean
+          title: Character Continuity
+        minor_npc_lifecycle:
+          type: boolean
+          title: Minor Npc Lifecycle
+        knowledge_sources:
+          type: boolean
+          title: Knowledge Sources
+        knowledge_boundaries:
+          type: boolean
+          title: Knowledge Boundaries
+        directional_relationships:
+          type: boolean
+          title: Directional Relationships
+        plot_threads:
+          type: boolean
+          title: Plot Threads
+        hidden_lore_and_reveal_timing:
+          type: boolean
+          title: Hidden Lore And Reveal Timing
+        director_plan_and_offscreen_consequences:
+          type: boolean
+          title: Director Plan And Offscreen Consequences
+        character_card_levels_and_promotions:
+          type: boolean
+          title: Character Card Levels And Promotions
+        location_canon_and_current_changes:
+          type: boolean
+          title: Location Canon And Current Changes
+        compaction_and_duplicates:
+          type: boolean
+          title: Compaction And Duplicates
+      type: object
+      required:
+      - events_and_consequences
+      - time_and_movement
+      - scene_and_physical_state
+      - character_current_states
+      - character_continuity
+      - minor_npc_lifecycle
+      - knowledge_sources
+      - knowledge_boundaries
+      - directional_relationships
+      - plot_threads
+      - hidden_lore_and_reveal_timing
+      - director_plan_and_offscreen_consequences
+      - character_card_levels_and_promotions
+      - location_canon_and_current_changes
+      - compaction_and_duplicates
+      title: AuditChecklist
+    CharacterAppearance:
+      properties:
+        height:
           type: string
+          maxLength: 200
           minLength: 1
-      responses:
-        '200':
-          description: Last saved visible scene or compact legacy recovery information.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LastSceneResponse'
-        '404':
-          description: Session not found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
-        '409':
-          description: Session is not active
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: {}
-                additionalProperties: true
+          title: Height
+        build:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Build
+        hair:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Hair
+        eyes:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Eyes
+        face:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Face
+        skin_and_features:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Skin And Features
+        movement_and_mannerisms:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Movement And Mannerisms
+        clothing_style:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Clothing Style
+        distinguishing_details:
+          items:
+            type: string
+          type: array
+          maxItems: 6
+          minItems: 1
+          title: Distinguishing Details
+        visual_impression:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Visual Impression
+        visual_noticeability:
+          type: string
+          enum:
+          - unremarkable
+          - pleasant
+          - attractive
+          - striking
+          - distinctive
+          title: Visual Noticeability
+      additionalProperties: true
+      type: object
+      required:
+      - height
+      - build
+      - hair
+      - eyes
+      - face
+      - skin_and_features
+      - movement_and_mannerisms
+      - clothing_style
+      - distinguishing_details
+      - visual_impression
+      - visual_noticeability
+      title: CharacterAppearance
+    CharacterBundle:
+      properties:
+        character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Character Id
+        card:
+          $ref: '#/components/schemas/CharacterCard'
+          description: Relatively stable character card.
+        current_state:
+          type: object
+          title: Current State
+          description: Frequently changing location, condition, goal, intention and activity.
+          properties: {}
+        relationships:
+          $ref: '#/components/schemas/RelationshipsDocument'
+          description: Relationships owned by this character and directed toward targets.
+        knowledge:
+          type: object
+          title: Knowledge
+          description: Only facts, partial facts and wrong beliefs known by this character.
+          properties: {}
+      type: object
+      required:
+      - character_id
+      - card
+      title: CharacterBundle
+    CharacterCard:
+      properties:
+        character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Character Id
+        card_level:
+          type: string
+          enum:
+          - noticeable
+          - recurring
+          - important
+          - player_defined
+          title: Card Level
+        origin:
+          type: string
+          enum:
+          - player
+          - director_setup
+          - runtime
+          title: Origin
+        card_hint:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Card Hint
+        record_status:
+          type: string
+          enum:
+          - active
+          - inactive
+          title: Record Status
+        story_status:
+          type: string
+          enum:
+          - not_introduced
+          - active
+          - offstage
+          - missing
+          - dead
+          - retired
+          title: Story Status
+        player_visibility:
+          type: string
+          enum:
+          - hidden
+          - partial
+          - visible
+          title: Player Visibility
+        identity:
+          $ref: '#/components/schemas/CharacterIdentity'
+        appearance:
+          $ref: '#/components/schemas/CharacterAppearance'
+        immediate_scene_goal:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Immediate Scene Goal
+        personality:
+          anyOf:
+          - $ref: '#/components/schemas/CharacterPersonality'
+          - type: 'null'
+        preferences:
+          anyOf:
+          - $ref: '#/components/schemas/CharacterPreferences'
+          - type: 'null'
+        biography:
+          items:
+            type: string
+          type: array
+          maxItems: 12
+          title: Biography
+        skills:
+          items:
+            type: string
+          type: array
+          maxItems: 12
+          title: Skills
+        goals:
+          anyOf:
+          - $ref: '#/components/schemas/CharacterGoals'
+          - type: 'null'
+        hidden_motives:
+          items:
+            type: string
+          type: array
+          maxItems: 8
+          title: Hidden Motives
+        secrets:
+          items:
+            type: string
+          type: array
+          maxItems: 8
+          title: Secrets
+        constraints:
+          items:
+            type: string
+          type: array
+          maxItems: 8
+          title: Constraints
+      additionalProperties: true
+      type: object
+      required:
+      - character_id
+      - card_level
+      - origin
+      - card_hint
+      - record_status
+      - story_status
+      - player_visibility
+      - identity
+      - appearance
+      - immediate_scene_goal
+      title: CharacterCard
+    CharacterGoals:
+      properties:
+        personal:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Personal
+        immediate:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Immediate
+        toward_pov:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Toward Pov
+        story_function:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Story Function
+        possible_arc:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Possible Arc
+      additionalProperties: true
+      type: object
+      required:
+      - personal
+      - immediate
+      - toward_pov
+      - story_function
+      - possible_arc
+      title: CharacterGoals
+    CharacterIdentity:
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Name
+        age:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Age
+        role:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Role
+        occupation:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Occupation
+      additionalProperties: true
+      type: object
+      required:
+      - name
+      - age
+      - role
+      - occupation
+      title: CharacterIdentity
+    CharacterPersonality:
+      properties:
+        outward_mask:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Outward Mask
+        inner_character:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Inner Character
+        strengths:
+          items:
+            type: string
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Strengths
+        flaws:
+          items:
+            type: string
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Flaws
+        temperament:
+          type: string
+          maxLength: 400
+          minLength: 1
+          title: Temperament
+        internal_conflict:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Internal Conflict
+        behavior_under_pressure:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Behavior Under Pressure
+        habits:
+          items:
+            type: string
+          type: array
+          maxItems: 6
+          minItems: 2
+          title: Habits
+        speech:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Speech
+      additionalProperties: true
+      type: object
+      required:
+      - outward_mask
+      - inner_character
+      - strengths
+      - flaws
+      - temperament
+      - internal_conflict
+      - behavior_under_pressure
+      - habits
+      - speech
+      title: CharacterPersonality
+    CharacterPreferences:
+      properties:
+        likes:
+          items:
+            type: string
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Likes
+        dislikes:
+          items:
+            type: string
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Dislikes
+        likes_in_people:
+          items:
+            type: string
+          type: array
+          maxItems: 6
+          minItems: 1
+          title: Likes In People
+        dislikes_in_people:
+          items:
+            type: string
+          type: array
+          maxItems: 6
+          minItems: 1
+          title: Dislikes In People
+      additionalProperties: true
+      type: object
+      required:
+      - likes
+      - dislikes
+      - likes_in_people
+      - dislikes_in_people
+      title: CharacterPreferences
+    CharacterUpdate:
+      properties:
+        character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Character Id
+        card:
+          anyOf:
+          - $ref: '#/components/schemas/CharacterCard'
+          - type: 'null'
+        card_change_reason:
+          anyOf:
+          - type: string
+            maxLength: 1000
+            minLength: 1
+          - type: 'null'
+          title: Card Change Reason
+        current_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Current State
+        relationships:
+          anyOf:
+          - $ref: '#/components/schemas/RelationshipsDocument'
+          - type: 'null'
+        knowledge:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Knowledge
+      type: object
+      required:
+      - character_id
+      title: CharacterUpdate
+    ChronologyCompactionInput:
+      properties:
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        location_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Location Id
+        participants_present:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Participants Present
+        event:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Event
+        consequences:
+          items:
+            type: string
+          type: array
+          title: Consequences
+        knowledge_update_refs:
+          items:
+            type: string
+          type: array
+          title: Knowledge Update Refs
+        minor_npcs:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Minor Npcs
+        supersedes_event_id:
+          type: 'null'
+          title: Supersedes Event Id
+        turn_number:
+          type: integer
+          minimum: 1.0
+          title: Turn Number
+        compacts_event_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          minItems: 1
+          title: Compacts Event Ids
+          description: Existing active events replaced in runtime context by this compact summary.
+      type: object
+      required:
+      - scene_id
+      - story_datetime
+      - event
+      - turn_number
+      - compacts_event_ids
+      title: ChronologyCompactionInput
+    ChronologyCorrectionInput:
+      properties:
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        location_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Location Id
+        participants_present:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Participants Present
+        event:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Event
+        consequences:
+          items:
+            type: string
+          type: array
+          title: Consequences
+        knowledge_update_refs:
+          items:
+            type: string
+          type: array
+          title: Knowledge Update Refs
+        minor_npcs:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Minor Npcs
+        supersedes_event_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Supersedes Event Id
+        turn_number:
+          type: integer
+          minimum: 1.0
+          title: Turn Number
+      type: object
+      required:
+      - scene_id
+      - story_datetime
+      - event
+      - supersedes_event_id
+      - turn_number
+      title: ChronologyCorrectionInput
+    ChronologyEventInput:
+      properties:
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        location_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Location Id
+        participants_present:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Participants Present
+        event:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Event
+        consequences:
+          items:
+            type: string
+          type: array
+          title: Consequences
+        knowledge_update_refs:
+          items:
+            type: string
+          type: array
+          title: Knowledge Update Refs
+        minor_npcs:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Minor Npcs
+        supersedes_event_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Supersedes Event Id
+      type: object
+      required:
+      - scene_id
+      - story_datetime
+      - event
+      title: ChronologyEventInput
+    ChronologyPageResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        cursor:
+          type: integer
+          title: Cursor
+        events:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Events
+        include_inactive:
+          type: boolean
+          title: Include Inactive
+        has_more:
+          type: boolean
+          title: Has More
+        next_cursor:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Cursor
+      type: object
+      required:
+      - session_id
+      - cursor
+      - events
+      - include_inactive
+      - has_more
+      - next_cursor
+      title: ChronologyPageResponse
+    CommitAuditRequest:
+      properties:
+        audit_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Audit Id
+        expected_state_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected State Revision
+        checklist:
+          $ref: '#/components/schemas/AuditChecklist'
+        findings:
+          type: object
+          minProperties: 1
+          title: Findings
+          description: 'Non-empty audit result: what was verified and what was missing, corrected, compacted, closed
+            or promoted.'
+          properties: {}
+        state_updates:
+          $ref: '#/components/schemas/RuntimeStateUpdates'
+          description: Compacted replacements for current state documents; history must not be erased.
+        chronology_corrections:
+          items:
+            $ref: '#/components/schemas/ChronologyCorrectionInput'
+          type: array
+          title: Chronology Corrections
+          description: Corrective events that explicitly supersede inaccurate chronology events.
+        chronology_compactions:
+          items:
+            $ref: '#/components/schemas/ChronologyCompactionInput'
+          type: array
+          title: Chronology Compactions
+          description: Compact summaries that hide repetitive source events from future packets while preserving
+            the original records in Railway.
+      type: object
+      required:
+      - audit_id
+      - expected_state_revision
+      - checklist
+      - findings
+      title: CommitAuditRequest
+    CommitAuditResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        audit_id:
+          type: string
+          title: Audit Id
+        audit_complete:
+          type: boolean
+          title: Audit Complete
+        audited_turn_from:
+          type: integer
+          title: Audited Turn From
+        audited_turn_to:
+          type: integer
+          title: Audited Turn To
+        state_revision:
+          type: integer
+          title: State Revision
+        last_audited_turn:
+          type: integer
+          title: Last Audited Turn
+        audit_required:
+          type: boolean
+          title: Audit Required
+        next_turn_number:
+          type: integer
+          title: Next Turn Number
+        next_cycle_position:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Cycle Position
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - audit_id
+      - audit_complete
+      - audited_turn_from
+      - audited_turn_to
+      - state_revision
+      - last_audited_turn
+      - audit_required
+      - next_turn_number
+      - next_cycle_position
+      - next_required_action
+      title: CommitAuditResponse
+    CommitSceneState:
+      properties:
+        turn_number:
+          type: integer
+          minimum: 1.0
+          title: Turn Number
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Story Datetime
+        location_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Location Id
+        present_character_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Present Character Ids
+        entered_character_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Entered Character Ids
+        left_character_ids:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          type: array
+          title: Left Character Ids
+      additionalProperties: true
+      type: object
+      required:
+      - turn_number
+      - scene_id
+      - story_datetime
+      - location_id
+      - present_character_ids
+      title: CommitSceneState
+    CommitTurnRequest:
+      properties:
+        turn_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Turn Id
+        expected_state_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected State Revision
+        scene_output:
+          type: string
+          maxLength: 80000
+          minLength: 1
+          title: Scene Output
+        summary:
+          type: string
+          maxLength: 3000
+          minLength: 1
+          title: Summary
+        scene_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Scene Id
+        story_datetime:
+          type: string
+          title: Story Datetime
+        events:
+          items:
+            $ref: '#/components/schemas/ChronologyEventInput'
+          type: array
+          minItems: 1
+          title: Events
+          description: Compact established facts for chronology, never a copy of the whole scene.
+        state_updates:
+          $ref: '#/components/schemas/CommitTurnStateUpdates'
+          description: The final scene_state is mandatory; all other documents are supplied only when they changed
+            in this scene.
+        displayed_state_changes:
+          type: object
+          title: Displayed State Changes
+          description: The state and relationship changes actually printed in the scene footer.
+          properties: {}
+      type: object
+      required:
+      - turn_id
+      - expected_state_revision
+      - scene_output
+      - summary
+      - scene_id
+      - story_datetime
+      - events
+      - state_updates
+      title: CommitTurnRequest
+    CommitTurnResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        turn_id:
+          type: string
+          title: Turn Id
+        turn_number:
+          type: integer
+          title: Turn Number
+        turn_revision:
+          type: integer
+          title: Turn Revision
+        state_revision:
+          type: integer
+          title: State Revision
+        last_completed_turn:
+          type: integer
+          title: Last Completed Turn
+        last_audited_turn:
+          type: integer
+          title: Last Audited Turn
+        next_turn_number:
+          type: integer
+          title: Next Turn Number
+        next_cycle_position:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Cycle Position
+        audit_required:
+          type: boolean
+          title: Audit Required
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - turn_id
+      - turn_number
+      - turn_revision
+      - state_revision
+      - last_completed_turn
+      - last_audited_turn
+      - next_turn_number
+      - next_cycle_position
+      - audit_required
+      - next_required_action
+      title: CommitTurnResponse
+    CommitTurnStateUpdates:
+      properties:
+        novel:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Novel
+        hidden_lore:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Hidden Lore
+        plot_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Plot State
+        director_plan:
+          anyOf:
+          - $ref: '#/components/schemas/DirectorPlan'
+          - type: 'null'
+        world_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: World State
+        scene_state:
+          $ref: '#/components/schemas/CommitSceneState'
+          description: Required final frame after this turn. Its turn, scene and story time must match the commit
+            envelope.
+        characters:
+          items:
+            $ref: '#/components/schemas/CharacterUpdate'
+          type: array
+          title: Characters
+        locations:
+          items:
+            $ref: '#/components/schemas/LocationUpdate'
+          type: array
+          title: Locations
+        objects:
+          items:
+            $ref: '#/components/schemas/ObjectUpdate'
+          type: array
+          title: Objects
+      type: object
+      required:
+      - scene_state
+      title: CommitTurnStateUpdates
+    CreateSessionRequest:
+      properties:
+        runtime_contract_version:
+          type: string
+          enum:
+          - '2.0'
+          description: Use 2.0 for the current GPT Action contract. The runtime accepts omission only for already-installed
+            legacy Action schemas.
+        player_confirmation:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Player Confirmation
+          description: Copy the player's actual message containing the positive word «подтверждаю».
+        novel:
+          type: object
+          title: Novel
+          description: Confirmed title, genre, style, POV and format settings for this novella.
+          properties: {}
+        hidden_lore:
+          type: object
+          title: Hidden Lore
+          description: Director-only truths, secrets and reveal conditions; never player preview text.
+          properties: {}
+        plot_state:
+          type: object
+          title: Plot State
+          description: Active lines, open threads, pending consequences and resolved compact history.
+          properties: {}
+        director_plan:
+          $ref: '#/components/schemas/DirectorPlan'
+          description: 'Flexible director-only plan: independent character agendas, event windows, collisions and
+            consequences that can happen without POV. Optional only for compatibility with previously imported GPT
+            Action schemas.'
+        world_state:
+          type: object
+          title: World State
+          description: Global time, offscreen actions, whereabouts, dangers and location availability.
+          properties: {}
+        scene_state:
+          type: object
+          title: Scene State
+          description: 'Exact current frame: place, people, objects and unfinished moment to continue.'
+          properties: {}
+        characters:
+          items:
+            $ref: '#/components/schemas/CharacterBundle'
+          type: array
+          minItems: 1
+          title: Characters
+          description: Every confirmed card character, including POV and hidden future characters.
+        locations:
+          items:
+            $ref: '#/components/schemas/LocationBundle'
+          type: array
+          title: Locations
+        objects:
+          items:
+            $ref: '#/components/schemas/ObjectBundle'
+          type: array
+          title: Objects
+      additionalProperties: true
+      type: object
+      required:
+      - player_confirmation
+      - novel
+      - hidden_lore
+      - plot_state
+      - world_state
+      - scene_state
+      - characters
+      - runtime_contract_version
+      - director_plan
+      title: CreateSessionRequest
+    CreateSessionResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        status:
+          type: string
+          const: active
+          title: Status
+        creation_verified:
+          type: boolean
+          title: Creation Verified
+        normalization_applied:
+          type: boolean
+          title: Normalization Applied
+        normalization_notes:
+          items:
+            type: string
+          type: array
+          title: Normalization Notes
+        state_revision:
+          type: integer
+          title: State Revision
+        next_turn_number:
+          type: integer
+          title: Next Turn Number
+        cycle_position:
+          type: integer
+          title: Cycle Position
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - status
+      - creation_verified
+      - normalization_applied
+      - normalization_notes
+      - state_revision
+      - next_turn_number
+      - cycle_position
+      - next_required_action
+      title: CreateSessionResponse
+    DirectedRelationship:
+      properties:
+        target_character_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Target Character Id
+        relationship_type:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Relationship Type
+        relationship_context:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Relationship Context
+        current_dynamic:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Current Dynamic
+        dimensions:
+          items:
+            $ref: '#/components/schemas/RelationshipDimension'
+          type: array
+          maxItems: 8
+          title: Dimensions
+          description: Zero to eight dimensions chosen for this specific relationship, not a universal scale copied
+            to every pair.
+        beliefs_about_target:
+          items:
+            type: string
+          type: array
+          maxItems: 30
+          title: Beliefs About Target
+        unresolved_between_them:
+          items:
+            type: string
+          type: array
+          maxItems: 30
+          title: Unresolved Between Them
+        dynamic_constraints:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Dynamic Constraints
+        change_reasons:
+          items:
+            type: string
+          type: array
+          maxItems: 50
+          title: Change Reasons
+        last_changed_turn:
+          type: integer
+          minimum: 0.0
+          title: Last Changed Turn
+          default: 0
+      additionalProperties: true
+      type: object
+      required:
+      - target_character_id
+      - relationship_type
+      - relationship_context
+      - current_dynamic
+      title: DirectedRelationship
+    DirectorPlan:
+      properties:
+        active_threads:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Active Threads
+        character_agendas:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Character Agendas
+        event_windows:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Event Windows
+        collision_points:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Collision Points
+        offscreen_events:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Offscreen Events
+        consequences_without_pov:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Consequences Without Pov
+        possible_pov_contacts:
+          items:
+            type: object
+            properties: {}
+          type: array
+          title: Possible Pov Contacts
+      additionalProperties: true
+      type: object
+      title: DirectorPlan
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LocationBundle:
+      properties:
+        location_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Location Id
+        state:
+          $ref: '#/components/schemas/LocationCard'
+      type: object
+      required:
+      - location_id
+      - state
+      title: LocationBundle
+    LocationCanon:
+      properties:
+        name:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Name
+        purpose:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Purpose
+        scale:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Scale
+        layout:
+          type: string
+          maxLength: 1200
+          minLength: 1
+          title: Layout
+        zones:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          minItems: 1
+          title: Zones
+        visual_style:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Visual Style
+        condition:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Condition
+        color_palette:
+          items:
+            type: string
+          type: array
+          maxItems: 10
+          minItems: 1
+          title: Color Palette
+        materials:
+          items:
+            type: string
+          type: array
+          maxItems: 10
+          minItems: 1
+          title: Materials
+        lighting:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Lighting
+        windows_and_view:
+          type: string
+          maxLength: 700
+          minLength: 1
+          title: Windows And View
+        entrances:
+          items:
+            type: string
+          type: array
+          maxItems: 12
+          minItems: 1
+          title: Entrances
+        permanent_objects:
+          items:
+            type: string
+          type: array
+          maxItems: 30
+          title: Permanent Objects
+        signature_details:
+          items:
+            type: string
+          type: array
+          maxItems: 10
+          minItems: 1
+          title: Signature Details
+      additionalProperties: true
+      type: object
+      required:
+      - name
+      - purpose
+      - scale
+      - layout
+      - zones
+      - visual_style
+      - condition
+      - color_palette
+      - materials
+      - lighting
+      - windows_and_view
+      - entrances
+      - signature_details
+      title: LocationCanon
+    LocationCard:
+      properties:
+        canon:
+          $ref: '#/components/schemas/LocationCanon'
+        current_changes:
+          items:
+            type: string
+          type: array
+          maxItems: 30
+          title: Current Changes
+        access:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Access
+        damage_or_modifications:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Damage Or Modifications
+      additionalProperties: true
+      type: object
+      required:
+      - canon
+      title: LocationCard
+    LocationUpdate:
+      properties:
+        location_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Location Id
+        state:
+          $ref: '#/components/schemas/LocationCard'
+        canon_change_reason:
+          anyOf:
+          - type: string
+            maxLength: 1000
+            minLength: 1
+          - type: 'null'
+          title: Canon Change Reason
+      type: object
+      required:
+      - location_id
+      - state
+      title: LocationUpdate
+    ObjectBundle:
+      properties:
+        object_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Object Id
+        state:
+          type: object
+          title: State
+          properties: {}
+      type: object
+      required:
+      - object_id
+      title: ObjectBundle
+    ObjectUpdate:
+      properties:
+        object_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Object Id
+        state:
+          type: object
+          title: State
+          properties: {}
+      type: object
+      required:
+      - object_id
+      - state
+      title: ObjectUpdate
+    PacketChunkResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        packet_id:
+          type: string
+          title: Packet Id
+        packet_type:
+          type: string
+          enum:
+          - turn
+          - audit
+          title: Packet Type
+        chunk_index:
+          type: integer
+          title: Chunk Index
+        chunk_count:
+          type: integer
+          title: Chunk Count
+        content:
+          type: string
+          title: Content
+        content_sha256:
+          type: string
+          title: Content Sha256
+        has_more:
+          type: boolean
+          title: Has More
+        next_chunk_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Chunk Index
+        delivered_chunk_count:
+          type: integer
+          title: Delivered Chunk Count
+        all_chunks_delivered:
+          type: boolean
+          title: All Chunks Delivered
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - packet_id
+      - packet_type
+      - chunk_index
+      - chunk_count
+      - content
+      - content_sha256
+      - has_more
+      - next_chunk_index
+      - delivered_chunk_count
+      - all_chunks_delivered
+      - next_required_action
+      title: PacketChunkResponse
+    RelationshipDimension:
+      properties:
+        key:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Key
+        label:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Label
+        value:
+          anyOf:
+          - type: integer
+          - type: number
+          title: Value
+          ge: 0
+          le: 100
+      additionalProperties: true
+      type: object
+      required:
+      - key
+      - label
+      - value
+      title: RelationshipDimension
+    RelationshipsDocument:
+      properties:
+        owner_character_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Owner Character Id
+        relations:
+          items:
+            $ref: '#/components/schemas/DirectedRelationship'
+          type: array
+          maxItems: 100
+          title: Relations
+      additionalProperties: true
+      type: object
+      title: RelationshipsDocument
+    RuntimeStateUpdates:
+      properties:
+        novel:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Novel
+        hidden_lore:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Hidden Lore
+        plot_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Plot State
+        director_plan:
+          anyOf:
+          - $ref: '#/components/schemas/DirectorPlan'
+          - type: 'null'
+        world_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: World State
+        scene_state:
+          anyOf:
+          - type: object
+            properties: {}
+          - type: 'null'
+          title: Scene State
+        characters:
+          items:
+            $ref: '#/components/schemas/CharacterUpdate'
+          type: array
+          title: Characters
+        locations:
+          items:
+            $ref: '#/components/schemas/LocationUpdate'
+          type: array
+          title: Locations
+        objects:
+          items:
+            $ref: '#/components/schemas/ObjectUpdate'
+          type: array
+          title: Objects
+      type: object
+      title: RuntimeStateUpdates
+    SceneCharacterBundleChunkResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        turn_id:
+          type: string
+          title: Turn Id
+        packet_id:
+          type: string
+          title: Packet Id
+        bundle_id:
+          type: string
+          title: Bundle Id
+        character_id:
+          type: string
+          title: Character Id
+        chunk_index:
+          type: integer
+          title: Chunk Index
+        chunk_count:
+          type: integer
+          title: Chunk Count
+        content:
+          type: string
+          title: Content
+        content_sha256:
+          type: string
+          title: Content Sha256
+        has_more:
+          type: boolean
+          title: Has More
+        next_chunk_index:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Chunk Index
+        delivered_chunk_count:
+          type: integer
+          title: Delivered Chunk Count
+        all_chunks_delivered:
+          type: boolean
+          title: All Chunks Delivered
+        next_required_action:
+          type: string
+          title: Next Required Action
+      type: object
+      required:
+      - session_id
+      - turn_id
+      - packet_id
+      - bundle_id
+      - character_id
+      - chunk_index
+      - chunk_count
+      - content
+      - content_sha256
+      - has_more
+      - next_chunk_index
+      - delivered_chunk_count
+      - all_chunks_delivered
+      - next_required_action
+      title: SceneCharacterBundleChunkResponse
+    SceneCharacterBundleRequest:
+      properties:
+        turn_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          title: Turn Id
+        entry_reason:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Entry Reason
+          description: Concrete story reason this already-known offscreen character will physically enter the scene
+            produced for this pending turn.
+      type: object
+      required:
+      - turn_id
+      - entry_reason
+      title: SceneCharacterBundleRequest
+    TurnPacketRequest:
+      properties:
+        player_input:
+          type: string
+          maxLength: 20000
+          minLength: 1
+          title: Player Input
+        mode:
+          type: string
+          enum:
+          - new
+          - revise_last
+          title: Mode
+          description: Use new for the next turn; use revise_last to replace the last scene without incrementing
+            turn.
+          default: new
+        client_request_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]*$
+          - type: 'null'
+          title: Client Request Id
+      type: object
+      required:
+      - player_input
+      title: TurnPacketRequest
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+servers:
+- url: https://web-production-4310e.up.railway.app
+  description: Railway production
+security: []
