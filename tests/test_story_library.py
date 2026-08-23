@@ -44,11 +44,35 @@ def test_story_must_be_readback_verified_before_session(client, service, session
     first = client.get("/api/v1/stories/avern/readback?chunk_index=0")
     assert first.status_code == 200, first.text
     meta = first.json()
+    assert meta["chunk_count"] > 1
     chunks.append(meta["content"])
+
+    premature = client.post(
+        "/api/v1/stories/avern/verify",
+        json={
+            "revision": revision,
+            "content_sha256": meta["content_sha256"],
+            "missing_items": [],
+            "conflicts": [],
+            "final_consistency_pass": True,
+        },
+    )
+    assert premature.status_code == 409
+    assert premature.json()["error"]["code"] == "STORY_READBACK_INCOMPLETE"
+
+    out_of_order = client.get("/api/v1/stories/avern/readback?chunk_index=2")
+    if meta["chunk_count"] > 2:
+        assert out_of_order.status_code == 409
+        assert out_of_order.json()["error"]["code"] == "STORY_READBACK_CHUNK_OUT_OF_ORDER"
+
+    final_meta = meta
     for index in range(1, meta["chunk_count"]):
         response = client.get(f"/api/v1/stories/avern/readback?chunk_index={index}")
         assert response.status_code == 200, response.text
-        chunks.append(response.json()["content"])
+        final_meta = response.json()
+        chunks.append(final_meta["content"])
+    assert final_meta["all_chunks_delivered"] is True
+
     raw = "".join(chunks)
     assert hashlib.sha256(raw.encode("utf-8")).hexdigest() == meta["content_sha256"]
     snapshot = json.loads(raw)
@@ -70,6 +94,7 @@ def test_story_must_be_readback_verified_before_session(client, service, session
         },
     )
     assert rejected.status_code == 409
+    assert rejected.json()["error"]["code"] == "STORY_VERIFICATION_INCOMPLETE"
 
     verified = client.post(
         "/api/v1/stories/avern/verify",
