@@ -65,6 +65,7 @@ class PovStableWriterService(EnhancedWriterNovellaService):
             character_id = str(entry.get("character_id", ""))
             info = continuity.get(character_id, {})
             last_seen = info.get("last_seen_turn")
+            first_seen = info.get("first_seen_turn")
             try:
                 turns_absent = (
                     max(current_turn - int(last_seen), 0)
@@ -75,24 +76,46 @@ class PovStableWriterService(EnhancedWriterNovellaService):
                 turns_absent = None
 
             entry["turns_absent"] = turns_absent
-            is_player_defined = entry.get("origin") == "player" or entry.get("card_level") == "player_defined"
-            if is_player_defined:
-                entry["story_presence_priority"] = "player_defined"
-                entry["story_presence_instruction"] = (
-                    "This character was explicitly created by the player and must remain an active "
-                    "part of the story. Do not forget, silently retire or replace them because they "
-                    "have been offscreen. They do not need to appear in every scene, but their goals, "
-                    "relationships, offscreen life and plausible opportunities to return must remain "
-                    "in director planning. If they have been absent for many turns, look for a natural "
-                    "story reason to bring them back, contact the POV, affect another character, create "
-                    "a consequence or otherwise re-enter the narrative. Do not force an illogical cameo."
+            origin = str(entry.get("origin") or "")
+            level = str(entry.get("card_level") or "")
+            persistent = origin == "player" or level in {"player_defined", "important", "recurring"}
+            if not persistent:
+                continue
+
+            entry["persistent_cast"] = True
+            entry["story_presence_instruction"] = (
+                "This is a persistent story character. Never forget, silently retire, replace or "
+                "drop their thread merely because they are offscreen. Keep their established goals, "
+                "relationships, current state and offscreen life active in planning. They do not need "
+                "to appear in every scene, but the story must continue to create plausible chances "
+                "for their return, contact, influence or consequences according to character and canon."
+            )
+
+            if first_seen is None:
+                entry["story_presence_priority"] = "high"
+                entry["never_appeared_with_pov"] = True
+                entry["return_consideration"] = (
+                    "This persistent character has never appeared with POV yet. Do not leave them "
+                    "unused indefinitely. Actively look for a natural introduction or story impact "
+                    "when current location, goals, relationships or plot make it plausible."
                 )
-                if turns_absent is not None and turns_absent >= 15:
-                    entry["long_absence"] = True
-                    entry["return_consideration"] = (
-                        "Long absence detected. Actively consider a natural return or offscreen impact "
-                        "using this character's established goals and relationships."
-                    )
-                else:
-                    entry["long_absence"] = False
+            elif turns_absent is not None and turns_absent >= 20:
+                entry["story_presence_priority"] = "high"
+                entry["long_absence"] = True
+                entry["return_consideration"] = (
+                    "Long absence detected. Restore this character's thread soon through a natural "
+                    "appearance, message, mention, offscreen action, consequence or interaction with "
+                    "another known character. Do not force an illogical cameo."
+                )
+            elif turns_absent is not None and turns_absent >= 10:
+                entry["story_presence_priority"] = "medium"
+                entry["long_absence"] = False
+                entry["return_consideration"] = (
+                    "This persistent character has been offscreen for several turns. Keep their thread "
+                    "alive and consider a natural re-entry if relevant."
+                )
+            else:
+                entry["story_presence_priority"] = "normal"
+                entry["long_absence"] = False
+
         return registry
