@@ -20,66 +20,66 @@ class OpenModel(BaseModel):
 
 
 class CharacterIdentity(OpenModel):
-    name: str = Field(min_length=1, max_length=200)
-    age: str = Field(min_length=1, max_length=100)
-    role: str = Field(min_length=1, max_length=500)
-    occupation: str = Field(min_length=1, max_length=500)
+    name: str = Field(min_length=1, max_length=500)
+    age: str = Field(min_length=1, max_length=300)
+    role: str = Field(min_length=1, max_length=2_000)
+    occupation: str = Field(min_length=1, max_length=2_000)
 
 
 class CharacterAppearance(OpenModel):
-    height: str = Field(min_length=1, max_length=200)
-    build: str = Field(min_length=1, max_length=300)
-    hair: str = Field(min_length=1, max_length=300)
-    eyes: str = Field(min_length=1, max_length=300)
-    face: str = Field(min_length=1, max_length=500)
-    skin_and_features: str = Field(min_length=1, max_length=500)
-    movement_and_mannerisms: str = Field(min_length=1, max_length=700)
-    clothing_style: str = Field(min_length=1, max_length=700)
-    distinguishing_details: list[str] = Field(min_length=1, max_length=6)
-    visual_impression: str = Field(min_length=1, max_length=500)
+    height: str = Field(min_length=1, max_length=500)
+    build: str = Field(min_length=1, max_length=1_500)
+    hair: str = Field(min_length=1, max_length=1_500)
+    eyes: str = Field(min_length=1, max_length=1_500)
+    face: str = Field(min_length=1, max_length=2_500)
+    skin_and_features: str = Field(min_length=1, max_length=2_500)
+    movement_and_mannerisms: str = Field(min_length=1, max_length=4_000)
+    clothing_style: str = Field(min_length=1, max_length=4_000)
+    distinguishing_details: list[str] = Field(min_length=1, max_length=30)
+    visual_impression: str = Field(min_length=1, max_length=2_500)
     visual_noticeability: Literal[
         "unremarkable", "pleasant", "attractive", "striking", "distinctive"
     ]
 
 
 class CharacterPersonality(OpenModel):
-    outward_mask: str = Field(min_length=1, max_length=700)
-    inner_character: str = Field(min_length=1, max_length=1000)
-    strengths: list[str] = Field(min_length=1, max_length=8)
-    flaws: list[str] = Field(min_length=1, max_length=8)
-    temperament: str = Field(min_length=1, max_length=400)
-    internal_conflict: str = Field(min_length=1, max_length=1000)
-    behavior_under_pressure: str = Field(min_length=1, max_length=700)
-    habits: list[str] = Field(min_length=2, max_length=6)
-    speech: str = Field(min_length=1, max_length=700)
+    outward_mask: str = Field(min_length=1, max_length=4_000)
+    inner_character: str = Field(min_length=1, max_length=6_000)
+    strengths: list[str] = Field(min_length=1, max_length=40)
+    flaws: list[str] = Field(min_length=1, max_length=40)
+    temperament: str = Field(min_length=1, max_length=3_000)
+    internal_conflict: str = Field(min_length=1, max_length=6_000)
+    behavior_under_pressure: str = Field(min_length=1, max_length=4_000)
+    habits: list[str] = Field(min_length=2, max_length=40)
+    speech: str = Field(min_length=1, max_length=4_000)
 
 
 class CharacterPreferences(OpenModel):
-    likes: list[str] = Field(min_length=1, max_length=8)
-    dislikes: list[str] = Field(min_length=1, max_length=8)
-    likes_in_people: list[str] = Field(min_length=1, max_length=6)
-    dislikes_in_people: list[str] = Field(min_length=1, max_length=6)
+    likes: list[str] = Field(min_length=1, max_length=40)
+    dislikes: list[str] = Field(min_length=1, max_length=40)
+    likes_in_people: list[str] = Field(min_length=1, max_length=30)
+    dislikes_in_people: list[str] = Field(min_length=1, max_length=30)
 
 
 class CharacterGoals(OpenModel):
-    personal: str = Field(min_length=1, max_length=1000)
-    immediate: str = Field(min_length=1, max_length=700)
-    toward_pov: str = Field(min_length=1, max_length=700)
-    story_function: str = Field(min_length=1, max_length=1000)
-    possible_arc: str = Field(min_length=1, max_length=1000)
+    personal: str = Field(min_length=1, max_length=6_000)
+    immediate: str = Field(min_length=1, max_length=4_000)
+    toward_pov: str = Field(min_length=1, max_length=4_000)
+    story_function: str = Field(min_length=1, max_length=6_000)
+    possible_arc: str = Field(min_length=1, max_length=6_000)
 
 
 class RelationshipDimension(OpenModel):
     key: SafeId
-    label: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=300)
     value: int | float = Field(ge=0, le=100)
 
 
 class DirectedRelationship(OpenModel):
     target_character_id: SafeId
-    relationship_type: str = Field(min_length=1, max_length=200)
-    relationship_context: str = Field(min_length=1, max_length=1000)
-    current_dynamic: str = Field(min_length=1, max_length=1000)
+    relationship_type: str = Field(min_length=1, max_length=1_000)
+    relationship_context: str = Field(min_length=1, max_length=5_000)
+    current_dynamic: str = Field(min_length=1, max_length=5_000)
     dimensions: list[RelationshipDimension] = Field(
         default_factory=list,
         max_length=8,
@@ -88,10 +88,10 @@ class DirectedRelationship(OpenModel):
             "universal scale copied to every pair."
         ),
     )
-    beliefs_about_target: list[str] = Field(default_factory=list, max_length=30)
-    unresolved_between_them: list[str] = Field(default_factory=list, max_length=30)
-    dynamic_constraints: list[str] = Field(default_factory=list, max_length=20)
-    change_reasons: list[str] = Field(default_factory=list, max_length=50)
+    beliefs_about_target: list[str] = Field(default_factory=list, max_length=100)
+    unresolved_between_them: list[str] = Field(default_factory=list, max_length=100)
+    dynamic_constraints: list[str] = Field(default_factory=list, max_length=100)
+    change_reasons: list[str] = Field(default_factory=list, max_length=200)
     last_changed_turn: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
@@ -104,7 +104,7 @@ class DirectedRelationship(OpenModel):
 
 class RelationshipsDocument(OpenModel):
     owner_character_id: SafeId | None = None
-    relations: list[DirectedRelationship] = Field(default_factory=list, max_length=100)
+    relations: list[DirectedRelationship] = Field(default_factory=list, max_length=300)
 
     @model_validator(mode="after")
     def validate_unique_targets(self) -> "RelationshipsDocument":
@@ -118,7 +118,7 @@ class CharacterCard(OpenModel):
     character_id: SafeId
     card_level: Literal["noticeable", "recurring", "important", "player_defined"]
     origin: Literal["player", "director_setup", "runtime"]
-    card_hint: str = Field(min_length=1, max_length=3_000)
+    card_hint: str = Field(min_length=1, max_length=12_000)
     record_status: Literal["active", "inactive"]
     story_status: Literal[
         "not_introduced",
@@ -131,15 +131,15 @@ class CharacterCard(OpenModel):
     player_visibility: Literal["hidden", "partial", "visible"]
     identity: CharacterIdentity
     appearance: CharacterAppearance
-    immediate_scene_goal: str = Field(min_length=1, max_length=700)
+    immediate_scene_goal: str = Field(min_length=1, max_length=4_000)
     personality: CharacterPersonality | None = None
     preferences: CharacterPreferences | None = None
-    biography: list[str] = Field(default_factory=list, max_length=12)
-    skills: list[str] = Field(default_factory=list, max_length=12)
+    biography: list[str] = Field(default_factory=list, max_length=100)
+    skills: list[str] = Field(default_factory=list, max_length=100)
     goals: CharacterGoals | None = None
-    hidden_motives: list[str] = Field(default_factory=list, max_length=8)
-    secrets: list[str] = Field(default_factory=list, max_length=8)
-    constraints: list[str] = Field(default_factory=list, max_length=8)
+    hidden_motives: list[str] = Field(default_factory=list, max_length=100)
+    secrets: list[str] = Field(default_factory=list, max_length=100)
+    constraints: list[str] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def validate_depth_for_level(self) -> "CharacterCard":
