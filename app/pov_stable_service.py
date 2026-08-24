@@ -6,7 +6,7 @@ from app.enhanced_writer_service import EnhancedWriterNovellaService
 
 
 class PovStableWriterService(EnhancedWriterNovellaService):
-    """Experimental long-session tuning that keeps POV active without hard validators."""
+    """Experimental long-session tuning that keeps POV and story continuity active."""
 
     RECENT_FULL_SCENES = 4
 
@@ -45,3 +45,54 @@ class PovStableWriterService(EnhancedWriterNovellaService):
             "state and the actual scene to decide what changes and why."
         )
         return lens
+
+    @classmethod
+    def _registry_with_continuity(
+        cls,
+        before_state: dict[str, Any],
+        payload: dict[str, Any],
+        chronology: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        registry = super()._registry_with_continuity(before_state, payload, chronology)
+        current_turn = int(payload.get("turn_number", 0) or 0)
+        continuity = {
+            str(item.get("character_id", "")): item
+            for item in payload.get("character_continuity_index", [])
+            if item.get("character_id")
+        }
+
+        for entry in registry:
+            character_id = str(entry.get("character_id", ""))
+            info = continuity.get(character_id, {})
+            last_seen = info.get("last_seen_turn")
+            try:
+                turns_absent = (
+                    max(current_turn - int(last_seen), 0)
+                    if current_turn and last_seen is not None
+                    else None
+                )
+            except (TypeError, ValueError):
+                turns_absent = None
+
+            entry["turns_absent"] = turns_absent
+            is_player_defined = entry.get("origin") == "player" or entry.get("card_level") == "player_defined"
+            if is_player_defined:
+                entry["story_presence_priority"] = "player_defined"
+                entry["story_presence_instruction"] = (
+                    "This character was explicitly created by the player and must remain an active "
+                    "part of the story. Do not forget, silently retire or replace them because they "
+                    "have been offscreen. They do not need to appear in every scene, but their goals, "
+                    "relationships, offscreen life and plausible opportunities to return must remain "
+                    "in director planning. If they have been absent for many turns, look for a natural "
+                    "story reason to bring them back, contact the POV, affect another character, create "
+                    "a consequence or otherwise re-enter the narrative. Do not force an illogical cameo."
+                )
+                if turns_absent is not None and turns_absent >= 15:
+                    entry["long_absence"] = True
+                    entry["return_consideration"] = (
+                        "Long absence detected. Actively consider a natural return or offscreen impact "
+                        "using this character's established goals and relationships."
+                    )
+                else:
+                    entry["long_absence"] = False
+        return registry
