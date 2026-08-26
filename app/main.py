@@ -6,7 +6,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.enhanced_writer_service import EnhancedWriterNovellaService
+from app.fast_audit_service import FastAuditNovellaService
 from app.models import (
     ChronologyPageResponse,
     CommitAuditRequest,
@@ -32,7 +32,7 @@ app = FastAPI(
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
 )
-app.state.service = EnhancedWriterNovellaService(settings)
+app.state.service = FastAuditNovellaService(settings)
 
 
 def service_for(request: Request) -> NovellaService:
@@ -204,10 +204,11 @@ def commit_turn(
     "/api/v1/sessions/{session_id}/audit-packet",
     operation_id="getAuditPacket",
     response_model=PacketChunkResponse,
-    summary="Get the mandatory packet for the next 15-turn audit",
+    summary="Get the mandatory compact packet for the next 15-turn audit",
     description=(
-        "Returns all 15 complete current turn revisions, the full compact chronology and current "
-        "state. The next scene remains blocked until commitAudit succeeds."
+        "Returns a compact snapshot of chronology, current state and character memory for the "
+        "15-turn cycle. The visible 15 committed scenes in the current chat are the primary review "
+        "source. The next scene remains blocked until commitAudit succeeds."
     ),
 )
 def get_audit_packet(session_id: str, request: Request) -> dict[str, Any]:
@@ -237,8 +238,8 @@ def get_audit_packet_chunk(
     response_model=CommitAuditResponse,
     summary="Commit a completed 15-turn audit and release the scene gate",
     description=(
-        "All checklist fields must be true. Repairs, compaction and chronology corrections are "
-        "stored atomically before another turn packet is allowed."
+        "All checklist fields remain true for backwards compatibility. Only missing/corrective "
+        "chronology, memory or obvious current-state repairs need to be supplied."
     ),
 )
 def commit_audit(
@@ -299,10 +300,6 @@ def custom_openapi() -> dict[str, Any]:
             if isinstance(operation, dict):
                 operation["security"] = []
     _ensure_object_properties(schema)
-    # The deployed server keeps accepting legacy createSession payloads, but every
-    # newly imported Action schema must opt into the current contract and provide a
-    # substantive director plan. This separates backwards compatibility from the
-    # guarantees advertised to the current Custom GPT.
     create_schema = schema.get("components", {}).get("schemas", {}).get(
         "CreateSessionRequest", {}
     )
