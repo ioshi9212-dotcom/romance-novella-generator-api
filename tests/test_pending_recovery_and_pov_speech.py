@@ -19,13 +19,20 @@ def _client(tmp_path) -> TestClient:
 
 def _commit_body(packet: dict, *, body: str) -> dict:
     turn_number = int(packet["turn_number"])
+    visible_body = (
+        "🎭 Тестовая новелла · осень\n"
+        f"🕒 День 1 · понедельник, 08.09.2025, 10:{turn_number:02d} · 📍 Дом Эмили\n"
+        "🌦️ Погода: ясно\n"
+        "⚙️ Сцена: тест\n\n"
+        f"{body}"
+    )
     return {
         "turn_id": packet["turn_id"],
         "expected_state_revision": packet["expected_state_revision"],
         "scene_output": scene_output(
             turn_number,
             packet["cycle_position"],
-            body=body,
+            body=visible_body,
         ),
         "summary": "Проверка восстановления pending и реплики POV",
         "scene_id": f"scene_{turn_number:04d}",
