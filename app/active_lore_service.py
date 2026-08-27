@@ -13,16 +13,18 @@ from app.service import ServiceError, _split_text
 class ActiveLoreNovellaService(RecoveryNovellaService):
     """Keep questionnaire canon, POV history and important cast causally active each turn.
 
-    Railway remains authoritative. This layer changes only the writer packet: it adds an
-    always-on story/POV memory, explicit knowledge lenses for scene NPCs, a compact cast index,
-    keyword-activated full dossiers and a small offscreen cast pulse. No public API changes.
+    Railway remains authoritative. The layer adds a small causal-memory map over the existing
+    writer packet instead of copying the whole state again: questionnaire anchoring, POV memory,
+    present-NPC knowledge lenses, a durable cast index, activated full lore and offscreen pulses.
+    No public API changes.
     """
 
-    ACTIVE_LORE_PACKET_VERSION = 1
+    ACTIVE_LORE_PACKET_VERSION = 2
     MAX_ACTIVATED_CHARACTERS = 6
-    MAX_OFFSCREEN_PULSES = 6
-    MAX_CHARACTER_EVENTS = 8
-    MAX_POV_EVENTS = 12
+    MAX_OFFSCREEN_PULSES = 4
+    MAX_CHARACTER_EVENTS = 6
+    MAX_POV_EVENTS = 10
+    MAX_OFFSCREEN_KNOWLEDGE_ENTRIES = 12
 
     @staticmethod
     def _normalized(value: Any) -> str:
@@ -38,7 +40,7 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
 
     @classmethod
     def _causal_card(cls, card: dict[str, Any]) -> dict[str, Any]:
-        """The parts of a card most likely to cause behavior, without duplicating appearance."""
+        """Stable facts that can cause behavior; appearance stays in the authoritative full card."""
         keep = (
             "card_level",
             "origin",
@@ -58,6 +60,20 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
             "constraints",
         )
         return cls._clean({key: card.get(key) for key in keep if key in card})
+
+    @classmethod
+    def _compact_knowledge(cls, knowledge: Any) -> Any:
+        cleaned = cls._clean(knowledge)
+        if not isinstance(cleaned, dict):
+            return cleaned
+        entries = cleaned.get("entries")
+        if not isinstance(entries, list) or len(entries) <= cls.MAX_OFFSCREEN_KNOWLEDGE_ENTRIES:
+            return cleaned
+        result = deepcopy(cleaned)
+        result["entries"] = entries[-cls.MAX_OFFSCREEN_KNOWLEDGE_ENTRIES :]
+        result["older_entries_omitted_from_pulse"] = len(entries) - len(result["entries"])
+        result["full_knowledge_source"] = "Railway character dossier; load before physical entry"
+        return result
 
     @classmethod
     def _character_aliases(cls, character: dict[str, Any]) -> set[str]:
@@ -202,7 +218,7 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
         return {
             "character_id": character.get("character_id"),
             "name": character_display_name(character.get("card", {})),
-            "causal_card": cls._causal_card(character.get("card", {})),
+            "behavior_cues": cls._causal_card(character.get("card", {})),
             "current_state": cls._clean(character.get("current_state", {})),
             "knowledge": cls._clean(character.get("knowledge", {})),
             "relationships_relevant_now": cls._relations_to_targets(
@@ -231,15 +247,12 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
         cls,
         character: dict[str, Any],
         *,
-        player_input: str,
         director_rows: list[dict[str, Any]],
         pov_character_id: str,
         continuity: dict[str, Any],
     ) -> int:
         card = character.get("card", {})
         score = 0
-        if cls._is_mentioned(character, player_input):
-            score += 1000
         if director_rows:
             score += 300
         if card.get("card_level") in {"important", "player_defined"}:
@@ -260,6 +273,44 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
         elif status in {"offstage", "missing"}:
             score += 35
         return score
+
+    @classmethod
+    def _offscreen_pulse_entry(
+        cls,
+        character: dict[str, Any],
+        *,
+        score: int,
+        director_rows: list[dict[str, Any]],
+        pov_character_id: str,
+        chronology: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        card = character.get("card", {})
+        character_id = str(character.get("character_id", ""))
+        goals = card.get("goals", {}) if isinstance(card.get("goals"), dict) else {}
+        return {
+            "priority_score": score,
+            "character_id": character_id,
+            "name": character_display_name(card),
+            "story_status": card.get("story_status"),
+            "card_hint": card.get("card_hint"),
+            "immediate_scene_goal": card.get("immediate_scene_goal"),
+            "goals": cls._clean(
+                {
+                    key: goals.get(key)
+                    for key in ("personal", "immediate", "toward_pov")
+                    if goals.get(key) not in (None, "")
+                }
+            ),
+            "current_state": cls._clean(character.get("current_state", {})),
+            "knowledge_snapshot": cls._compact_knowledge(character.get("knowledge", {})),
+            "relationship_to_pov": cls._relations_to_targets(
+                character, {pov_character_id}
+            ),
+            "director_agenda_matches": director_rows,
+            "recent_or_anchor_history": cls._event_memory_for(
+                chronology, {character_id}, min(4, cls.MAX_CHARACTER_EVENTS)
+            ),
+        }
 
     @classmethod
     def _build_active_memory(
@@ -303,6 +354,7 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
         ]
 
         activated: list[dict[str, Any]] = []
+        activated_ids: set[str] = set()
         for character in characters:
             character_id = str(character.get("character_id", ""))
             if character_id in present_ids:
@@ -313,27 +365,28 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
                         character, chronology, "mentioned_in_current_player_input"
                     )
                 )
+                activated_ids.add(character_id)
                 if len(activated) >= cls.MAX_ACTIVATED_CHARACTERS:
                     break
 
         scored_offscreen: list[tuple[int, str, dict[str, Any], list[dict[str, Any]]]] = []
         for character in characters:
             character_id = str(character.get("character_id", ""))
-            if character_id == pov_character_id or character_id in present_ids:
+            if (
+                character_id == pov_character_id
+                or character_id in present_ids
+                or character_id in activated_ids
+            ):
                 continue
             if not cls._character_is_durable(character):
                 continue
             card = character.get("card", {})
             status = str(card.get("story_status", ""))
             director_rows = cls._matching_director_rows(character, director_plan)
-            explicitly_activated = cls._is_mentioned(character, player_input)
-            if status in {"dead", "retired"} and not explicitly_activated:
-                continue
-            if status == "not_introduced" and not (explicitly_activated or director_rows):
+            if status in {"dead", "retired", "not_introduced"} and not director_rows:
                 continue
             score = cls._offscreen_score(
                 character,
-                player_input=player_input,
                 director_rows=director_rows,
                 pov_character_id=pov_character_id,
                 continuity=continuity_by_id.get(character_id, {}),
@@ -341,31 +394,24 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
             scored_offscreen.append((score, character_id, character, director_rows))
 
         scored_offscreen.sort(key=lambda item: (-item[0], item[1]))
-        offscreen_pulse: list[dict[str, Any]] = []
-        for score, character_id, character, director_rows in scored_offscreen[
-            : cls.MAX_OFFSCREEN_PULSES
-        ]:
-            offscreen_pulse.append(
-                {
-                    "priority_score": score,
-                    "character_id": character_id,
-                    "name": character_display_name(character.get("card", {})),
-                    "causal_card": cls._causal_card(character.get("card", {})),
-                    "current_state": cls._clean(character.get("current_state", {})),
-                    "knowledge": cls._clean(character.get("knowledge", {})),
-                    "relationships": cls._clean(character.get("relationships", {})),
-                    "director_agenda_matches": director_rows,
-                    "character_history": cls._event_memory_for(
-                        chronology, {character_id}, cls.MAX_CHARACTER_EVENTS
-                    ),
-                }
+        offscreen_pulse = [
+            cls._offscreen_pulse_entry(
+                character,
+                score=score,
+                director_rows=director_rows,
+                pov_character_id=pov_character_id,
+                chronology=chronology,
             )
+            for score, _character_id, character, director_rows in scored_offscreen[
+                : cls.MAX_OFFSCREEN_PULSES
+            ]
+        ]
 
         pov_memory = None
         if pov is not None:
             pov_memory = {
                 "character_id": pov_character_id,
-                "full_confirmed_card": cls._clean(pov.get("card", {})),
+                "causal_card": cls._causal_card(pov.get("card", {})),
                 "current_state": cls._clean(pov.get("current_state", {})),
                 "knowledge": cls._clean(pov.get("knowledge", {})),
                 "relationships": cls._clean(pov.get("relationships", {})),
@@ -376,21 +422,29 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
 
         return {
             "memory_contract": (
-                "MANDATORY CAUSAL MEMORY. novel_questionnaire and pov_long_term_memory are always "
-                "active canon, not optional background and not facts to postpone until a later "
-                "scene. Apply them naturally whenever they affect motive, interpretation, choice, "
-                "reaction or continuity; do not force exposition. For every NPC physically present, "
-                "scene_npc_lenses is the required knowledge/personality/relationship lens before "
-                "writing that NPC. A character may act only on their own knowledge and beliefs; do "
-                "not leak hidden lore or another character's knowledge into them. cast_memory_index "
-                "is the durable roster: do not forget, rename, recreate or replace an established "
-                "character because they are currently offscreen. activated_lore contains complete "
-                "dossiers pulled in by the current input. offscreen_cast_pulse keeps important NPCs "
-                "alive outside the frame: let goals, current state, knowledge, relationships and "
-                "director agendas cause plausible messages, arrivals, absences or consequences when "
-                "appropriate, but never force an entrance merely because a pulse exists."
+                "MANDATORY CAUSAL MEMORY. story_bible.novel is the confirmed novella questionnaire "
+                "and is always-active canon, not optional background and not material to postpone. "
+                "Read all of it before drafting and apply any fact that can affect motive, reaction, "
+                "interpretation, continuity or story direction without forcing exposition. "
+                "pov_long_term_memory makes POV biography, personality, knowledge, relationships and "
+                "past operative now. For every NPC physically present, scene_npc_lenses is the "
+                "required behavior/knowledge/relationship lens: characters may act only on their own "
+                "knowledge and beliefs, never hidden lore or another person's knowledge. "
+                "cast_memory_index is the durable roster: never forget, rename, recreate or replace "
+                "an established character because they are offscreen. activated_lore contains a full "
+                "dossier when current player input names an offscreen character. offscreen_cast_pulse "
+                "keeps a few important NPCs alive outside the frame so their goals, state, knowledge, "
+                "relationships and director agendas may cause plausible messages, arrivals, absences "
+                "or consequences; a pulse never forces an entrance by itself."
             ),
-            "novel_questionnaire": cls._clean(novel),
+            "novel_questionnaire": {
+                "source_path": "story_bible.novel",
+                "confirmed_keys": sorted(str(key) for key in novel.keys()),
+                "instruction": (
+                    "Read the complete object at source_path every turn. Do not reduce the novella "
+                    "questionnaire to title/genre/POV and do not defer established backstory or rules."
+                ),
+            },
             "pov_long_term_memory": pov_memory,
             "scene_npc_lenses": scene_npc_lenses,
             "cast_memory_index": cast_index,
@@ -409,7 +463,7 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
         ):
             return self._packet_chunk_response(session_id, pending, 0)
 
-        # First preserve every existing enhanced/recovery layer exactly as-is.
+        # Preserve every existing enhanced/recovery layer first.
         super()._augment_turn_packet_locked(session_id, pending)
 
         raw = "".join(pending.get("chunks", []))
@@ -428,9 +482,9 @@ class ActiveLoreNovellaService(RecoveryNovellaService):
         )
         payload["instruction"] = (
             str(payload.get("instruction", ""))
-            + " Before drafting, read active_memory.memory_contract and actually use "
-            "active_memory as causal context. Questionnaire facts and established POV/NPC memory "
-            "remain operative regardless of how many turns ago they were introduced. Never trade "
+            + " Before drafting, read active_memory.memory_contract and actually use its mapped "
+            "canon as causal context. Questionnaire facts and established POV/NPC memory remain "
+            "operative regardless of how many turns ago they were introduced. Never trade "
             "continuity for a convenient scene reset."
         ).strip()
 
