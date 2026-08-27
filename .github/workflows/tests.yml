@@ -44,8 +44,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
-      - name: Run tests
-        run: python -m pytest -q
+      - name: Active lore questionnaire test
+        run: python -m pytest -q tests/test_active_lore_memory.py::test_turn_packet_keeps_questionnaire_pov_and_npc_memory_causally_active
+
+      - name: Active lore pending recovery test
+        run: python -m pytest -q tests/test_active_lore_memory.py::test_active_lore_service_preserves_pending_turn_recovery
+
+      - name: Existing test suite
+        run: python -m pytest -q --ignore=tests/test_active_lore_memory.py
 
       - name: Verify generated Actions schema
         run: |
