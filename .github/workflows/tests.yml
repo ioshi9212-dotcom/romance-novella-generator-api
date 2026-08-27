@@ -18,34 +18,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pytest:
-    name: Python 3.11
+  pytest-groups:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: active-lore
+            tests: tests/test_active_lore_memory.py
+          - name: contract-minus-stale-schema
+            tests: tests/test_actions_contract.py -k 'not test_committed_actions_schema_matches_application'
+          - name: characters-and-intake
+            tests: tests/test_character_registry_and_familiarity.py tests/test_character_registry_familiarity.py tests/test_create_session_intake_repair.py tests/test_fast_audit.py tests/test_game_day_and_relationship_lens.py
+          - name: packets-and-recovery
+            tests: tests/test_idempotency_and_chronology.py tests/test_packet_guards_and_scene_entry.py tests/test_pending_recovery_and_pov_speech.py
+          - name: revisions-and-writer
+            tests: tests/test_revision_and_knowledge.py tests/test_runtime_documents.py tests/test_session_isolation_and_storage.py tests/test_turn_audit_cycle.py tests/test_writer_first_packet.py tests/test_writer_memory_audit.py
     env:
       DATA_DIR: /tmp/novella-data
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-dev.txt
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
-
-      - name: Active lore tests
-        run: python -m pytest -q tests/test_active_lore_memory.py
-
-      - name: Existing tests except known stale OpenAPI equality check
-        run: python -m pytest -q --ignore=tests/test_active_lore_memory.py -k "not test_committed_actions_schema_matches_application"
+      - name: Run group
+        run: python -m pytest -q ${{ matrix.tests }}
