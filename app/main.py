@@ -6,7 +6,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.fast_audit_service import FastAuditNovellaService
+from app.recovery_service import RecoveryNovellaService
 from app.models import (
     ChronologyPageResponse,
     CommitAuditRequest,
@@ -32,7 +32,7 @@ app = FastAPI(
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
 )
-app.state.service = FastAuditNovellaService(settings)
+app.state.service = RecoveryNovellaService(settings)
 
 
 def service_for(request: Request) -> NovellaService:
