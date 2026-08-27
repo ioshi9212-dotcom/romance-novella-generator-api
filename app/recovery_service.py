@@ -5,7 +5,7 @@ import unicodedata
 from typing import Any
 
 from app.fast_audit_service import FastAuditNovellaService
-from app.service import NovellaService, ServiceError
+from app.service import ServiceError
 
 
 class RecoveryNovellaService(FastAuditNovellaService):
@@ -47,7 +47,7 @@ class RecoveryNovellaService(FastAuditNovellaService):
         before_state: dict[str, Any],
         turn_number: int,
     ) -> None:
-        NovellaService._validate_scene_commit_context(
+        FastAuditNovellaService._validate_scene_commit_context(
             request, pending, before_state, turn_number
         )
 
