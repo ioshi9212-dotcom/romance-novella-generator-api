@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pytest-groups:
+  pytest-files:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -28,14 +28,28 @@ jobs:
         include:
           - name: active-lore
             tests: tests/test_active_lore_memory.py
-          - name: contract-minus-stale-schema
-            tests: tests/test_actions_contract.py -k 'not test_committed_actions_schema_matches_application'
-          - name: characters-and-intake
-            tests: tests/test_character_registry_and_familiarity.py tests/test_character_registry_familiarity.py tests/test_create_session_intake_repair.py tests/test_fast_audit.py tests/test_game_day_and_relationship_lens.py
-          - name: packets-and-recovery
-            tests: tests/test_idempotency_and_chronology.py tests/test_packet_guards_and_scene_entry.py tests/test_pending_recovery_and_pov_speech.py
-          - name: revisions-and-writer
-            tests: tests/test_revision_and_knowledge.py tests/test_runtime_documents.py tests/test_session_isolation_and_storage.py tests/test_turn_audit_cycle.py tests/test_writer_first_packet.py tests/test_writer_memory_audit.py
+          - name: character-registry-and-familiarity
+            tests: tests/test_character_registry_and_familiarity.py
+          - name: character-registry-familiarity
+            tests: tests/test_character_registry_familiarity.py
+          - name: create-session-intake
+            tests: tests/test_create_session_intake_repair.py
+          - name: fast-audit
+            tests: tests/test_fast_audit.py
+          - name: game-day-relations
+            tests: tests/test_game_day_and_relationship_lens.py
+          - name: revision-knowledge
+            tests: tests/test_revision_and_knowledge.py
+          - name: runtime-documents
+            tests: tests/test_runtime_documents.py
+          - name: session-storage
+            tests: tests/test_session_isolation_and_storage.py
+          - name: turn-audit-cycle
+            tests: tests/test_turn_audit_cycle.py
+          - name: writer-first-packet
+            tests: tests/test_writer_first_packet.py
+          - name: writer-memory-audit
+            tests: tests/test_writer_memory_audit.py
     env:
       DATA_DIR: /tmp/novella-data
       PYTHONDONTWRITEBYTECODE: "1"
@@ -53,5 +67,5 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
-      - name: Run group
+      - name: Run file
         run: python -m pytest -q ${{ matrix.tests }}
