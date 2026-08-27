@@ -153,17 +153,20 @@ def test_turn_packet_keeps_questionnaire_pov_and_npc_memory_causally_active(
     )
 
     memory = packet["active_memory"]
+    assert memory["novel_questionnaire"]["source_path"] == "story_bible.novel"
+    assert "relationship_focus" in memory["novel_questionnaire"]["confirmed_keys"]
+    assert "world_rule" in memory["novel_questionnaire"]["confirmed_keys"]
     assert (
-        memory["novel_questionnaire"]["relationship_focus"]
+        packet["story_bible"]["novel"]["relationship_focus"]
         == payload["novel"]["relationship_focus"]
     )
-    assert memory["novel_questionnaire"]["world_rule"] == payload["novel"]["world_rule"]
+    assert packet["story_bible"]["novel"]["world_rule"] == payload["novel"]["world_rule"]
 
     pov_memory = memory["pov_long_term_memory"]
     assert pov_memory["character_id"] == "char_emily"
     assert any(
         "реакцию на грозу" in item
-        for item in pov_memory["full_confirmed_card"]["biography"]
+        for item in pov_memory["causal_card"]["biography"]
     )
     assert pov_memory["knowledge"]["entries"][0]["knowledge_id"] == "emily_knows_archive"
 
@@ -189,10 +192,13 @@ def test_turn_packet_keeps_questionnaire_pov_and_npc_memory_causally_active(
     )
 
     pulse = {item["character_id"]: item for item in memory["offscreen_cast_pulse"]}
-    assert "char_ethan" in pulse
+    assert "char_ethan" not in pulse  # already has a full activated dossier; do not duplicate it
     assert "char_nora" in pulse
     assert pulse["char_nora"]["director_agenda_matches"]
-    assert pulse["char_nora"]["knowledge"]["entries"][0]["knowledge_id"] == "knowledge_char_nora"
+    assert (
+        pulse["char_nora"]["knowledge_snapshot"]["entries"][0]["knowledge_id"]
+        == "knowledge_char_nora"
+    )
 
     assert "MANDATORY CAUSAL MEMORY" in memory["memory_contract"]
     assert "active_memory" in packet["instruction"]
