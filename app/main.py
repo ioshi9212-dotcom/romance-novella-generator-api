@@ -5,8 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
+from app.active_lore_service import ActiveLoreNovellaService
 from app.config import get_settings
-from app.recovery_service import RecoveryNovellaService
 from app.models import (
     ChronologyPageResponse,
     CommitAuditRequest,
@@ -32,7 +32,7 @@ app = FastAPI(
     ),
     servers=[{"url": settings.public_base_url, "description": "Railway production"}],
 )
-app.state.service = RecoveryNovellaService(settings)
+app.state.service = ActiveLoreNovellaService(settings)
 
 
 def service_for(request: Request) -> NovellaService:
