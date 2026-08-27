@@ -18,54 +18,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pytest-files:
-    name: ${{ matrix.name }}
+  pytest:
+    name: Python 3.11
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: active-lore
-            tests: tests/test_active_lore_memory.py
-          - name: character-registry-and-familiarity
-            tests: tests/test_character_registry_and_familiarity.py
-          - name: character-registry-familiarity
-            tests: tests/test_character_registry_familiarity.py
-          - name: create-session-intake
-            tests: tests/test_create_session_intake_repair.py
-          - name: fast-audit
-            tests: tests/test_fast_audit.py
-          - name: game-day-relations
-            tests: tests/test_game_day_and_relationship_lens.py
-          - name: revision-knowledge
-            tests: tests/test_revision_and_knowledge.py
-          - name: runtime-documents
-            tests: tests/test_runtime_documents.py
-          - name: session-storage
-            tests: tests/test_session_isolation_and_storage.py
-          - name: turn-audit-cycle
-            tests: tests/test_turn_audit_cycle.py
-          - name: writer-first-packet
-            tests: tests/test_writer_first_packet.py
-          - name: writer-memory-audit
-            tests: tests/test_writer_memory_audit.py
+
     env:
       DATA_DIR: /tmp/novella-data
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-dev.txt
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
-      - name: Run file
-        run: python -m pytest -q ${{ matrix.tests }}
+
+      - name: Verify generated Actions schema
+        run: |
+          python scripts/export_openapi.py
+          git diff --exit-code -- openapi.yaml
+
+      - name: Run tests
+        run: python -m pytest -q
