@@ -77,17 +77,13 @@ class RecoveryNovellaService(FastAuditNovellaService):
         self,
         session_id: str,
         pending: dict[str, Any],
-        *,
-        restart_chunks: bool,
     ) -> dict[str, Any]:
         if not pending.get("chunks"):
             raise ServiceError(
                 500, "TURN_PACKET_CORRUPT", "Pending turn packet has no content"
             )
 
-        if restart_chunks and (
-            pending.get("enhanced_packet_version") == self.ENHANCED_PACKET_VERSION
-        ):
+        if pending.get("enhanced_packet_version") == self.ENHANCED_PACKET_VERSION:
             pending["last_delivered_chunk_index"] = 0
             pending["all_chunks_delivered"] = len(pending.get("chunks", [])) == 1
             self.storage._write_json_batch_locked(
@@ -103,14 +99,6 @@ class RecoveryNovellaService(FastAuditNovellaService):
                 session_id, "pending_turn.json", default={}
             )
             if isinstance(pending, dict) and pending.get("status") == "active":
-                same_logical_request = (
-                    pending.get("player_input") == request.player_input
-                    and pending.get("mode") == request.mode
-                )
-                return self._resume_pending_turn_locked(
-                    session_id,
-                    pending,
-                    restart_chunks=not same_logical_request,
-                )
+                return self._resume_pending_turn_locked(session_id, pending)
 
         return super().get_turn_packet(session_id, request)
