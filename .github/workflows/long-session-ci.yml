@@ -24,11 +24,18 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: python -m pip install -r requirements-dev.txt
-      - name: Long-session regression tests
+      - name: Long-session compatibility tests
         run: |
           python -m pytest -q \
             tests/test_long_session_context.py \
             tests/test_active_lore_memory.py \
             tests/test_pending_recovery_and_pov_speech.py \
             tests/test_writer_first_packet.py \
-            tests/test_game_day_and_relationship_lens.py
+            tests/test_game_day_and_relationship_lens.py \
+            tests/test_character_registry_and_familiarity.py \
+            tests/test_character_registry_familiarity.py \
+            tests/test_create_session_intake_repair.py \
+            tests/test_revision_and_knowledge.py \
+            tests/test_session_isolation_and_storage.py \
+            tests/test_turn_audit_cycle.py \
+            tests/test_writer_memory_audit.py
