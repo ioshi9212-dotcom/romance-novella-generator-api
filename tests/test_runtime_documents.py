@@ -35,6 +35,19 @@ def test_rules_and_builder_keep_minimal_writer_contract() -> None:
     assert "Ход {turn_number} · цикл {cycle_position}/15" in builder
 
 
+def test_scene_builder_includes_selective_cinematic_coverage() -> None:
+    builder = read_scene_builder()
+    assert "# CINEMATIC COVERAGE CONTRACT" in builder
+    assert "ROUTINE" in builder
+    assert "STANDARD" in builder
+    assert "CINEMATIC" in builder
+    assert "Ощущения НЕ заменяют визуал" in builder
+    assert "NO MISSING BEATS" in builder
+    assert "Не делай ранний монтажный обрыв" in builder
+    assert "НЕ ПЕРЕОПИСЫВАЙ РУТИНУ" in builder
+    assert "ВАЖНЫЙ МОМЕНТ НУЖНО НЕ ТОЛЬКО ПОНЯТЬ, НО И УВИДЕТЬ" in builder
+
+
 def test_custom_gpt_instruction_stays_compact_and_has_preview_gate() -> None:
     instructions = (PROJECT_ROOT / "gpt" / "custom_gpt_instructions.md").read_text(
         encoding="utf-8"
