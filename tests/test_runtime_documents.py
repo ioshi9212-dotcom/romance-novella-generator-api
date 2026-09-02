@@ -22,7 +22,7 @@ def test_rules_and_builder_keep_minimal_writer_contract() -> None:
     assert "Жёсткого лимита ходов нет" in rules
     assert "plot_state.resolved_arcs" in rules
 
-    assert "Строго 1500–2500 символов" in builder
+    assert "Строго 1500–3000 символов" in builder
     assert "Третье лицо" in builder
     assert "POV всегда присутствует" in builder
     assert "около 5%" in builder
