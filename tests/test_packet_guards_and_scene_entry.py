@@ -89,7 +89,7 @@ def test_turn_commit_is_blocked_until_every_chunk_is_delivered_in_order(
 
     packet = collect_packet(client, session_id, first)
     assert "Персонажи действуют как реальные люди" in packet["rules"]
-    assert "Строго 1500–2500 символов" in packet["scene_builder"]
+    assert "Строго 1500–3000 символов" in packet["scene_builder"]
     assert packet["scene_focus"]["required_full_character_ids"] == [
         "char_emily",
         "char_chloe",
