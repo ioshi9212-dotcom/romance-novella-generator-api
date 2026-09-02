@@ -90,11 +90,9 @@ def health() -> dict[str, str]:
     response_model=CreateSessionResponse,
     summary="Create one new novella session after player confirmation",
     description=(
-        "Call exactly once, only after the player explicitly writes «подтверждаю». Send the "
-        "entire confirmed setup in this one request. Railway preserves the supplied canon, "
-        "normalizes safe internal IDs and fills only technical omissions that would otherwise "
-        "break storage. A successful response returns the real session_id; retain it and "
-        "immediately call getTurnPacket to start the first scene."
+        "Call once after «подтверждаю». Send the complete confirmed setup. Railway preserves "
+        "canon, normalizes safe IDs and technical omissions. Keep the returned session_id and "
+        "call getTurnPacket to start the first scene."
     ),
 )
 def create_session(payload: CreateSessionRequest, request: Request) -> dict[str, Any]:
@@ -107,11 +105,9 @@ def create_session(payload: CreateSessionRequest, request: Request) -> dict[str,
     response_model=PacketChunkResponse,
     summary="Get the authoritative packet required to write one scene",
     description=(
-        "Call for the first scene immediately after createSession and once for every exact player "
-        "input after that. Railway returns chunk 0 of the authoritative rules, scene_builder, "
-        "state, cards and continuity packet. Follow next_required_action and call "
-        "getTurnPacketChunk in order until all_chunks_delivered=true before writing the scene. "
-        "If the 15-turn audit is due, this action returns AUDIT_REQUIRED and no scene may be written."
+        "Call after createSession and for every exact player input. Read chunk 0, then "
+        "getTurnPacketChunk in order until all_chunks_delivered=true before writing. If "
+        "AUDIT_REQUIRED is returned, complete the audit before writing the scene."
     ),
 )
 def get_turn_packet(
@@ -299,6 +295,9 @@ def custom_openapi() -> dict[str, Any]:
         for operation in path_item.values():
             if isinstance(operation, dict):
                 operation["security"] = []
+                description = operation.get("description")
+                if isinstance(description, str) and len(description) > 300:
+                    operation["description"] = description[:297].rstrip() + "..."
     _ensure_object_properties(schema)
     create_schema = schema.get("components", {}).get("schemas", {}).get(
         "CreateSessionRequest", {}
