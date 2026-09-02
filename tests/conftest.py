@@ -198,8 +198,10 @@ def collect_packet(
 def scene_output(
     turn_number: int, cycle_position: int, body: str = "Сцена продолжается."
 ) -> str:
+    first_lines = "\n".join(body.splitlines()[:4])
+    day_header = "" if "День " in first_lines else "День 1\n"
     return (
-        f"{body}\n\n"
+        f"{day_header}{body}\n\n"
         f"Ход {turn_number} · цикл {cycle_position}/15\n"
         "↻ Перед следующим ходом: прочитать актуальный state. "
         "На 15/15 — провести сверку последних 15 ходов с Railway."
