@@ -8,4 +8,6 @@ def read_runtime_rules() -> str:
 
 
 def read_scene_builder() -> str:
-    return (PROJECT_ROOT / "rules" / "scene_builder.md").read_text(encoding="utf-8")
+    base = (PROJECT_ROOT / "rules" / "scene_builder.md").read_text(encoding="utf-8").rstrip()
+    cinematic = (PROJECT_ROOT / "rules" / "cinematic_coverage.md").read_text(encoding="utf-8").strip()
+    return base + "\n\n" + cinematic + "\n"
