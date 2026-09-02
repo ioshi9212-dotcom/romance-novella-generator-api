@@ -17,6 +17,21 @@ class FastAuditNovellaService(EnhancedWriterNovellaService):
 
     FAST_AUDIT_VERSION = 1
 
+    def create_session(self, request: Any) -> dict[str, Any]:
+        """Preserve the complete accepted setup once without adding it to turn packets."""
+        result = super().create_session(request)
+        session_id = str(result["session_id"])
+        self.storage.write_json_batch(
+            session_id,
+            {
+                "intake/confirmed_payload.json": {
+                    "session_id": session_id,
+                    "payload": request.model_dump(mode="json"),
+                }
+            },
+        )
+        return result
+
     @classmethod
     def _audit_character_snapshot(
         cls,
