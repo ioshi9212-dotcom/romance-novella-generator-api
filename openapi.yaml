@@ -233,9 +233,10 @@ paths:
       security: []
   /api/v1/sessions/{session_id}/audit-packet:
     get:
-      summary: Get the mandatory packet for the next 15-turn audit
-      description: Returns all 15 complete current turn revisions, the full compact chronology and current state.
-        The next scene remains blocked until commitAudit succeeds.
+      summary: Get the mandatory compact packet for the next 15-turn audit
+      description: Returns a compact snapshot of chronology, current state and character memory for the 15-turn
+        cycle. The visible 15 committed scenes in the current chat are the primary review source. The next scene
+        remains blocked until commitAudit succeeds.
       operationId: getAuditPacket
       parameters:
       - name: session_id
@@ -298,8 +299,8 @@ paths:
   /api/v1/sessions/{session_id}/audits/commit:
     post:
       summary: Commit a completed 15-turn audit and release the scene gate
-      description: All checklist fields must be true. Repairs, compaction and chronology corrections are stored
-        atomically before another turn packet is allowed.
+      description: All checklist fields remain true for backwards compatibility. Only missing/corrective chronology,
+        memory or obvious current-state repairs need to be supplied.
       operationId: commitAudit
       parameters:
       - name: session_id
@@ -450,54 +451,54 @@ components:
       properties:
         height:
           type: string
-          maxLength: 200
+          maxLength: 500
           minLength: 1
           title: Height
         build:
           type: string
-          maxLength: 300
+          maxLength: 1500
           minLength: 1
           title: Build
         hair:
           type: string
-          maxLength: 300
+          maxLength: 1500
           minLength: 1
           title: Hair
         eyes:
           type: string
-          maxLength: 300
+          maxLength: 1500
           minLength: 1
           title: Eyes
         face:
           type: string
-          maxLength: 500
+          maxLength: 2500
           minLength: 1
           title: Face
         skin_and_features:
           type: string
-          maxLength: 500
+          maxLength: 2500
           minLength: 1
           title: Skin And Features
         movement_and_mannerisms:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Movement And Mannerisms
         clothing_style:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Clothing Style
         distinguishing_details:
           items:
             type: string
           type: array
-          maxItems: 6
+          maxItems: 30
           minItems: 1
           title: Distinguishing Details
         visual_impression:
           type: string
-          maxLength: 500
+          maxLength: 2500
           minLength: 1
           title: Visual Impression
         visual_noticeability:
@@ -578,7 +579,7 @@ components:
           title: Origin
         card_hint:
           type: string
-          maxLength: 3000
+          maxLength: 12000
           minLength: 1
           title: Card Hint
         record_status:
@@ -610,7 +611,7 @@ components:
           $ref: '#/components/schemas/CharacterAppearance'
         immediate_scene_goal:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Immediate Scene Goal
         personality:
@@ -625,13 +626,13 @@ components:
           items:
             type: string
           type: array
-          maxItems: 12
+          maxItems: 100
           title: Biography
         skills:
           items:
             type: string
           type: array
-          maxItems: 12
+          maxItems: 100
           title: Skills
         goals:
           anyOf:
@@ -641,19 +642,19 @@ components:
           items:
             type: string
           type: array
-          maxItems: 8
+          maxItems: 100
           title: Hidden Motives
         secrets:
           items:
             type: string
           type: array
-          maxItems: 8
+          maxItems: 100
           title: Secrets
         constraints:
           items:
             type: string
           type: array
-          maxItems: 8
+          maxItems: 100
           title: Constraints
       additionalProperties: true
       type: object
@@ -673,27 +674,27 @@ components:
       properties:
         personal:
           type: string
-          maxLength: 1000
+          maxLength: 6000
           minLength: 1
           title: Personal
         immediate:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Immediate
         toward_pov:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Toward Pov
         story_function:
           type: string
-          maxLength: 1000
+          maxLength: 6000
           minLength: 1
           title: Story Function
         possible_arc:
           type: string
-          maxLength: 1000
+          maxLength: 6000
           minLength: 1
           title: Possible Arc
       additionalProperties: true
@@ -709,22 +710,22 @@ components:
       properties:
         name:
           type: string
-          maxLength: 200
+          maxLength: 500
           minLength: 1
           title: Name
         age:
           type: string
-          maxLength: 100
+          maxLength: 300
           minLength: 1
           title: Age
         role:
           type: string
-          maxLength: 500
+          maxLength: 2000
           minLength: 1
           title: Role
         occupation:
           type: string
-          maxLength: 500
+          maxLength: 2000
           minLength: 1
           title: Occupation
       additionalProperties: true
@@ -739,53 +740,53 @@ components:
       properties:
         outward_mask:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Outward Mask
         inner_character:
           type: string
-          maxLength: 1000
+          maxLength: 6000
           minLength: 1
           title: Inner Character
         strengths:
           items:
             type: string
           type: array
-          maxItems: 8
+          maxItems: 40
           minItems: 1
           title: Strengths
         flaws:
           items:
             type: string
           type: array
-          maxItems: 8
+          maxItems: 40
           minItems: 1
           title: Flaws
         temperament:
           type: string
-          maxLength: 400
+          maxLength: 3000
           minLength: 1
           title: Temperament
         internal_conflict:
           type: string
-          maxLength: 1000
+          maxLength: 6000
           minLength: 1
           title: Internal Conflict
         behavior_under_pressure:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Behavior Under Pressure
         habits:
           items:
             type: string
           type: array
-          maxItems: 6
+          maxItems: 40
           minItems: 2
           title: Habits
         speech:
           type: string
-          maxLength: 700
+          maxLength: 4000
           minLength: 1
           title: Speech
       additionalProperties: true
@@ -807,28 +808,28 @@ components:
           items:
             type: string
           type: array
-          maxItems: 8
+          maxItems: 40
           minItems: 1
           title: Likes
         dislikes:
           items:
             type: string
           type: array
-          maxItems: 8
+          maxItems: 40
           minItems: 1
           title: Dislikes
         likes_in_people:
           items:
             type: string
           type: array
-          maxItems: 6
+          maxItems: 30
           minItems: 1
           title: Likes In People
         dislikes_in_people:
           items:
             type: string
           type: array
-          maxItems: 6
+          maxItems: 30
           minItems: 1
           title: Dislikes In People
       additionalProperties: true
@@ -1554,17 +1555,17 @@ components:
           title: Target Character Id
         relationship_type:
           type: string
-          maxLength: 200
+          maxLength: 1000
           minLength: 1
           title: Relationship Type
         relationship_context:
           type: string
-          maxLength: 1000
+          maxLength: 5000
           minLength: 1
           title: Relationship Context
         current_dynamic:
           type: string
-          maxLength: 1000
+          maxLength: 5000
           minLength: 1
           title: Current Dynamic
         dimensions:
@@ -1579,25 +1580,25 @@ components:
           items:
             type: string
           type: array
-          maxItems: 30
+          maxItems: 100
           title: Beliefs About Target
         unresolved_between_them:
           items:
             type: string
           type: array
-          maxItems: 30
+          maxItems: 100
           title: Unresolved Between Them
         dynamic_constraints:
           items:
             type: string
           type: array
-          maxItems: 20
+          maxItems: 100
           title: Dynamic Constraints
         change_reasons:
           items:
             type: string
           type: array
-          maxItems: 50
+          maxItems: 200
           title: Change Reasons
         last_changed_turn:
           type: integer
@@ -1933,7 +1934,7 @@ components:
           title: Key
         label:
           type: string
-          maxLength: 100
+          maxLength: 300
           minLength: 1
           title: Label
         value:
@@ -1964,7 +1965,7 @@ components:
           items:
             $ref: '#/components/schemas/DirectedRelationship'
           type: array
-          maxItems: 100
+          maxItems: 300
           title: Relations
       additionalProperties: true
       type: object
