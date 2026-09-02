@@ -47,6 +47,9 @@ def test_foundation_archive_is_preserved_without_bloating_writer_packet(
             "status": "latent",
         }
     ]
+    payload["player_extra_note"] = {
+        "text": "Даже нестандартно разложенный подтверждённый кусок нельзя потерять."
+    }
 
     session_id = create_session(client, payload)
 
@@ -55,6 +58,15 @@ def test_foundation_archive_is_preserved_without_bloating_writer_packet(
     assert stored_world["foundation_archive"][0]["stored_in"] == [
         "characters.char_chloe.card.biography"
     ]
+    accepted_snapshot = service.storage.read_json(
+        session_id, "intake/confirmed_payload.json"
+    )
+    assert accepted_snapshot["payload"]["player_extra_note"]["text"] == (
+        "Даже нестандартно разложенный подтверждённый кусок нельзя потерять."
+    )
+    assert accepted_snapshot["payload"]["world_state"]["foundation_archive"][0][
+        "text"
+    ] == player_fact
 
     packet = collect_packet(
         client,
