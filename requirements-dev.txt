@@ -1,1 +1,2 @@
-pytest\nhttpx\n
+pytest
+httpx
