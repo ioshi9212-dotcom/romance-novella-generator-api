@@ -24,10 +24,14 @@ def setup_ready():
             pov_character_id="pov",
             characters=[
                 m.Character(
+                    character_id="pov",
+                    card="# POV",
+                ),
+                m.Character(
                     character_id="liam",
                     card="# Liam",
                     relationship_start="Относится настороженно.",
-                )
+                ),
             ],
         ),
     )
@@ -336,3 +340,26 @@ def test_character_additions_accumulate_without_overwriting_card(root):
     assert "# Liam" in card
     assert "крепкий кофе" in card
     assert "крутит кольцо" in card
+
+
+def test_pov_has_own_starting_knowledge(root):
+    new_session()
+    m.append_setup_message("test", m.SetupChunk(message_number=1, text="POV до старта читала досье Liam."))
+    m.finalize_setup(
+        "test",
+        m.FinalizeSetup(
+            novel="# Novel",
+            pov_character_id="pov",
+            characters=[
+                m.Character(
+                    character_id="pov",
+                    card="# POV",
+                    knowledge_start="До первой сцены читала досье Liam и знает, что ему 27 лет.",
+                ),
+                m.Character(character_id="liam", card="# Liam"),
+            ],
+        ),
+    )
+    knowledge = m.character_state("test", "pov")["knowledge"]
+    assert "читала досье Liam" in knowledge
+    assert "27 лет" in knowledge
