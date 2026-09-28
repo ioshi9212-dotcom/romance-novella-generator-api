@@ -320,3 +320,19 @@ def test_three_compaction_cycles_keep_all_history(root):
     assert "Изменение 7" in relationship
     assert "Изменение 22" in relationship
     assert "Изменение 41" in relationship
+
+
+def test_character_additions_accumulate_without_overwriting_card(root):
+    setup_ready()
+    m.save_turn(
+        "test",
+        turn(1, character_updates={"liam": "Любит очень крепкий кофе без сахара."}),
+    )
+    m.save_turn(
+        "test",
+        turn(2, character_updates={"liam": "По привычке крутит кольцо на пальце, когда нервничает."}),
+    )
+    card = m.character_state("test", "liam")["card"]
+    assert "# Liam" in card
+    assert "крепкий кофе" in card
+    assert "крутит кольцо" in card
