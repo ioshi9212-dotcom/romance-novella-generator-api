@@ -363,3 +363,37 @@ def test_pov_has_own_starting_knowledge(root):
     knowledge = m.character_state("test", "pov")["knowledge"]
     assert "читала досье Liam" in knowledge
     assert "27 лет" in knowledge
+
+
+def test_cast_registry_tracks_physical_remote_and_meaningful_activity(root):
+    setup_ready()
+    m.save_turn(
+        "test",
+        turn(
+            1,
+            game_day="1",
+            present_characters=["liam"],
+            meaningful_character_actions={"liam": "Поставил POV перед важным выбором."},
+            cast_updates={"liam": "Ждёт ответа POV и вернётся к этому вопросу."},
+        ),
+    )
+    for n in range(2, 6):
+        m.save_turn("test", turn(n, game_day="1"))
+    m.save_turn(
+        "test",
+        turn(
+            6,
+            game_day="2",
+            remote_characters=["liam"],
+        ),
+    )
+
+    registry = m.state("test")["cast_registry"]
+    assert "## liam / liam" in registry
+    assert "Последнее физическое появление: ход 1, игровой день 1" in registry
+    assert "Последнее участие вообще: ход 6, игровой день 2" in registry
+    assert "Последнее значимое действие: ход 1, игровой день 1" in registry
+    assert "Ходов с физического появления: 5" in registry
+    assert "Игровых дней с физического появления: 1" in registry
+    assert "Ждёт ответа POV" in registry
+    assert "## POV / pov" not in registry
