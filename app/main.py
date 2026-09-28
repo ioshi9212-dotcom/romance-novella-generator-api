@@ -177,7 +177,7 @@ def render_setup_source(sd: Path, m):
         parts.append(f"## Сообщение {p['message_number']}\n\n")
         parts.append(p["text"])
         parts.append("\n\n")
-    text = "".join(parts).rstrip() + "\n"
+    text = "".join(parts)
     write(sd / "setup_source.md", text)
     return text
 
@@ -265,7 +265,7 @@ def render_recent(sd: Path, m):
         parts.append(p["scene_text"])
         parts.append("\n\n")
 
-    text = "".join(parts).rstrip() + "\n"
+    text = "".join(parts)
     write(sd / "recent_turns.md", text)
     return text
 
