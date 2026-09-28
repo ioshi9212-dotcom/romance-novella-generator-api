@@ -41,6 +41,7 @@ class FinalizeSetup(BaseModel):
     novel: str
     novel_rules: str = ""
     hidden_lore: str = ""
+    plot_threads: str = ""
     pov_character_id: Optional[str] = None
     characters: List[Character] = Field(default_factory=list)
     audit: bool = False
@@ -48,6 +49,8 @@ class FinalizeSetup(BaseModel):
 
 class OpeningScene(BaseModel):
     scene_text: str
+    continuity: Optional[str] = None
+    continuity_events: str = ""
     game_day: Optional[str] = None
     world_date: Optional[str] = None
     world_time: Optional[str] = None
@@ -59,6 +62,7 @@ class Turn(BaseModel):
     scene_text: str
     chronology_note: str = ""
     continuity: Optional[str] = None
+    continuity_events: str = ""
     plot_threads: Optional[str] = None
     knowledge_updates: Dict[str, str] = Field(default_factory=dict)
     relationship_updates: Dict[str, str] = Field(default_factory=dict)
@@ -248,6 +252,89 @@ def render_character_relationship(sd: Path, cid: str):
     return result
 
 
+def sync_meta_from_receipts(sd: Path, m):
+    committed = turn_receipts(sd)
+    m["last_saved_turn"] = committed[-1]["payload"]["turn_number"] if committed else 0
+
+    # Время и дата восстанавливаются только из подтверждённых записей.
+    for key in ("game_day", "world_date", "world_time"):
+        value = None
+        opening_path = sd / "opening_scene.json"
+        if opening_path.exists():
+            value = jread(opening_path)["payload"].get(key)
+        for r in committed:
+            candidate = r["payload"].get(key)
+            if candidate is not None:
+                value = candidate
+        m[key] = value
+
+    return m
+
+
+def active_character_ids(sd: Path, m):
+    ids = set(m.get("setup_character_ids", []))
+    for r in turn_receipts(sd):
+        for ch in r["payload"].get("new_characters", []):
+            ids.add(ch["character_id"])
+    return sorted(ids)
+
+
+def render_continuity(sd: Path, m):
+    current = None
+    events = []
+
+    opening_path = sd / "opening_scene.json"
+    if opening_path.exists():
+        opening = jread(opening_path)["payload"]
+        if opening.get("continuity") is not None:
+            current = opening["continuity"]
+        if opening.get("continuity_events"):
+            events.append(("Нулевая сцена", opening["continuity_events"]))
+
+    for r in turn_receipts(sd):
+        p = r["payload"]
+        if p.get("continuity") is not None:
+            current = p["continuity"]
+        if p.get("continuity_events"):
+            events.append((f"Ход {p['turn_number']}", p["continuity_events"]))
+
+    parts = [
+        "# Текущее состояние и непрерывность\n\n",
+        "Правило: текущая сцена — актуальный снимок. История важных перемещений не стирается.\n\n",
+        "## Текущая сцена\n\n",
+        (current if current is not None else "Состояние ещё не задано."),
+        "\n\n## История важных предметов и цифровых следов\n",
+    ]
+    if events:
+        for title, body in events:
+            parts.append(f"\n### {title}\n{body}\n")
+    else:
+        parts.append("\nПока нет записей.\n")
+
+    text = "".join(parts)
+    write(sd / "continuity.md", text)
+    return text
+
+
+def render_plot_threads(sd: Path):
+    parts = ["# Крючки и договорённости\n"]
+    base_path = sd / "plot_threads_base.md"
+    if base_path.exists():
+        base = base_path.read_text(encoding="utf-8").strip()
+        if base:
+            parts.append("\n## На старте\n" + base + "\n")
+
+    for r in turn_receipts(sd):
+        p = r["payload"]
+        update = p.get("plot_threads")
+        if update:
+            parts.append(f"\n## Изменение после хода {p['turn_number']}\n{update}\n")
+
+    text = "".join(parts)
+    write(sd / "plot_threads.md", text)
+    return text
+
+
 def render_recent(sd: Path, m):
     parts = ["# Последние 15 ходов\n\n"]
     opening_path = sd / "opening_scene.json"
@@ -325,6 +412,7 @@ def create_session(req: NewSession):
         write(sd / "novel_rules.md", tpl("novel_rules.md"))
         write(sd / "hidden_lore.md", tpl("hidden_lore.md"))
         write(sd / "continuity.md", tpl("continuity.md"))
+        write(sd / "plot_threads_base.md", "")
         write(sd / "plot_threads.md", tpl("plot_threads.md"))
         write(sd / "chronology.md", "# Хронология\n")
         write(sd / "recent_turns.md", "# Последние 15 ходов\n")
@@ -333,6 +421,7 @@ def create_session(req: NewSession):
             "session_id": sid,
             "title": req.title,
             "pov_character_id": None,
+            "setup_character_ids": [],
             "setup_stage": "сбор",
             "setup_confirmed": False,
             "last_setup_message": 0,
@@ -391,6 +480,7 @@ def append_setup_message(session_id: str, req: SetupChunk):
         m["setup_confirmed"] = False
         save_meta(sd, m)
         render_setup_source(sd, m)
+        render_plot_threads(sd)
 
         return {
             "saved": True,
@@ -420,6 +510,7 @@ def finalize_setup(session_id: str, req: FinalizeSetup):
         write(sd / "novel.md", (req.novel or tpl("novel.md")).rstrip() + "\n")
         write(sd / "novel_rules.md", (req.novel_rules or tpl("novel_rules.md")).rstrip() + "\n")
         write(sd / "hidden_lore.md", (req.hidden_lore or tpl("hidden_lore.md")).rstrip() + "\n")
+        write(sd / "plot_threads_base.md", req.plot_threads.rstrip() + "\n" if req.plot_threads else "")
 
         chars_root = sd / "characters"
         for child in list(chars_root.iterdir()):
@@ -432,6 +523,7 @@ def finalize_setup(session_id: str, req: FinalizeSetup):
             add_character(sd, ch)
 
         m["pov_character_id"] = req.pov_character_id
+        m["setup_character_ids"] = ids
         m["setup_stage"] = "готово"
         m["setup_confirmed"] = True
         m["last_checked_setup_message"] = m.get("last_setup_message", 0)
@@ -463,7 +555,7 @@ def save_opening_scene(session_id: str, req: OpeningScene):
     op = sd / "opening_scene.json"
 
     with lock(sd):
-        m = jread(mp)
+        m = sync_meta_from_receipts(sd, jread(mp))
         if m.get("setup_stage") != "готово" or not m.get("setup_confirmed"):
             fail(409, "setup is not ready")
         if m.get("last_saved_turn", 0) > 0:
@@ -485,6 +577,8 @@ def save_opening_scene(session_id: str, req: OpeningScene):
                 m[key] = val
         save_meta(sd, m)
         render_recent(sd, m)
+        render_continuity(sd, m)
+        render_plot_threads(sd)
         return {"saved": True, "idempotent": False}
 
 
@@ -513,6 +607,8 @@ def save_turn(session_id: str, req: Turn):
             if old["status"] == "committed":
                 render_recent(sd, m)
                 render_chronology(sd, m)
+                render_continuity(sd, m)
+                render_plot_threads(sd)
                 refresh_character_files(sd)
                 return {
                     "saved": True,
@@ -550,11 +646,6 @@ def save_turn(session_id: str, req: Turn):
             if not cdir(sd, ch.character_id).exists():
                 add_character(sd, ch, replay=True)
 
-        if req.continuity is not None:
-            write(sd / "continuity.md", req.continuity.rstrip() + "\n")
-        if req.plot_threads is not None:
-            write(sd / "plot_threads.md", req.plot_threads.rstrip() + "\n")
-
         note = req.chronology_note.strip()
         fragment = f"### Ход {req.turn_number}\n{note}\n" if note else ""
         write(sd / "chronology_fragments" / f"{req.turn_number:08d}.md", fragment)
@@ -569,6 +660,8 @@ def save_turn(session_id: str, req: Turn):
         jwrite(rp, {"status": "committed", "hash": digest, "payload": payload})
         render_recent(sd, m)
         render_chronology(sd, m)
+        render_continuity(sd, m)
+        render_plot_threads(sd)
         refresh_character_files(
             sd,
             list(req.knowledge_updates)
@@ -640,14 +733,15 @@ def state(session_id: str):
         fail(404, "session not found")
 
     with lock(sd):
-        m = jread(mp)
+        m = sync_meta_from_receipts(sd, jread(mp))
         setup_source = render_setup_source(sd, m)
         recent = render_recent(sd, m)
         chronology = render_chronology(sd, m)
-        refresh_character_files(sd)
+        continuity = render_continuity(sd, m)
+        plot_threads = render_plot_threads(sd)
+        chars = active_character_ids(sd, m)
+        refresh_character_files(sd, chars)
         save_meta(sd, m)
-
-        chars = sorted(p.name for p in (sd / "characters").iterdir() if p.is_dir())
         opening = None
         if (sd / "opening_scene.json").exists():
             opening = jread(sd / "opening_scene.json")["payload"]["scene_text"]
@@ -660,8 +754,8 @@ def state(session_id: str):
             "hidden_lore": (sd / "hidden_lore.md").read_text(encoding="utf-8"),
             "opening_scene": opening,
             "chronology": chronology,
-            "continuity": (sd / "continuity.md").read_text(encoding="utf-8"),
-            "plot_threads": (sd / "plot_threads.md").read_text(encoding="utf-8"),
+            "continuity": continuity,
+            "plot_threads": plot_threads,
             "recent_turns": recent,
             "characters": chars,
             "compaction_due": (
@@ -681,6 +775,9 @@ def character_state(session_id: str, character_id: str):
         fail(404, "session not found")
 
     with lock(sd):
+        m = sync_meta_from_receipts(sd, jread(mp))
+        if character_id not in active_character_ids(sd, m):
+            fail(404, "character not found")
         d = cdir(sd, character_id)
         if not d.exists():
             fail(404, "character not found")
