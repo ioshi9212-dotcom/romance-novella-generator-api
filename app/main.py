@@ -359,7 +359,6 @@ def render_cast_registry(sd: Path, m):
             x for x in [card_field(card, "Имя"), card_field(card, "Фамилия")] if x
         ).strip() or cid
         role = card_field(card, "Роль в истории")
-        dosage = card_field(card, "Дозировка появления")
         goal = card_field(card, "Личная цель")
         function = card_field(card, "Режиссёрская функция в истории")
 
@@ -410,7 +409,6 @@ def render_cast_registry(sd: Path, m):
                 f"## {name} / {cid}",
                 "",
                 f"Роль в истории: {role}",
-                f"Дозировка появления: {dosage}",
                 f"Личная цель: {goal}",
                 f"Режиссёрская функция: {function}",
                 "",
