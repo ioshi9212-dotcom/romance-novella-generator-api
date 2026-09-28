@@ -24,6 +24,7 @@ app = FastAPI(title="Novel AI Memory API", version="0.2.0")
 class Character(BaseModel):
     character_id: str = Field(min_length=1, max_length=80)
     card: str = ""
+    knowledge_start: str = ""
     relationship_start: str = ""
 
 
@@ -200,6 +201,7 @@ def add_character(sd: Path, ch: Character, replay=False):
 
     profile = {
         "character_id": ch.character_id,
+        "knowledge_start": ch.knowledge_start,
         "relationship_start": ch.relationship_start,
     }
     jwrite(d / "profile.json", profile)
@@ -250,6 +252,11 @@ def render_character_knowledge(sd: Path, cid: str):
         fail(404, "character not found")
     base = tpl("knowledge.md").replace("Персонаж:\n", f"Персонаж: {cid}\n", 1).rstrip()
     parts = [base]
+    profile_path = d / "profile.json"
+    if profile_path.exists():
+        start = jread(profile_path).get("knowledge_start", "")
+        if start:
+            parts.append(f"\n\n## На старте истории\n{start}")
     for r in turn_receipts(sd):
         p = r["payload"]
         text = (p.get("knowledge_updates") or {}).get(cid)
@@ -544,6 +551,8 @@ def finalize_setup(session_id: str, req: FinalizeSetup):
         ids = [ch.character_id for ch in req.characters]
         if len(ids) != len(set(ids)):
             fail(400, "duplicate character_id")
+        if req.pov_character_id and req.pov_character_id not in ids:
+            fail(400, "pov_character_id must be one of characters")
 
         write(sd / "novel.md", (req.novel or tpl("novel.md")).rstrip() + "\n")
         write(sd / "novel_rules.md", (req.novel_rules or tpl("novel_rules.md")).rstrip() + "\n")
