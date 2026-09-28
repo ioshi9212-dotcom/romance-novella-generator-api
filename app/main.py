@@ -256,11 +256,19 @@ def sync_meta_from_receipts(sd: Path, m):
     committed = turn_receipts(sd)
     m["last_saved_turn"] = committed[-1]["payload"]["turn_number"] if committed else 0
 
+    opening_path = sd / "opening_scene.json"
+    m["opening_scene_saved"] = (
+        opening_path.exists()
+        and jread(opening_path).get("status") == "committed"
+    )
+
+    compacted = sorted((sd / "chronology_compactions").glob("*.md"))
+    m["last_compaction_turn"] = int(compacted[-1].stem) if compacted else 0
+
     # Время и дата восстанавливаются только из подтверждённых записей.
     for key in ("game_day", "world_date", "world_time"):
         value = None
-        opening_path = sd / "opening_scene.json"
-        if opening_path.exists():
+        if m["opening_scene_saved"]:
             value = jread(opening_path)["payload"].get(key)
         for r in committed:
             candidate = r["payload"].get(key)
@@ -533,6 +541,7 @@ def finalize_setup(session_id: str, req: FinalizeSetup):
 
         save_meta(sd, m)
         render_setup_source(sd, m)
+        render_plot_threads(sd)
 
         return {
             "finalized": True,
@@ -594,7 +603,7 @@ def save_turn(session_id: str, req: Turn):
     rp = sd / "turn_receipts" / f"{req.turn_number:08d}.json"
 
     with lock(sd):
-        m = jread(mp)
+        m = sync_meta_from_receipts(sd, jread(mp))
         if m.get("setup_stage") != "готово" or not m.get("setup_confirmed"):
             fail(409, "setup is not ready")
         if not m.get("opening_scene_saved"):
@@ -609,7 +618,7 @@ def save_turn(session_id: str, req: Turn):
                 render_chronology(sd, m)
                 render_continuity(sd, m)
                 render_plot_threads(sd)
-                refresh_character_files(sd)
+                refresh_character_files(sd, active_character_ids(sd, m))
                 return {
                     "saved": True,
                     "idempotent": True,
@@ -628,7 +637,7 @@ def save_turn(session_id: str, req: Turn):
             if req.turn_number != m["last_saved_turn"] + 1:
                 fail(409, f"expected turn {m['last_saved_turn'] + 1}")
 
-            existing = {p.name for p in (sd / "characters").iterdir() if p.is_dir()}
+            existing = set(active_character_ids(sd, m))
             new = [x.character_id for x in req.new_characters]
             if len(new) != len(set(new)):
                 fail(400, "duplicate new character_id")
