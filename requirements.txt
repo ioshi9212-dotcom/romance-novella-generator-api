@@ -1,0 +1,1 @@
+fastapi\nuvicorn[standard]\npydantic>=2,<3\n
