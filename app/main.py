@@ -66,6 +66,7 @@ class Turn(BaseModel):
     plot_threads: Optional[str] = None
     knowledge_updates: Dict[str, str] = Field(default_factory=dict)
     relationship_updates: Dict[str, str] = Field(default_factory=dict)
+    character_updates: Dict[str, str] = Field(default_factory=dict)
     new_characters: List[Character] = Field(default_factory=list)
     game_day: Optional[str] = None
     world_date: Optional[str] = None
@@ -193,15 +194,16 @@ def add_character(sd: Path, ch: Character, replay=False):
     d.mkdir(parents=True, exist_ok=True)
 
     if ch.card:
-        write(d / "card.md", ch.card.rstrip() + "\n")
-    elif not (d / "card.md").exists():
-        write(d / "card.md", tpl("character.md"))
+        write(d / "card_base.md", ch.card.rstrip() + "\n")
+    elif not (d / "card_base.md").exists():
+        write(d / "card_base.md", tpl("character.md"))
 
     profile = {
         "character_id": ch.character_id,
         "relationship_start": ch.relationship_start,
     }
     jwrite(d / "profile.json", profile)
+    render_character_card(sd, ch.character_id)
     render_character_knowledge(sd, ch.character_id)
     render_character_relationship(sd, ch.character_id)
 
@@ -213,6 +215,33 @@ def turn_receipts(sd: Path):
         if x.get("status") == "committed":
             out.append(x)
     return out
+
+
+def render_character_card(sd: Path, cid: str):
+    d = cdir(sd, cid)
+    if not d.exists():
+        fail(404, "character not found")
+
+    base_path = d / "card_base.md"
+    if base_path.exists():
+        base = base_path.read_text(encoding="utf-8").rstrip()
+    elif (d / "card.md").exists():
+        base = (d / "card.md").read_text(encoding="utf-8").rstrip()
+        write(base_path, base + "\n")
+    else:
+        base = tpl("character.md").rstrip()
+        write(base_path, base + "\n")
+
+    parts = [base]
+    for r in turn_receipts(sd):
+        p = r["payload"]
+        text = (p.get("character_updates") or {}).get(cid)
+        if text:
+            parts.append(f"\n\n### Дополнение после хода {p['turn_number']}\n{text}")
+
+    result = "".join(parts).rstrip() + "\n"
+    write(d / "card.md", result)
+    return result
 
 
 def render_character_knowledge(sd: Path, cid: str):
@@ -389,6 +418,7 @@ def refresh_character_files(sd: Path, character_ids=None):
         character_ids = [p.name for p in (sd / "characters").iterdir() if p.is_dir()]
     for cid in sorted(set(character_ids)):
         if cdir(sd, cid).exists():
+            render_character_card(sd, cid)
             render_character_knowledge(sd, cid)
             render_character_relationship(sd, cid)
 
@@ -645,7 +675,11 @@ def save_turn(session_id: str, req: Turn):
                 fail(409, "new character already exists")
 
             allowed = existing | set(new)
-            bad = (set(req.knowledge_updates) | set(req.relationship_updates)) - allowed
+            bad = (
+                set(req.knowledge_updates)
+                | set(req.relationship_updates)
+                | set(req.character_updates)
+            ) - allowed
             if bad:
                 fail(400, f"unknown character: {sorted(bad)[0]}")
 
@@ -675,6 +709,7 @@ def save_turn(session_id: str, req: Turn):
             sd,
             list(req.knowledge_updates)
             + list(req.relationship_updates)
+            + list(req.character_updates)
             + [x.character_id for x in req.new_characters],
         )
 
@@ -791,11 +826,12 @@ def character_state(session_id: str, character_id: str):
         if not d.exists():
             fail(404, "character not found")
 
+        card = render_character_card(sd, character_id)
         knowledge = render_character_knowledge(sd, character_id)
         relationship = render_character_relationship(sd, character_id)
         return {
             "character_id": character_id,
-            "card": (d / "card.md").read_text(encoding="utf-8"),
+            "card": card,
             "knowledge": knowledge,
             "relationship": relationship,
         }
