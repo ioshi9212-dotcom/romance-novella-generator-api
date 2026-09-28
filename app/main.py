@@ -68,6 +68,10 @@ class Turn(BaseModel):
     knowledge_updates: Dict[str, str] = Field(default_factory=dict)
     relationship_updates: Dict[str, str] = Field(default_factory=dict)
     character_updates: Dict[str, str] = Field(default_factory=dict)
+    present_characters: List[str] = Field(default_factory=list)
+    remote_characters: List[str] = Field(default_factory=list)
+    meaningful_character_actions: Dict[str, str] = Field(default_factory=dict)
+    cast_updates: Dict[str, str] = Field(default_factory=dict)
     new_characters: List[Character] = Field(default_factory=list)
     game_day: Optional[str] = None
     world_date: Optional[str] = None
@@ -323,6 +327,118 @@ def active_character_ids(sd: Path, m):
     return sorted(ids)
 
 
+def game_day_number(value):
+    if value is None:
+        return None
+    match = re.search(r"\d+", str(value))
+    return int(match.group(0)) if match else None
+
+
+def card_field(text: str, label: str) -> str:
+    for line in str(text or "").splitlines():
+        if line.strip().startswith(label + ":"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def render_cast_registry(sd: Path, m):
+    current_turn = int(m.get("last_saved_turn", 0) or 0)
+    current_day = game_day_number(m.get("game_day"))
+    pov_id = str(m.get("pov_character_id") or "")
+    rows = []
+
+    for cid in active_character_ids(sd, m):
+        if cid == pov_id:
+            continue
+        d = cdir(sd, cid)
+        if not d.exists():
+            continue
+
+        card = render_character_card(sd, cid)
+        name = " ".join(
+            x for x in [card_field(card, "Имя"), card_field(card, "Фамилия")] if x
+        ).strip() or cid
+        role = card_field(card, "Роль в истории")
+        goal = card_field(card, "Личная цель")
+        function = card_field(card, "Режиссёрская функция в истории")
+
+        last_physical = None
+        last_participation = None
+        last_meaningful = None
+        last_meaningful_text = ""
+        last_cast_update = ""
+
+        for receipt in turn_receipts(sd):
+            p = receipt["payload"]
+            turn_no = int(p["turn_number"])
+            day = game_day_number(p.get("game_day"))
+            present = set(p.get("present_characters") or [])
+            remote = set(p.get("remote_characters") or [])
+            meaningful = p.get("meaningful_character_actions") or {}
+            cast_updates = p.get("cast_updates") or {}
+
+            if cid in present:
+                last_physical = (turn_no, day)
+                last_participation = (turn_no, day)
+            elif cid in remote:
+                last_participation = (turn_no, day)
+
+            if cid in meaningful and meaningful[cid]:
+                last_meaningful = (turn_no, day)
+                last_meaningful_text = str(meaningful[cid])
+
+            if cid in cast_updates and cast_updates[cid]:
+                last_cast_update = str(cast_updates[cid])
+
+        def stamp(value):
+            if not value:
+                return "ещё не было"
+            turn_no, day = value
+            return f"ход {turn_no}" + (f", игровой день {day}" if day is not None else "")
+
+        def since_turn(value):
+            return "—" if not value else str(max(0, current_turn - value[0]))
+
+        def since_day(value):
+            if not value or current_day is None or value[1] is None:
+                return "—"
+            return str(max(0, current_day - value[1]))
+
+        rows.append(
+            "\n".join([
+                f"## {name} / {cid}",
+                "",
+                f"Роль в истории: {role}",
+                f"Личная цель: {goal}",
+                f"Режиссёрская функция: {function}",
+                "",
+                f"Последнее физическое появление: {stamp(last_physical)}",
+                f"Последнее участие вообще: {stamp(last_participation)}",
+                f"Последнее значимое действие: {stamp(last_meaningful)}"
+                + (f" — {last_meaningful_text}" if last_meaningful_text else ""),
+                "",
+                f"Ходов с физического появления: {since_turn(last_physical)}",
+                f"Игровых дней с физического появления: {since_day(last_physical)}",
+                f"Ходов со значимого действия: {since_turn(last_meaningful)}",
+                f"Игровых дней со значимого действия: {since_day(last_meaningful)}",
+                "",
+                f"Что у персонажа сейчас незакрыто / причина вернуться: {last_cast_update or 'смотреть цель, роль и открытые крючки'}",
+            ])
+        )
+
+    intro = (
+        "# Реестр персонажей\n\n"
+        "Правило: это подсказка режиссёру о постоянном касте, а не таймер обязательных камео. "
+        "Долгое отсутствие нужно учитывать вместе с ролью, целью и открытыми линиями персонажа. "
+        "Отношения с POV не определяют, имеет ли персонаж право вернуться.\n"
+    )
+    text = intro + ("\n\n" + "\n\n".join(rows) if rows else "\n\nПостоянных NPC пока нет.\n")
+    if not text.endswith("\n"):
+        text += "\n"
+    write(sd / "cast_registry.md", text)
+    return text
+
+
 def render_continuity(sd: Path, m):
     current = None
     events = []
@@ -459,6 +575,7 @@ def create_session(req: NewSession):
         write(sd / "continuity.md", tpl("continuity.md"))
         write(sd / "plot_threads_base.md", "")
         write(sd / "plot_threads.md", tpl("plot_threads.md"))
+        write(sd / "cast_registry.md", tpl("cast_registry.md"))
         write(sd / "chronology.md", "# Хронология\n")
         write(sd / "recent_turns.md", "# Последние 15 ходов\n")
 
@@ -526,6 +643,7 @@ def append_setup_message(session_id: str, req: SetupChunk):
         save_meta(sd, m)
         render_setup_source(sd, m)
         render_plot_threads(sd)
+        render_cast_registry(sd, m)
 
         return {
             "saved": True,
@@ -657,6 +775,7 @@ def save_turn(session_id: str, req: Turn):
                 render_chronology(sd, m)
                 render_continuity(sd, m)
                 render_plot_threads(sd)
+                render_cast_registry(sd, m)
                 refresh_character_files(sd, active_character_ids(sd, m))
                 return {
                     "saved": True,
@@ -688,9 +807,16 @@ def save_turn(session_id: str, req: Turn):
                 set(req.knowledge_updates)
                 | set(req.relationship_updates)
                 | set(req.character_updates)
+                | set(req.present_characters)
+                | set(req.remote_characters)
+                | set(req.meaningful_character_actions)
+                | set(req.cast_updates)
             ) - allowed
             if bad:
                 fail(400, f"unknown character: {sorted(bad)[0]}")
+            both = set(req.present_characters) & set(req.remote_characters)
+            if both:
+                fail(400, f"character cannot be present and remote: {sorted(both)[0]}")
 
             jwrite(rp, {"status": "pending", "hash": digest, "payload": payload})
 
@@ -714,6 +840,7 @@ def save_turn(session_id: str, req: Turn):
         render_chronology(sd, m)
         render_continuity(sd, m)
         render_plot_threads(sd)
+        render_cast_registry(sd, m)
         refresh_character_files(
             sd,
             list(req.knowledge_updates)
@@ -792,6 +919,7 @@ def state(session_id: str):
         chronology = render_chronology(sd, m)
         continuity = render_continuity(sd, m)
         plot_threads = render_plot_threads(sd)
+        cast_registry = render_cast_registry(sd, m)
         chars = active_character_ids(sd, m)
         refresh_character_files(sd, chars)
         save_meta(sd, m)
@@ -809,6 +937,7 @@ def state(session_id: str):
             "chronology": chronology,
             "continuity": continuity,
             "plot_threads": plot_threads,
+            "cast_registry": cast_registry,
             "recent_turns": recent,
             "characters": chars,
             "compaction_due": (
