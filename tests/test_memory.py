@@ -185,3 +185,138 @@ def test_new_character_and_continuity(root):
     rel = m.character_state("test", "akira")["relationship"]
     assert "Не знаком с POV." in rel
     assert "Заинтересовался POV" in rel
+
+
+def test_continuity_keeps_current_snapshot_and_event_history(root):
+    setup_ready()
+    m.save_turn(
+        "test",
+        turn(
+            1,
+            continuity="POV стоит у двери. Liam вплотную справа. В руке POV телефон.",
+            continuity_events="POV сделала фото Liam. Фото сохранено в телефоне POV.",
+        ),
+    )
+    m.save_turn(
+        "test",
+        turn(
+            2,
+            continuity="POV сидит за столом. Liam напротив. Телефон лежит на столе.",
+            continuity_events="POV отправила фото Liam. Фото теперь есть у POV и Liam.",
+        ),
+    )
+    state = m.state("test")
+    text = state["continuity"]
+    assert "POV сидит за столом" in text
+    assert "POV стоит у двери" not in text
+    assert "Фото сохранено в телефоне POV" in text
+    assert "Фото теперь есть у POV и Liam" in text
+
+
+def test_initial_hidden_thread_survives_later_updates(root):
+    new_session()
+    m.append_setup_message("test", m.SetupChunk(message_number=1, text="История с тайной."))
+    m.finalize_setup(
+        "test",
+        m.FinalizeSetup(
+            novel="# Novel",
+            plot_threads="Тайный крючок: POV пока не знает. Должен привести к встрече.",
+            characters=[m.Character(character_id="liam")],
+        ),
+    )
+    m.save_opening_scene("test", m.OpeningScene(scene_text="Start"))
+    m.save_turn(
+        "test",
+        turn(1, plot_threads="Новый крючок: Liam договорился позвонить завтра."),
+    )
+    threads = m.state("test")["plot_threads"]
+    assert "Тайный крючок" in threads
+    assert "позвонить завтра" in threads
+
+
+def test_state_repairs_meta_and_ignores_uncommitted_turn(root):
+    setup_ready()
+    committed = turn(
+        1,
+        continuity="Канон: POV сидит.",
+        continuity_events="POV положила ключ в карман.",
+    )
+    m.save_turn("test", committed)
+
+    sd = root / "test"
+    pending = turn(
+        2,
+        continuity="НЕ КАНОН: POV уже на крыше.",
+        continuity_events="НЕ КАНОН: ключ выброшен.",
+    )
+    payload = pending.model_dump(mode="json")
+    m.jwrite(
+        sd / "turn_receipts" / "00000002.json",
+        {"status": "pending", "hash": m.digest_obj(payload), "payload": payload},
+    )
+
+    meta = m.jread(sd / "meta.json")
+    meta["last_saved_turn"] = 2
+    meta["world_time"] = "23:59"
+    m.jwrite(sd / "meta.json", meta)
+
+    state = m.state("test")
+    assert state["meta"]["last_saved_turn"] == 1
+    assert "Канон: POV сидит." in state["continuity"]
+    assert "НЕ КАНОН" not in state["continuity"]
+    assert "ключ в карман" in state["continuity"]
+
+
+def test_pending_turn_can_be_retried_and_committed(root):
+    setup_ready()
+    req = turn(
+        1,
+        continuity="POV у окна.",
+        continuity_events="POV передала письмо Liam.",
+    )
+    sd = root / "test"
+    payload = req.model_dump(mode="json")
+    m.jwrite(
+        sd / "turn_receipts" / "00000001.json",
+        {"status": "pending", "hash": m.digest_obj(payload), "payload": payload},
+    )
+    result = m.save_turn("test", req)
+    assert result["saved"] is True
+    assert m.jread(sd / "turn_receipts" / "00000001.json")["status"] == "committed"
+    assert "передала письмо" in m.state("test")["continuity"]
+
+
+def test_three_compaction_cycles_keep_all_history(root):
+    setup_ready()
+    for n in range(1, 46):
+        m.save_turn(
+            "test",
+            turn(
+                n,
+                knowledge_updates={"liam": f"Факт {n}"} if n in (3, 18, 34) else {},
+                relationship_updates={"liam": f"Изменение {n}"} if n in (7, 22, 41) else {},
+            ),
+        )
+        if n in (15, 30, 45):
+            m.compact(
+                "test",
+                m.Compact(through_turn=n, content=f"СВЁРТКА {n - 14}-{n}"),
+            )
+
+    state = m.state("test")
+    chronology = state["chronology"]
+    assert "СВЁРТКА 1-15" in chronology
+    assert "СВЁРТКА 16-30" in chronology
+    assert "СВЁРТКА 31-45" in chronology
+    assert state["meta"]["last_saved_turn"] == 45
+    assert state["meta"]["last_compaction_turn"] == 45
+
+    knowledge = m.character_state("test", "liam")["knowledge"]
+    assert "Факт 3" in knowledge
+    assert "Факт 18" in knowledge
+    assert "Факт 34" in knowledge
+
+    relationship = m.character_state("test", "liam")["relationship"]
+    assert "Изменение 7" in relationship
+    assert "Изменение 22" in relationship
+    assert "Изменение 41" in relationship
