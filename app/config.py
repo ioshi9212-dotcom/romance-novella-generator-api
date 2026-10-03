@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class Settings(BaseModel):
     data_dir: Path = Field(default=Path("./data"))
-    public_base_url: str = Field(default="https://web-production-4310e.up.railway.app")
+    public_base_url: str = Field(default="https://ai-roman-yumikofv.mia0.amvera.tech")
     packet_chunk_chars: int = Field(default=12_000, ge=4_000, le=50_000)
 
 
@@ -17,7 +17,7 @@ def get_settings() -> Settings:
         data_dir=Path(os.getenv("DATA_DIR", "./data")),
         public_base_url=os.getenv(
             "PUBLIC_BASE_URL",
-            "https://web-production-4310e.up.railway.app",
+            "https://ai-roman-yumikofv.mia0.amvera.tech",
         ).rstrip("/"),
         packet_chunk_chars=int(os.getenv("PACKET_CHUNK_CHARS", "12000")),
     )
