@@ -176,6 +176,8 @@ class WriterFirstNovellaService(NovellaService):
                 "player_visibility": card.get("player_visibility"),
                 "story_function": goals.get("story_function") or "",
                 "personal_goal": goals.get("personal") or "",
+                "toward_pov": goals.get("toward_pov") or "",
+                "possible_arc": goals.get("possible_arc") or "",
                 "immediate_goal": (
                     current_state.get("current_goal")
                     or goals.get("immediate")
@@ -183,7 +185,8 @@ class WriterFirstNovellaService(NovellaService):
                     or ""
                 ),
                 "current_state": current,
-                "agendas": agendas_by_character.get(character_id, []),
+                "agendas": agendas_by_character.get(character_id)
+                or [cls._seed_character_agenda(character)],
                 "relationship_links": cls._compact_relationship_links(
                     character.get("relationships") or {}
                 ),
