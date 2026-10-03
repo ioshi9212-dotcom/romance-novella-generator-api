@@ -135,12 +135,11 @@ def get_turn_packet_chunk(
     "/api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-characters/{character_id}/bundle",
     operation_id="getSceneCharacterBundle",
     response_model=SceneCharacterBundleChunkResponse,
-    summary="Load one known offscreen character who will enter the pending scene",
+    summary="Load one known offscreen character selected by causal cast review",
     description=(
-        "Use only after every turn-packet chunk was read and the story now causes this "
-        "already-known character to physically enter the scene. Returns only that character's "
-        "complete card, current state, knowledge and directional relationships. Read every "
-        "bundle chunk before commitTurn."
+        "Load the full dossier for a known offscreen NPC selected by cast_index to enter or "
+        "participate remotely. Read all bundle chunks before the NPC acts or speaks and before "
+        "commitTurn."
     ),
 )
 def get_scene_character_bundle(
@@ -159,7 +158,7 @@ def get_scene_character_bundle(
     "/api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-character-bundles/{bundle_id}/chunks/{chunk_index}",
     operation_id="getSceneCharacterBundleChunk",
     response_model=SceneCharacterBundleChunkResponse,
-    summary="Read the next ordered chunk of one entering character's dossier",
+    summary="Read the next ordered chunk of one selected offscreen character's dossier",
     description=(
         "Read in strict order until all_chunks_delivered is true. commitTurn remains blocked "
         "while any requested scene-character bundle is incomplete."
