@@ -27,10 +27,10 @@ app = FastAPI(
     title="Interactive Novella State Runtime",
     version="1.0.0",
     description=(
-        "Session-scoped Railway storage for a Custom GPT visual novella. "
+        "Session-scoped backend storage for a Custom GPT visual novella. "
         "The API stores state and never calls an OpenAI model."
     ),
-    servers=[{"url": settings.public_base_url, "description": "Railway production"}],
+    servers=[{"url": settings.public_base_url, "description": "Amvera production"}],
 )
 app.state.service = WriterFirstNovellaService(settings)
 
@@ -282,7 +282,7 @@ def custom_openapi() -> dict[str, Any]:
         routes=app.routes,
     )
     schema["servers"] = [
-        {"url": settings.public_base_url, "description": "Railway production"}
+        {"url": settings.public_base_url, "description": "Amvera production"}
     ]
     schema["security"] = []
     schema["components"] = schema.get("components", {})
