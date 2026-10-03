@@ -104,10 +104,7 @@ paths:
   /api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-characters/{character_id}/bundle:
     post:
       summary: Load one known offscreen character selected by causal cast review
-      description: Use only after every turn-packet chunk was read and cast_index plus current story causality give this
-        already-known character a real reason to enter the scene or actively participate through a remote channel.
-        Returns only that character's complete card, current state, knowledge and directional relationships. Read every
-        bundle chunk before the character's first significant action or line and before commitTurn.
+      description: Load the full dossier for a known offscreen NPC selected by cast_index to enter or participate remotely. Read all bundle chunks before the NPC acts or speaks and before commitTurn.
       operationId: getSceneCharacterBundle
       parameters:
       - name: session_id
