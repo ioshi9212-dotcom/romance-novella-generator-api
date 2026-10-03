@@ -72,6 +72,141 @@ class WriterFirstNovellaService(NovellaService):
                 result[key] = cls._clean(value)
         return result
 
+    @staticmethod
+    def _contains_character_ref(value: Any, character_id: str) -> bool:
+        if isinstance(value, str):
+            return value == character_id
+        if isinstance(value, dict):
+            return any(
+                WriterFirstNovellaService._contains_character_ref(item, character_id)
+                for item in value.values()
+            )
+        if isinstance(value, list):
+            return any(
+                WriterFirstNovellaService._contains_character_ref(item, character_id)
+                for item in value
+            )
+        return False
+
+    @classmethod
+    def _compact_relationship_links(
+        cls, relationships: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for relation in relationships.get("relations", []):
+            if not isinstance(relation, dict):
+                continue
+            row = {
+                key: cls._clean(relation.get(key))
+                for key in (
+                    "target_character_id",
+                    "relationship_type",
+                    "current_dynamic",
+                    "unresolved_between_them",
+                    "dimensions",
+                )
+                if relation.get(key) not in (None, "", [])
+            }
+            if row:
+                result.append(row)
+        return result
+
+    @classmethod
+    def _causal_cast_index(
+        cls,
+        before_state: dict[str, Any],
+        *,
+        pov_character_id: str | None,
+    ) -> dict[str, Any]:
+        director_plan = before_state.get("director_plan", {})
+        active_direction = cls._active_story_direction(director_plan)
+        agendas_by_character: dict[str, list[dict[str, Any]]] = {}
+        for agenda in active_direction.get("character_agendas", []):
+            if not isinstance(agenda, dict):
+                continue
+            character_id = str(agenda.get("character_id") or "")
+            if character_id:
+                agendas_by_character.setdefault(character_id, []).append(
+                    cls._clean(agenda)
+                )
+
+        active_threads = [
+            item
+            for item in active_direction.get("active_threads", [])
+            if isinstance(item, dict)
+        ]
+
+        rows: list[dict[str, Any]] = []
+        for character in before_state.get("characters", []):
+            if not cls._is_permanent_npc(character, pov_character_id):
+                continue
+            character_id = str(character.get("character_id") or "")
+            card = character.get("card") or {}
+            identity = card.get("identity") or {}
+            goals = card.get("goals") or {}
+            current_state = character.get("current_state") or {}
+
+            current = {
+                key: cls._clean(current_state.get(key))
+                for key in (
+                    "current_location_id",
+                    "current_location",
+                    "current_goal",
+                    "nearest_intention",
+                    "current_activity",
+                    "offscreen_activity",
+                    "available_now",
+                    "condition",
+                    "mood",
+                    "schedule",
+                )
+                if current_state.get(key) not in (None, "", [])
+            }
+            related_threads = [
+                cls._clean(thread)
+                for thread in active_threads
+                if cls._contains_character_ref(thread, character_id)
+            ]
+
+            row = {
+                "character_id": character_id,
+                "name": identity.get("name") or character_id,
+                "role": identity.get("role") or "",
+                "story_status": card.get("story_status"),
+                "player_visibility": card.get("player_visibility"),
+                "story_function": goals.get("story_function") or "",
+                "personal_goal": goals.get("personal") or "",
+                "immediate_goal": (
+                    current_state.get("current_goal")
+                    or goals.get("immediate")
+                    or card.get("immediate_scene_goal")
+                    or ""
+                ),
+                "current_state": current,
+                "agendas": agendas_by_character.get(character_id, []),
+                "relationship_links": cls._compact_relationship_links(
+                    character.get("relationships") or {}
+                ),
+                "active_threads": related_threads,
+            }
+            rows.append(cls._clean(row))
+
+        return {
+            "instruction": (
+                "Causal director index for the complete permanent NPC cast. Review every entry "
+                "before deciding who can affect the next scene. This is NOT a rotation queue: "
+                "never choose a character because they have been absent for many turns and do not "
+                "create cameo quotas. Choose only from character role, story function, goals, "
+                "current activity/location, relationships with POV or other NPCs, active agenda, "
+                "threads, obligations and consequences. POV does not need to summon or search for "
+                "a character: when an NPC's own causal path naturally reaches the current or next "
+                "scene, the world may bring them in. It is valid to choose nobody. Before an "
+                "offscreen known character actually enters or actively contacts the scene, load "
+                "that character's complete scene bundle."
+            ),
+            "characters": rows,
+        }
+
     @classmethod
     def _select_story_memory(
         cls,
@@ -400,6 +535,10 @@ class WriterFirstNovellaService(NovellaService):
                         before_state.get("director_plan", {})
                     ),
                 },
+                "cast_index": self._causal_cast_index(
+                    before_state,
+                    pov_character_id=pov_character_id,
+                ),
                 "state": packet_state,
                 "story_memory": story_memory,
                 "recent_scene_history": recent_scene_history,
@@ -417,10 +556,16 @@ class WriterFirstNovellaService(NovellaService):
                 "instruction": (
                     "Write the next piece of the novel from the current moment. story_memory is "
                     "compact continuity; recent_scene_history preserves the immediate rhythm and "
-                    "dialogue. Do not reconstruct or audit the archive during a normal turn. "
-                    "story_direction is an outline, not a list of beats that must fire now. "
-                    "Write the scene first. After it is complete, commit only facts and state "
-                    "changes that the written scene actually established."
+                    "dialogue. Before choosing participants, review cast_index as the causal map "
+                    "of the full permanent NPC cast. Do not rotate characters by absence and do "
+                    "not wait for POV to call them: use an offscreen NPC only when their own role, "
+                    "goal, activity, relationships, agenda, thread, location or consequence gives "
+                    "a real path into the scene. It is valid for no new NPC to enter. If an "
+                    "offscreen known NPC is selected, load their full bundle before using them. "
+                    "Do not reconstruct or audit the archive during a normal turn. story_direction "
+                    "is an outline, not a list of beats that must fire now. Write the scene first. "
+                    "After it is complete, commit only facts and state changes that the written "
+                    "scene actually established."
                 ),
             }
             pending = {
