@@ -77,6 +77,9 @@ CARD_LEVEL_ORDER = {
     "player_defined": 4,
 }
 
+PERMANENT_CAST_LEVELS = {"recurring", "important", "player_defined"}
+TERMINAL_CAST_STATUSES = {"dead", "retired"}
+
 
 def _stable_card_payload(card: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -148,6 +151,77 @@ class NovellaService:
             )
         return session
 
+    @staticmethod
+    def _is_permanent_npc(
+        character: dict[str, Any], pov_character_id: str | None
+    ) -> bool:
+        character_id = str(character.get("character_id") or "")
+        if not character_id or character_id == str(pov_character_id or ""):
+            return False
+        card = character.get("card") or {}
+        return (
+            card.get("record_status") == "active"
+            and card.get("card_level") in PERMANENT_CAST_LEVELS
+            and card.get("story_status") not in TERMINAL_CAST_STATUSES
+        )
+
+    @staticmethod
+    def _seed_character_agenda(character: dict[str, Any]) -> dict[str, Any]:
+        card = character.get("card") or {}
+        goals = card.get("goals") or {}
+        current_state = character.get("current_state") or {}
+        current_goal = (
+            current_state.get("current_goal")
+            or goals.get("immediate")
+            or goals.get("personal")
+            or card.get("immediate_scene_goal")
+            or "действовать по собственной цели"
+        )
+        next_action = (
+            current_state.get("nearest_intention")
+            or current_state.get("offscreen_activity")
+            or current_state.get("current_activity")
+            or goals.get("immediate")
+            or current_goal
+        )
+        return {
+            "character_id": character["character_id"],
+            "current_goal": str(current_goal),
+            "next_plausible_action": str(next_action),
+            "conditions": [],
+            "status": "active",
+            "source": "auto_seed_from_character",
+        }
+
+    @classmethod
+    def _ensure_character_agendas(
+        cls,
+        director_plan: dict[str, Any],
+        characters: list[dict[str, Any]],
+        pov_character_id: str | None,
+    ) -> dict[str, Any]:
+        plan = deepcopy(director_plan or {})
+        agendas = [
+            deepcopy(item)
+            for item in plan.get("character_agendas", [])
+            if isinstance(item, dict)
+        ]
+        agenda_ids = {
+            str(item.get("character_id"))
+            for item in agendas
+            if item.get("character_id")
+        }
+        for character in characters:
+            if not cls._is_permanent_npc(character, pov_character_id):
+                continue
+            character_id = str(character.get("character_id") or "")
+            if character_id in agenda_ids:
+                continue
+            agendas.append(cls._seed_character_agenda(character))
+            agenda_ids.add(character_id)
+        plan["character_agendas"] = agendas
+        return plan
+
     def create_session(self, request: CreateSessionRequest) -> dict[str, Any]:
         if not _is_positive_confirmation(request.player_confirmation):
             raise ServiceError(
@@ -155,15 +229,34 @@ class NovellaService:
                 "PLAYER_CONFIRMATION_REQUIRED",
                 "createSession is forbidden until the player positively writes «подтверждаю»",
             )
+        character_payloads = [
+            item.model_dump(mode="json") for item in request.characters
+        ]
+        pov_character_id = str(request.novel.get("pov_character_id") or "")
+        director_plan_payload = self._ensure_character_agendas(
+            request.director_plan.model_dump(mode="json"),
+            character_payloads,
+            pov_character_id,
+        )
         if request.runtime_contract_version == "2.0":
-            missing_plan_sections = [
-                name
-                for name, values in (
-                    ("active_threads", request.director_plan.active_threads),
-                    ("character_agendas", request.director_plan.character_agendas),
+            permanent_npc_ids = {
+                item["character_id"]
+                for item in character_payloads
+                if self._is_permanent_npc(item, pov_character_id)
+            }
+            agenda_ids = {
+                str(item.get("character_id"))
+                for item in director_plan_payload.get("character_agendas", [])
+                if isinstance(item, dict) and item.get("character_id")
+            }
+            missing_plan_sections = []
+            if not any(bool(item) for item in director_plan_payload.get("active_threads", [])):
+                missing_plan_sections.append("active_threads")
+            missing_agendas = sorted(permanent_npc_ids - agenda_ids)
+            if missing_agendas:
+                missing_plan_sections.append(
+                    "character_agendas:" + ",".join(missing_agendas)
                 )
-                if not any(bool(item) for item in values)
-            ]
             if missing_plan_sections:
                 raise ServiceError(
                     422,
@@ -255,8 +348,13 @@ class NovellaService:
             },
         }
         for key, path in BASE_STATE_PATHS.items():
+            value = (
+                director_plan_payload
+                if key == "director_plan"
+                else getattr(request, key)
+            )
             writes[path] = _stamp_document(
-                getattr(request, key),
+                value,
                 session_id=session_id,
                 state_revision=1,
                 updated_turn=0,
@@ -1448,6 +1546,20 @@ class NovellaService:
                 state_revision=new_state_revision,
                 updated_turn=turn_number,
             )
+            pov_character_id = after_state.get("novel", {}).get("pov_character_id")
+            current_director_plan = after_state.get("director_plan", {})
+            ensured_director_plan = self._ensure_character_agendas(
+                current_director_plan,
+                after_state.get("characters", []),
+                pov_character_id,
+            )
+            if ensured_director_plan != current_director_plan:
+                after_state["director_plan"] = _stamp_document(
+                    ensured_director_plan,
+                    session_id=session_id,
+                    state_revision=new_state_revision,
+                    updated_turn=turn_number,
+                )
             world_state = deepcopy(after_state.get("world_state", {}))
             world_state["story_datetime"] = request.story_datetime
             after_state["world_state"] = _stamp_document(
