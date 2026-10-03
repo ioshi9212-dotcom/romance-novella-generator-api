@@ -1,8 +1,8 @@
 # Novella Generator Runtime
 
-Railway-runtime для интерактивной визуальной новеллы в Custom GPT.
+Amvera-runtime для интерактивной визуальной новеллы в Custom GPT.
 
-Custom GPT пишет сцены. Railway ничего не генерирует и не вызывает OpenAI API: он
+Custom GPT пишет сцены. Amvera ничего не генерирует и не вызывает OpenAI API: он
 хранит изолированное состояние каждой новеллы, выдаёт обязательный пакет перед
 сценой и атомарно сохраняет результат хода.
 
@@ -11,14 +11,14 @@ Custom GPT пишет сцены. Railway ничего не генерирует
 - API-ключ и OpenAI API не используются.
 - В GPT Actions выбирается `Authentication: None`; в `openapi.yaml` стоит
   `security: []`.
-- До явного «подтверждаю» Railway не вызывается; `createSession` дополнительно
+- До явного «подтверждаю» Amvera не вызывается; `createSession` дополнительно
   отклоняет запрос без положительного сообщения игрока в `player_confirmation`.
-- `session_id` создаёт Railway после подтверждения; этот ID обязателен во всех
+- `session_id` создаёт Amvera после подтверждения; этот ID обязателен во всех
   последующих Actions.
 - Нет `latestSession`, общей активной сессии и списка чужих сессий.
 - Перед каждой сценой GPT получает актуальные rules, builder, state, хронологию,
   полные ходы текущего цикла и полные досье только POV и текущих участников.
-- Commit физически заблокирован, пока Railway не выдал по порядку все chunks пакета.
+- Commit физически заблокирован, пока Amvera не выдал по порядку все chunks пакета.
   Для известного отсутствующего персонажа, который входит в новую сцену, отдельно
   выдаётся только его полное досье; его chunks также обязательны.
 - Заданные игроком и важные персонажи проходят структурную проверку полной карточки;
@@ -48,7 +48,7 @@ Custom GPT пишет сцены. Railway ничего не генерирует
 
 ```text
 «начнём»
-  → вопросы и одно превью без Railway
+  → вопросы и одно превью без Amvera
   → «подтверждаю»
   → createSession
   → getTurnPacket (+ все chunks)
@@ -81,7 +81,7 @@ Backend не полагается на обещание в prompt: `getTurnPacke
 ```text
 Ход 56 · цикл 1/15
 ↻ Перед следующим ходом: прочитать актуальный state. На 15/15 — сверить последние
-15 ходов с Railway, дописать пропущенное, удалить устаревшее и сжать завершённое;
+15 ходов с Amvera, дописать пропущенное, удалить устаревшее и сжать завершённое;
 только после успешной сверки писать следующую сцену.
 ```
 
@@ -105,7 +105,7 @@ packet и отклоняет commit с неправильным footer.
 
 Схема для импорта в GPT Actions: [`openapi.yaml`](openapi.yaml).
 
-## Хранение на Railway
+## Хранение на Amvera
 
 Живые данные находятся только в volume:
 
@@ -163,16 +163,16 @@ DATA_DIR=./data .venv/bin/uvicorn app.main:app --reload
 .venv/bin/python scripts/export_openapi.py
 ```
 
-## Railway
+## Amvera
 
-1. Подключить этот репозиторий к Railway.
+1. Подключить этот репозиторий к Amvera.
 2. Подключить persistent volume к `/data`.
 3. Задать `DATA_DIR=/data`.
-4. Оставить один worker: файловые транзакции рассчитаны на один Railway service.
+4. Оставить один worker: файловые транзакции рассчитаны на один Amvera service.
 5. Проверить `GET /health`.
 
 `railway.json` и `Procfile` уже содержат команду запуска. Текущий production server
-в Action-схеме: `https://web-production-4310e.up.railway.app`. Если Railway выдаст
+в Action-схеме: `https://ai-roman-yumikofv.mia0.amvera.tech`. Если Amvera выдаст
 другой домен, изменить `PUBLIC_BASE_URL` и заново выполнить export.
 
 ## Подключение Custom GPT
