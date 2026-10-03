@@ -1,0 +1,405 @@
+openapi: 3.1.0
+info:
+  title: Novel AI Memory API
+  version: 0.2.0
+  description: Persistent memory API for the RomanAI interactive novel.
+servers:
+  - url: https://ai-roman-yumikofv.mia0.amvera.tech
+    description: Amvera production
+security: []
+
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Check backend health
+      responses:
+        '200':
+          description: Backend is available
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions:
+    post:
+      operationId: createSession
+      summary: Create a new novel session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewSession'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions/{session_id}/setup/messages:
+    post:
+      operationId: appendSetupMessage
+      summary: Save one original setup message
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetupChunk'
+      responses:
+        '200':
+          description: Setup message saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions/{session_id}/setup/finalize:
+    post:
+      operationId: finalizeSetup
+      summary: Finalize confirmed novel setup
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeSetup'
+      responses:
+        '200':
+          description: Setup finalized
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions/{session_id}/opening-scene:
+    post:
+      operationId: saveOpeningScene
+      summary: Save the opening scene
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningScene'
+      responses:
+        '200':
+          description: Opening scene saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions/{session_id}/turns:
+    post:
+      operationId: saveTurn
+      summary: Save one completed turn and its state changes
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Turn'
+      responses:
+        '200':
+          description: Turn saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions/{session_id}/chronology/compact:
+    post:
+      operationId: compactChronology
+      summary: Compact the next completed block of 15 turns
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Compact'
+      responses:
+        '200':
+          description: Chronology block compacted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions/{session_id}/state:
+    get:
+      operationId: getSessionState
+      summary: Read current session memory and causal cast registry
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Current session state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+  /sessions/{session_id}/characters/{character_id}:
+    get:
+      operationId: getCharacterState
+      summary: Read one character card knowledge and relationships
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: character_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Character state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      security: []
+
+components:
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    Character:
+      type: object
+      required:
+        - character_id
+      properties:
+        character_id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        card:
+          type: string
+          default: ''
+        knowledge_start:
+          type: string
+          default: ''
+        relationship_start:
+          type: string
+          default: ''
+
+    NewSession:
+      type: object
+      properties:
+        session_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        title:
+          type: string
+          default: Новая новелла
+
+    SetupChunk:
+      type: object
+      required:
+        - message_number
+        - text
+      properties:
+        message_number:
+          type: integer
+          minimum: 1
+        text:
+          type: string
+
+    FinalizeSetup:
+      type: object
+      required:
+        - novel
+      properties:
+        novel:
+          type: string
+        novel_rules:
+          type: string
+          default: ''
+        hidden_lore:
+          type: string
+          default: ''
+        plot_threads:
+          type: string
+          default: ''
+        pov_character_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        characters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Character'
+          default: []
+        audit:
+          type: boolean
+          default: false
+
+    OpeningScene:
+      type: object
+      required:
+        - scene_text
+      properties:
+        scene_text:
+          type: string
+        continuity:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        continuity_events:
+          type: string
+          default: ''
+        game_day:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        world_date:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        world_time:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+
+    Turn:
+      type: object
+      required:
+        - turn_number
+        - user_text
+        - scene_text
+      properties:
+        turn_number:
+          type: integer
+          minimum: 1
+        user_text:
+          type: string
+        scene_text:
+          type: string
+        chronology_note:
+          type: string
+          default: ''
+        continuity:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        continuity_events:
+          type: string
+          default: ''
+        plot_threads:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        knowledge_updates:
+          type: object
+          additionalProperties:
+            type: string
+          default: {}
+        relationship_updates:
+          type: object
+          additionalProperties:
+            type: string
+          default: {}
+        character_updates:
+          type: object
+          additionalProperties:
+            type: string
+          default: {}
+        present_characters:
+          type: array
+          items:
+            type: string
+          default: []
+        remote_characters:
+          type: array
+          items:
+            type: string
+          default: []
+        meaningful_character_actions:
+          type: object
+          additionalProperties:
+            type: string
+          default: {}
+        cast_updates:
+          type: object
+          additionalProperties:
+            type: string
+          description: Current unresolved goal, plan or causal reason for a persistent NPC.
+          default: {}
+        new_characters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Character'
+          default: []
+        game_day:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        world_date:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+        world_time:
+          anyOf:
+            - type: string
+            - type: 'null'
+          default: null
+
+    Compact:
+      type: object
+      required:
+        - through_turn
+        - content
+      properties:
+        through_turn:
+          type: integer
+          minimum: 15
+        content:
+          type: string
+          minLength: 1

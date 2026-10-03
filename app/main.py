@@ -18,7 +18,19 @@ ROOT = Path(os.getenv("DATA_DIR", "data")).resolve()
 TEMPLATES = Path(__file__).resolve().parent.parent / "state_templates"
 SAFE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
-app = FastAPI(title="Novel AI Memory API", version="0.2.0")
+app = FastAPI(
+    title="Novel AI Memory API",
+    version="0.2.0",
+    servers=[
+        {
+            "url": os.getenv(
+                "PUBLIC_BASE_URL",
+                "https://ai-roman-yumikofv.mia0.amvera.tech",
+            ).rstrip("/"),
+            "description": "Amvera production",
+        }
+    ],
+)
 
 
 class Character(BaseModel):
@@ -342,10 +354,9 @@ def card_field(text: str, label: str) -> str:
 
 
 def render_cast_registry(sd: Path, m):
-    current_turn = int(m.get("last_saved_turn", 0) or 0)
-    current_day = game_day_number(m.get("game_day"))
     pov_id = str(m.get("pov_character_id") or "")
     rows = []
+    receipts = turn_receipts(sd)
 
     for cid in active_character_ids(sd, m):
         if cid == pov_id:
@@ -360,77 +371,58 @@ def render_cast_registry(sd: Path, m):
         ).strip() or cid
         role = card_field(card, "Роль в истории")
         goal = card_field(card, "Личная цель")
+        wants_now = card_field(card, "Чего хочет сейчас")
         function = card_field(card, "Режиссёрская функция в истории")
+        work = card_field(card, "Работа / учёба")
+        home = card_field(card, "Где живёт")
+        start_link = card_field(card, "Связь с POV на старте")
 
-        last_physical = None
-        last_participation = None
-        last_meaningful = None
-        last_meaningful_text = ""
-        last_cast_update = ""
+        current_agenda = ""
+        last_meaningful = ""
+        latest_relationship = ""
 
-        for receipt in turn_receipts(sd):
+        for receipt in receipts:
             p = receipt["payload"]
-            turn_no = int(p["turn_number"])
-            day = game_day_number(p.get("game_day"))
-            present = set(p.get("present_characters") or [])
-            remote = set(p.get("remote_characters") or [])
-            meaningful = p.get("meaningful_character_actions") or {}
             cast_updates = p.get("cast_updates") or {}
-
-            if cid in present:
-                last_physical = (turn_no, day)
-                last_participation = (turn_no, day)
-            elif cid in remote:
-                last_participation = (turn_no, day)
-
-            if cid in meaningful and meaningful[cid]:
-                last_meaningful = (turn_no, day)
-                last_meaningful_text = str(meaningful[cid])
+            meaningful = p.get("meaningful_character_actions") or {}
+            relationship_updates = p.get("relationship_updates") or {}
 
             if cid in cast_updates and cast_updates[cid]:
-                last_cast_update = str(cast_updates[cid])
+                current_agenda = str(cast_updates[cid]).strip()
+            if cid in meaningful and meaningful[cid]:
+                last_meaningful = str(meaningful[cid]).strip()
+            if cid in relationship_updates and relationship_updates[cid]:
+                latest_relationship = str(relationship_updates[cid]).strip()
 
-        def stamp(value):
-            if not value:
-                return "ещё не было"
-            turn_no, day = value
-            return f"ход {turn_no}" + (f", игровой день {day}" if day is not None else "")
-
-        def since_turn(value):
-            return "—" if not value else str(max(0, current_turn - value[0]))
-
-        def since_day(value):
-            if not value or current_day is None or value[1] is None:
-                return "—"
-            return str(max(0, current_day - value[1]))
+        agenda = current_agenda or wants_now or goal or "смотреть роль, цель и открытые крючки"
 
         rows.append(
             "\n".join([
                 f"## {name} / {cid}",
                 "",
                 f"Роль в истории: {role}",
-                f"Личная цель: {goal}",
                 f"Режиссёрская функция: {function}",
+                f"Личная цель: {goal}",
+                f"Чего хочет сейчас: {wants_now}",
+                f"Работа / учёба: {work}",
+                f"Где живёт / обычная среда: {home}",
                 "",
-                f"Последнее физическое появление: {stamp(last_physical)}",
-                f"Последнее участие вообще: {stamp(last_participation)}",
-                f"Последнее значимое действие: {stamp(last_meaningful)}"
-                + (f" — {last_meaningful_text}" if last_meaningful_text else ""),
-                "",
-                f"Ходов с физического появления: {since_turn(last_physical)}",
-                f"Игровых дней с физического появления: {since_day(last_physical)}",
-                f"Ходов со значимого действия: {since_turn(last_meaningful)}",
-                f"Игровых дней со значимого действия: {since_day(last_meaningful)}",
-                "",
-                f"Что у персонажа сейчас незакрыто / причина вернуться: {last_cast_update or 'смотреть цель, роль и открытые крючки'}",
+                f"Связь с POV на старте: {start_link}",
+                f"Актуальное изменение отношений: {latest_relationship or 'нет отдельной новой записи'}",
+                f"Текущее незакрытое / agenda: {agenda}",
+                f"Последнее значимое действие или последствие: {last_meaningful or 'нет отдельной записи'}",
             ])
         )
 
     intro = (
-        "# Реестр персонажей\n\n"
-        "Правило: это подсказка режиссёру о постоянном касте, а не таймер обязательных камео. "
-        "Долгое отсутствие нужно учитывать вместе с ролью, целью и открытыми линиями персонажа. "
-        "Отношения с POV не определяют, имеет ли персонаж право вернуться.\n"
+        "# Реестр постоянного каста\n\n"
+        "Перед выбором новых участников просмотреть весь реестр. Это НЕ очередь и НЕ ротация. "
+        "Не выбирать NPC потому, что его давно не было, и не создавать квоты появления. "
+        "Для каждого смотреть роль, режиссёрскую функцию, цель, текущее желание, работу/среду, "
+        "отношения, незакрытое, открытые крючки и последствия. Если собственная линия NPC "
+        "причинно ведёт к текущей или ближайшей сцене, мир может сам подвести его к сцене: "
+        "POV не обязан искать, звать или вспоминать персонажа. Если причинного пути нет, "
+        "не вставлять NPC ради камео. Нормально, если никто новый не появляется.\n"
     )
     text = intro + ("\n\n" + "\n\n".join(rows) if rows else "\n\nПостоянных NPC пока нет.\n")
     if not text.endswith("\n"):
