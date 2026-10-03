@@ -1188,8 +1188,8 @@ class NovellaService:
             f"Call getSceneCharacterBundleChunk with chunk_index {next_index}."
             if has_more
             else (
-                "Use this complete dossier only because the character now enters the scene; "
-                "include the final participants in scene_state and call commitTurn."
+                "Use this complete dossier only because the character now causally enters or "
+                "actively participates remotely; keep physical scene_state accurate and call commitTurn."
             )
         )
         return {
@@ -1272,8 +1272,9 @@ class NovellaService:
                 "character": character,
                 "instruction": (
                     "Read the complete card, current_state, knowledge and directional "
-                    "relationships before writing this character into the scene. This dossier "
-                    "does not authorize loading any other offscreen character."
+                    "relationships before making this character physically enter or actively "
+                    "participate remotely. This dossier does not authorize loading any other "
+                    "offscreen character."
                 ),
             }
             text = json.dumps(payload, ensure_ascii=False, indent=2)
