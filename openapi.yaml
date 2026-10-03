@@ -3,9 +3,11 @@ info:
   title: Novel AI Memory API
   version: 0.2.0
   description: Persistent memory API for the RomanAI interactive novel.
+
 servers:
   - url: https://ai-roman-yumikofv.mia0.amvera.tech
     description: Amvera production
+
 security: []
 
 paths:
@@ -19,8 +21,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/HealthResponse'
       security: []
 
   /sessions:
@@ -39,8 +40,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/CreateSessionResponse'
       security: []
 
   /sessions/{session_id}/setup/messages:
@@ -48,7 +48,11 @@ paths:
       operationId: appendSetupMessage
       summary: Save one original setup message
       parameters:
-        - $ref: '#/components/parameters/SessionId'
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -61,8 +65,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/SaveSetupMessageResponse'
       security: []
 
   /sessions/{session_id}/setup/finalize:
@@ -70,7 +73,11 @@ paths:
       operationId: finalizeSetup
       summary: Finalize confirmed novel setup
       parameters:
-        - $ref: '#/components/parameters/SessionId'
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -83,8 +90,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/FinalizeSetupResponse'
       security: []
 
   /sessions/{session_id}/opening-scene:
@@ -92,7 +98,11 @@ paths:
       operationId: saveOpeningScene
       summary: Save the opening scene
       parameters:
-        - $ref: '#/components/parameters/SessionId'
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -105,8 +115,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/SaveOpeningSceneResponse'
       security: []
 
   /sessions/{session_id}/turns:
@@ -114,7 +123,11 @@ paths:
       operationId: saveTurn
       summary: Save one completed turn and its state changes
       parameters:
-        - $ref: '#/components/parameters/SessionId'
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -127,8 +140,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/SaveTurnResponse'
       security: []
 
   /sessions/{session_id}/chronology/compact:
@@ -136,7 +148,11 @@ paths:
       operationId: compactChronology
       summary: Compact the next completed block of 15 turns
       parameters:
-        - $ref: '#/components/parameters/SessionId'
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -149,8 +165,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/CompactChronologyResponse'
       security: []
 
   /sessions/{session_id}/state:
@@ -158,15 +173,18 @@ paths:
       operationId: getSessionState
       summary: Read current session memory and causal cast registry
       parameters:
-        - $ref: '#/components/parameters/SessionId'
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Current session state
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/SessionStateResponse'
       security: []
 
   /sessions/{session_id}/characters/{character_id}:
@@ -174,7 +192,11 @@ paths:
       operationId: getCharacterState
       summary: Read one character card knowledge and relationships
       parameters:
-        - $ref: '#/components/parameters/SessionId'
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
         - name: character_id
           in: path
           required: true
@@ -186,24 +208,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/CharacterStateResponse'
       security: []
 
 components:
-  parameters:
-    SessionId:
-      name: session_id
-      in: path
-      required: true
-      schema:
-        type: string
-
   schemas:
     Character:
       type: object
-      required:
-        - character_id
       properties:
         character_id:
           type: string
@@ -218,6 +229,8 @@ components:
         relationship_start:
           type: string
           default: ''
+      required:
+        - character_id
 
     NewSession:
       type: object
@@ -233,20 +246,18 @@ components:
 
     SetupChunk:
       type: object
-      required:
-        - message_number
-        - text
       properties:
         message_number:
           type: integer
           minimum: 1
         text:
           type: string
+      required:
+        - message_number
+        - text
 
     FinalizeSetup:
       type: object
-      required:
-        - novel
       properties:
         novel:
           type: string
@@ -272,11 +283,11 @@ components:
         audit:
           type: boolean
           default: false
+      required:
+        - novel
 
     OpeningScene:
       type: object
-      required:
-        - scene_text
       properties:
         scene_text:
           type: string
@@ -303,13 +314,11 @@ components:
             - type: string
             - type: 'null'
           default: null
+      required:
+        - scene_text
 
     Turn:
       type: object
-      required:
-        - turn_number
-        - user_text
-        - scene_text
       properties:
         turn_number:
           type: integer
@@ -336,16 +345,19 @@ components:
           default: null
         knowledge_updates:
           type: object
+          properties: {}
           additionalProperties:
             type: string
           default: {}
         relationship_updates:
           type: object
+          properties: {}
           additionalProperties:
             type: string
           default: {}
         character_updates:
           type: object
+          properties: {}
           additionalProperties:
             type: string
           default: {}
@@ -361,11 +373,13 @@ components:
           default: []
         meaningful_character_actions:
           type: object
+          properties: {}
           additionalProperties:
             type: string
           default: {}
         cast_updates:
           type: object
+          properties: {}
           additionalProperties:
             type: string
           description: Current unresolved goal, plan or causal reason for a persistent NPC.
@@ -390,12 +404,13 @@ components:
             - type: string
             - type: 'null'
           default: null
+      required:
+        - turn_number
+        - user_text
+        - scene_text
 
     Compact:
       type: object
-      required:
-        - through_turn
-        - content
       properties:
         through_turn:
           type: integer
@@ -403,3 +418,210 @@ components:
         content:
           type: string
           minLength: 1
+      required:
+        - through_turn
+        - content
+
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        version:
+          type: string
+      required:
+        - ok
+        - version
+
+    CreateSessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        setup_stage:
+          type: string
+      required:
+        - session_id
+        - setup_stage
+
+    SaveSetupMessageResponse:
+      type: object
+      properties:
+        saved:
+          type: boolean
+        idempotent:
+          type: boolean
+        message_number:
+          type: integer
+      required:
+        - saved
+        - idempotent
+        - message_number
+
+    FinalizeSetupResponse:
+      type: object
+      properties:
+        finalized:
+          type: boolean
+        setup_revision:
+          type: integer
+        setup_audit_count:
+          type: integer
+        checked_through_message:
+          type: integer
+        characters:
+          type: array
+          items:
+            type: string
+      required:
+        - finalized
+        - setup_revision
+        - setup_audit_count
+        - checked_through_message
+        - characters
+
+    SaveOpeningSceneResponse:
+      type: object
+      properties:
+        saved:
+          type: boolean
+        idempotent:
+          type: boolean
+      required:
+        - saved
+        - idempotent
+
+    SaveTurnResponse:
+      type: object
+      properties:
+        saved:
+          type: boolean
+        idempotent:
+          type: boolean
+        turn_number:
+          type: integer
+        compaction_due:
+          type: boolean
+      required:
+        - saved
+        - idempotent
+        - turn_number
+        - compaction_due
+
+    CompactChronologyResponse:
+      type: object
+      properties:
+        compacted:
+          type: boolean
+        idempotent:
+          type: boolean
+        through_turn:
+          type: integer
+        chronology:
+          type: string
+      required:
+        - compacted
+        - idempotent
+        - through_turn
+        - chronology
+
+    SessionMeta:
+      type: object
+      properties:
+        session_id:
+          type: string
+        title:
+          type: string
+        setup_stage:
+          type: string
+        setup_confirmed:
+          type: boolean
+        opening_scene_saved:
+          type: boolean
+        last_setup_message:
+          type: integer
+        last_saved_turn:
+          type: integer
+        last_compaction_turn:
+          type: integer
+        pov_character_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+        game_day:
+          anyOf:
+            - type: string
+            - type: 'null'
+        world_date:
+          anyOf:
+            - type: string
+            - type: 'null'
+        world_time:
+          anyOf:
+            - type: string
+            - type: 'null'
+      additionalProperties: true
+
+    SessionStateResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/SessionMeta'
+        setup_source:
+          type: string
+        novel:
+          type: string
+        novel_rules:
+          type: string
+        hidden_lore:
+          type: string
+        opening_scene:
+          anyOf:
+            - type: string
+            - type: 'null'
+        chronology:
+          type: string
+        continuity:
+          type: string
+        plot_threads:
+          type: string
+        cast_registry:
+          type: string
+        recent_turns:
+          type: string
+        characters:
+          type: array
+          items:
+            type: string
+        compaction_due:
+          type: boolean
+      required:
+        - meta
+        - setup_source
+        - novel
+        - novel_rules
+        - hidden_lore
+        - chronology
+        - continuity
+        - plot_threads
+        - cast_registry
+        - recent_turns
+        - characters
+        - compaction_due
+
+    CharacterStateResponse:
+      type: object
+      properties:
+        character_id:
+          type: string
+        card:
+          type: string
+        knowledge:
+          type: string
+        relationship:
+          type: string
+      required:
+        - character_id
+        - card
+        - knowledge
+        - relationship
