@@ -103,10 +103,11 @@ paths:
       security: []
   /api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-characters/{character_id}/bundle:
     post:
-      summary: Load one known offscreen character who will enter the pending scene
-      description: Use only after every turn-packet chunk was read and the story now causes this already-known character
-        to physically enter the scene. Returns only that character's complete card, current state, knowledge and
-        directional relationships. Read every bundle chunk before commitTurn.
+      summary: Load one known offscreen character selected by causal cast review
+      description: Use only after every turn-packet chunk was read and cast_index plus current story causality give this
+        already-known character a real reason to enter the scene or actively participate through a remote channel.
+        Returns only that character's complete card, current state, knowledge and directional relationships. Read every
+        bundle chunk before the character's first significant action or line and before commitTurn.
       operationId: getSceneCharacterBundle
       parameters:
       - name: session_id
@@ -149,7 +150,7 @@ paths:
       security: []
   /api/v1/sessions/{session_id}/turn-packets/{packet_id}/scene-character-bundles/{bundle_id}/chunks/{chunk_index}:
     get:
-      summary: Read the next ordered chunk of one entering character's dossier
+      summary: Read the next ordered chunk of one selected offscreen character's dossier
       description: Read in strict order until all_chunks_delivered is true. commitTurn remains blocked while any
         requested scene-character bundle is incomplete.
       operationId: getSceneCharacterBundleChunk
