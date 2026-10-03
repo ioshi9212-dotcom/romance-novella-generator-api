@@ -312,8 +312,8 @@ class SceneCharacterBundleRequest(BaseModel):
         min_length=1,
         max_length=1000,
         description=(
-            "Concrete story reason this already-known offscreen character will physically "
-            "enter the scene produced for this pending turn."
+            "Concrete causal story reason this already-known offscreen character will "
+            "enter the scene or actively participate through a remote channel in this turn."
         ),
     )
 
