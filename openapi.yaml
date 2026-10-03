@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Interactive Novella State Runtime
-  description: Session-scoped Railway storage for a Custom GPT visual novella. The API stores state and never calls
+  description: Session-scoped backend storage for a Custom GPT visual novella. The API stores state and never calls
     an OpenAI model.
   version: 1.0.0
 paths:
@@ -1141,7 +1141,7 @@ components:
           type: array
           title: Chronology Compactions
           description: Compact summaries that hide repetitive source events from future packets while preserving
-            the original records in Railway.
+            the original records in backend storage.
       type: object
       required:
       - audit_id
@@ -2132,6 +2132,6 @@ components:
       - type
       title: ValidationError
 servers:
-- url: https://web-production-4310e.up.railway.app
-  description: Railway production
+- url: https://ai-roman-yumikofv.mia0.amvera.tech
+  description: Amvera production
 security: []
