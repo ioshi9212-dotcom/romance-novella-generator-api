@@ -18,7 +18,19 @@ ROOT = Path(os.getenv("DATA_DIR", "data")).resolve()
 TEMPLATES = Path(__file__).resolve().parent.parent / "state_templates"
 SAFE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
-app = FastAPI(title="Novel AI Memory API", version="0.2.0")
+app = FastAPI(
+    title="Novel AI Memory API",
+    version="0.2.0",
+    servers=[
+        {
+            "url": os.getenv(
+                "PUBLIC_BASE_URL",
+                "https://ai-roman-yumikofv.mia0.amvera.tech",
+            ).rstrip("/"),
+            "description": "Amvera production",
+        }
+    ],
+)
 
 
 class Character(BaseModel):
