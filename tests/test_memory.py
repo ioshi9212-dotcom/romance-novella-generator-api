@@ -365,35 +365,65 @@ def test_pov_has_own_starting_knowledge(root):
     assert "27 лет" in knowledge
 
 
-def test_cast_registry_tracks_physical_remote_and_meaningful_activity(root):
-    setup_ready()
+def test_cast_registry_is_causal_and_has_no_recency_rotation(root):
+    new_session()
+    m.append_setup_message("test", m.SetupChunk(message_number=1, text="История с постоянным кастом."))
+    m.finalize_setup(
+        "test",
+        m.FinalizeSetup(
+            novel="# Novel",
+            pov_character_id="pov",
+            characters=[
+                m.Character(character_id="pov", card="# POV"),
+                m.Character(
+                    character_id="liam",
+                    card=(
+                        "Имя: Лиам\n"
+                        "Роль в истории: инструктор\n"
+                        "Связь с POV на старте: знакомы по работе\n"
+                        "Личная цель: получить повышение\n"
+                        "Чего хочет сейчас: закрыть спорный отчёт\n"
+                        "Режиссёрская функция в истории: самостоятельная рабочая линия\n"
+                        "Работа / учёба: инструктор\n"
+                        "Где живёт: база\n"
+                    ),
+                ),
+                m.Character(
+                    character_id="silas",
+                    card=(
+                        "Имя: Сайлас\n"
+                        "Роль в истории: коллега\n"
+                        "Личная цель: разобраться с внутренним конфликтом группы\n"
+                        "Чего хочет сейчас: поговорить с Лиамом\n"
+                        "Режиссёрская функция в истории: связывает линии NPC между собой\n"
+                        "Работа / учёба: инструктор\n"
+                        "Где живёт: база\n"
+                    ),
+                ),
+            ],
+        ),
+    )
+    m.save_opening_scene("test", m.OpeningScene(scene_text="Opening scene"))
     m.save_turn(
         "test",
         turn(
             1,
-            game_day="1",
-            present_characters=["liam"],
             meaningful_character_actions={"liam": "Поставил POV перед важным выбором."},
             cast_updates={"liam": "Ждёт ответа POV и вернётся к этому вопросу."},
-        ),
-    )
-    for n in range(2, 6):
-        m.save_turn("test", turn(n, game_day="1"))
-    m.save_turn(
-        "test",
-        turn(
-            6,
-            game_day="2",
-            remote_characters=["liam"],
+            relationship_updates={"liam": "После разговора стал настороженнее."},
         ),
     )
 
     registry = m.state("test")["cast_registry"]
-    assert "## liam / liam" in registry
-    assert "Последнее физическое появление: ход 1, игровой день 1" in registry
-    assert "Последнее участие вообще: ход 6, игровой день 2" in registry
-    assert "Последнее значимое действие: ход 1, игровой день 1" in registry
-    assert "Ходов с физического появления: 5" in registry
-    assert "Игровых дней с физического появления: 1" in registry
-    assert "Ждёт ответа POV" in registry
+    assert "# Реестр постоянного каста" in registry
+    assert "## Лиам / liam" in registry
+    assert "## Сайлас / silas" in registry
+    assert "Текущее незакрытое / agenda: Ждёт ответа POV" in registry
+    assert "Актуальное изменение отношений: После разговора стал настороженнее." in registry
+    assert "Чего хочет сейчас: поговорить с Лиамом" in registry
+    assert "связывает линии NPC между собой" in registry
+    assert "Последнее физическое появление" not in registry
+    assert "Ходов с физического появления" not in registry
+    assert "Игровых дней" not in registry
+    assert "НЕ очередь и НЕ ротация" in registry
     assert "## POV / pov" not in registry
