@@ -249,9 +249,13 @@ def validate_foundation(folder: Path) -> list[str]:
                 for metric, value in metrics.items():
                     if metric not in RELATIONSHIP_AXES or isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 100:
                         issues.append(f"Некорректная шкала отношений {owner}: {metric}")
-            for target in (record.get("к_другим_NPC") or {}):
-                if target not in known or target == pov_id:
-                    issues.append(f"Некорректная связь NPC к NPC {owner} → {target}")
+            npc_relations = record.get("к_другим_NPC") or {}
+            if not isinstance(npc_relations, dict):
+                issues.append(f"Связи с другими NPC должны быть объектом: {owner}")
+            else:
+                for target, description in npc_relations.items():
+                    if target not in known or target == pov_id or not isinstance(description, str):
+                        issues.append(f"Некорректная словесная связь NPC к NPC {owner} → {target}")
     return issues
 
 
@@ -270,6 +274,8 @@ def create_novel(payload: CreateNovel) -> dict[str, Any]:
             meta = load(folder)
             if payload.initial_text and meta.get("_initial_text_digest") != hashlib.sha256(payload.initial_text.encode()).hexdigest():
                 raise HTTPException(409, "request_id already belongs to a different initial text")
+            if payload.initial_text and "initial" not in meta.get("_raw_receipts", {}):
+                append_source(folder, meta, RawPart(event_id="initial", text=payload.initial_text))
             return summary(meta)
         meta: dict[str, Any] = {"id": str(session_id), "этап": "сбор", "последний_ход": 0, "_raw_receipts": {}, "_initial_text_digest": hashlib.sha256(payload.initial_text.encode()).hexdigest()}
         atomic_json(folder / "сессия.json", meta)
