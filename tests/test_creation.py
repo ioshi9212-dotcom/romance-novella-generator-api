@@ -8,13 +8,12 @@ from app.main import app
 
 @pytest.fixture()
 def api(tmp_path, monkeypatch):
-    monkeypatch.setenv("API_KEY", "test-only-key")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     return TestClient(app)
 
 
 def req(api, method, path, **kwargs):
-    return api.request(method, path, headers={"X-API-Key": "test-only-key"}, **kwargs)
+    return api.request(method, path, **kwargs)
 
 
 def init(api):
@@ -23,9 +22,9 @@ def init(api):
     return r.json()["session_id"]
 
 
-def test_health_and_auth(api):
+def test_health_and_keyless_creation(api):
     assert api.get("/health").json() == {"ok": True}
-    assert api.post("/sessions", json={}).status_code == 401
+    assert api.post("/sessions", json={}).status_code == 200
     assert req(api, "GET", "/sessions/00000000-0000-0000-0000-000000000000").status_code == 404
 
 
