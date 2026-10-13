@@ -19,12 +19,14 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from .storage_paths import storage_root
+
 CHUNK_CHARS = 16_000
 TTL_SECONDS = 24 * 60 * 60
 
 
 def _folder() -> Path:
-    return Path(os.environ.get("DATA_DIR", "./data")) / ".response_chunks"
+    return storage_root() / ".response_chunks"
 
 
 def _hash(data: bytes) -> str:
