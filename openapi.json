@@ -408,6 +408,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -441,6 +446,23 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "description": "Hash of the current Rules and Skin Builder"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "rules": {
+                      "type": "string",
+                      "description": "Full technical Rules, empty when unchanged"
+                    },
+                    "skin_builder": {
+                      "type": "string",
+                      "description": "Full scene instructions, empty when unchanged"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -471,7 +493,36 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "description": "Persistent session UUID"
+                    },
+                    "этап": {
+                      "type": "string",
+                      "description": "Current creation or game phase"
+                    },
+                    "последний_ход": {
+                      "type": "integer"
+                    },
+                    "источников": {
+                      "type": "integer"
+                    },
+                    "последнее_сжатие": {
+                      "type": "integer"
+                    },
+                    "сжатие_требуется": {
+                      "type": "boolean"
+                    },
+                    "аудит_по_ход": {
+                      "type": "integer"
+                    },
+                    "аудит_требуется": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Current session status and mandatory checkpoints."
                 }
               }
             }
@@ -502,7 +553,36 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "description": "Persistent session UUID"
+                    },
+                    "этап": {
+                      "type": "string",
+                      "description": "Current creation or game phase"
+                    },
+                    "последний_ход": {
+                      "type": "integer"
+                    },
+                    "источников": {
+                      "type": "integer"
+                    },
+                    "последнее_сжатие": {
+                      "type": "integer"
+                    },
+                    "сжатие_требуется": {
+                      "type": "boolean"
+                    },
+                    "аудит_по_ход": {
+                      "type": "integer"
+                    },
+                    "аудит_требуется": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Current session status and mandatory checkpoints."
                 }
               }
             }
@@ -543,7 +623,36 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "description": "Persistent session UUID"
+                    },
+                    "этап": {
+                      "type": "string",
+                      "description": "Current creation or game phase"
+                    },
+                    "последний_ход": {
+                      "type": "integer"
+                    },
+                    "источников": {
+                      "type": "integer"
+                    },
+                    "последнее_сжатие": {
+                      "type": "integer"
+                    },
+                    "сжатие_требуется": {
+                      "type": "boolean"
+                    },
+                    "аудит_по_ход": {
+                      "type": "integer"
+                    },
+                    "аудит_требуется": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Current session status and mandatory checkpoints."
                 }
               }
             }
@@ -572,6 +681,12 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "raw": {
+                      "type": "string",
+                      "description": "Complete unmodified source with original segment delimiters"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -613,7 +728,36 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "description": "Persistent session UUID"
+                    },
+                    "этап": {
+                      "type": "string",
+                      "description": "Current creation or game phase"
+                    },
+                    "последний_ход": {
+                      "type": "integer"
+                    },
+                    "источников": {
+                      "type": "integer"
+                    },
+                    "последнее_сжатие": {
+                      "type": "integer"
+                    },
+                    "сжатие_требуется": {
+                      "type": "boolean"
+                    },
+                    "аудит_по_ход": {
+                      "type": "integer"
+                    },
+                    "аудит_требуется": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Current session status and mandatory checkpoints."
                 }
               }
             }
@@ -654,6 +798,16 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "description": "Saved filename"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "Saved status"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -692,6 +846,31 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "description": "Filename"
+                    },
+                    "document": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Only used by character dossiers"
+                        },
+                        "pov_id": {
+                          "type": "string",
+                          "description": "Only in state and relationships"
+                        },
+                        "название": {
+                          "type": "string",
+                          "description": "Optional novel title"
+                        }
+                      },
+                      "additionalProperties": true,
+                      "description": "Complete document with filename-dependent JSON fields; other data is preserved."
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -733,7 +912,36 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "description": "Persistent session UUID"
+                    },
+                    "этап": {
+                      "type": "string",
+                      "description": "Current creation or game phase"
+                    },
+                    "последний_ход": {
+                      "type": "integer"
+                    },
+                    "источников": {
+                      "type": "integer"
+                    },
+                    "последнее_сжатие": {
+                      "type": "integer"
+                    },
+                    "сжатие_требуется": {
+                      "type": "boolean"
+                    },
+                    "аудит_по_ход": {
+                      "type": "integer"
+                    },
+                    "аудит_требуется": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Current session status and mandatory checkpoints."
                 }
               }
             }
@@ -774,7 +982,46 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "номер_хода": {
+                      "type": "integer"
+                    },
+                    "turn_id": {
+                      "type": "string"
+                    },
+                    "ввод_игрока": {
+                      "type": "string"
+                    },
+                    "ввод_sha256": {
+                      "type": "string"
+                    },
+                    "контекст_sha256": {
+                      "type": "string"
+                    },
+                    "последнее_сжатие": {
+                      "type": "integer"
+                    },
+                    "граница_знаний": {
+                      "type": "string"
+                    },
+                    "персонажи_в_сцене": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "дополнительно_выбранные_NPC": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Full turn context also includes режиссёр, персонажи_подробно, последние_сцены; preserve and read all returned additional fields."
                 }
               }
             }
@@ -815,6 +1062,24 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "turn_id": {
+                      "type": "string"
+                    },
+                    "номер_хода": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "saved or already_saved"
+                    },
+                    "changed_files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -856,7 +1121,37 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "through_turn": {
+                      "type": "integer"
+                    },
+                    "период": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "audit_sha256": {
+                      "type": "string"
+                    },
+                    "загруженные_id": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "доступные_для_догрузки_id": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Includes complete relevant архив, реестр, state, отношения, хронология, скрытый_лор_и_крючки, память and checkpoints in additional response fields."
                 }
               }
             }
@@ -897,6 +1192,23 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "through_turn": {
+                      "type": "integer"
+                    },
+                    "changed_files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "compaction_60_reviewed": {
+                      "type": "boolean"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -938,6 +1250,26 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "removed_turn_id": {
+                      "type": "string"
+                    },
+                    "последний_ход": {
+                      "type": "integer"
+                    },
+                    "restored_files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "audit_reverted": {
+                      "type": "boolean"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -969,7 +1301,37 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "этап": {
+                      "type": "string"
+                    },
+                    "последний_ход": {
+                      "type": "integer"
+                    },
+                    "следующий_ход": {
+                      "type": "integer"
+                    },
+                    "аудит_требуется": {
+                      "type": "boolean"
+                    },
+                    "сжатие_требуется": {
+                      "type": "boolean"
+                    },
+                    "последнее_сжатие": {
+                      "type": "integer"
+                    },
+                    "название": {
+                      "type": "string"
+                    },
+                    "дальше": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Other returned fields include актуальный state, реестр, активные_крючки, последние_сцены and долговременная_сводка."
                 }
               }
             }
@@ -1020,6 +1382,38 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "диапазон": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "сцены": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "номер": {
+                            "type": "integer"
+                          },
+                          "turn_id": {
+                            "type": "string"
+                          },
+                          "ввод": {
+                            "type": "string"
+                          },
+                          "сцена": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -1051,7 +1445,37 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "through_turn": {
+                      "type": "integer"
+                    },
+                    "период": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "previous_checkpoint_turn": {
+                      "type": "integer"
+                    },
+                    "previous_world_summary": {
+                      "type": "string"
+                    },
+                    "review_sha256": {
+                      "type": "string"
+                    },
+                    "character_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Includes characters, history, archive metadata, recent_scenes, audits. Preserve the full returned response."
                 }
               }
             }
@@ -1092,6 +1516,17 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "through_turn": {
+                      "type": "integer"
+                    },
+                    "full_memory_preserved": {
+                      "type": "boolean"
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
