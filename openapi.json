@@ -3,7 +3,7 @@
   "info": {
     "title": "Novella Generator Actions",
     "version": "0.6.1",
-    "description": "Public no-key backend for an interactive novel. Each novel has an unguessable session ID. The server stores and returns the canon."
+    "description": "Interactive novel backend. No authentication required. Use getResponseChunk for large read responses."
   },
   "servers": [
     {
@@ -418,7 +418,7 @@
       "get": {
         "operationId": "getRuntimeInstructions",
         "summary": "Get current technical Rules and Skin Builder. Send prior hash to skip unchanged document text.",
-        "description": "Get current technical Rules and Skin Builder. Send prior hash to skip unchanged document text. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Get current technical Rules and Skin Builder. Send prior hash to skip unchanged document text.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "known_sha256",
@@ -441,7 +441,7 @@
                   "properties": {
                     "sha256": {
                       "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
+                      "description": "Hash of the current Rules and Skin Builder"
                     },
                     "changed": {
                       "type": "boolean"
@@ -456,15 +456,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -474,34 +470,20 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
-                  "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "additionalProperties": true
                 }
               }
             }
@@ -700,7 +682,7 @@
       "get": {
         "operationId": "readRaw",
         "summary": "Read all original RAW text for content reconciliation.",
-        "description": "Read all original RAW text for content reconciliation. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Read all original RAW text for content reconciliation.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "session_id",
@@ -726,15 +708,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -744,38 +722,20 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
-                  "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "additionalProperties": true
                 }
               }
             }
@@ -906,7 +866,7 @@
       "get": {
         "operationId": "readNovelDocument",
         "summary": "Read one saved session document for review.",
-        "description": "Read one saved session document for review. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Read one saved session document for review.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "session_id",
@@ -960,15 +920,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -978,38 +934,20 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
-                  "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "additionalProperties": true
                 }
               }
             }
@@ -1091,7 +1029,7 @@
       "post": {
         "operationId": "prepareTurn",
         "summary": "Read complete selected context for the next game turn without mutating data.",
-        "description": "Read complete selected context for the next game turn without mutating data. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Read complete selected context for the next game turn without mutating data.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "session_id",
@@ -1159,15 +1097,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -1177,38 +1111,21 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
                   "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "description": "Full turn context also includes режиссёр, персонажи_подробно, последние_сцены; preserve and read all returned additional fields."
                 }
               }
             }
@@ -1279,7 +1196,7 @@
       "post": {
         "operationId": "prepareAudit",
         "summary": "Read archived last 15 turns and selected memories for review.",
-        "description": "Read archived last 15 turns and selected memories for review. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Read archived last 15 turns and selected memories for review.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "session_id",
@@ -1338,15 +1255,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -1356,38 +1269,21 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
                   "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "description": "Includes complete relevant архив, реестр, state, отношения, хронология, скрытый_лор_и_крючки, память and checkpoints in additional response fields."
                 }
               }
             }
@@ -1518,7 +1414,7 @@
       "get": {
         "operationId": "resumeSession",
         "summary": "Resume this existing novel in a new ChatGPT chat.",
-        "description": "Resume this existing novel in a new ChatGPT chat. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Resume this existing novel in a new ChatGPT chat.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "session_id",
@@ -1567,15 +1463,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -1585,38 +1477,21 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
                   "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "description": "Other returned fields include актуальный state, реестр, активные_крючки, последние_сцены and долговременная_сводка."
                 }
               }
             }
@@ -1628,7 +1503,7 @@
       "get": {
         "operationId": "readArchivedTurns",
         "summary": "Read exact archived scenes for an inclusive range of up to 15 turns.",
-        "description": "Read exact archived scenes for an inclusive range of up to 15 turns. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Read exact archived scenes for an inclusive range of up to 15 turns.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "session_id",
@@ -1700,15 +1575,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -1718,38 +1589,20 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
-                  "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "additionalProperties": true
                 }
               }
             }
@@ -1761,7 +1614,7 @@
       "post": {
         "operationId": "prepareCompaction",
         "summary": "Prepare reviewed 60-turn long-term memory summaries.",
-        "description": "Prepare reviewed 60-turn long-term memory summaries. Response may be chunked; if chunked=true, getResponseChunk MUST read all fragments before using it. Original response is NOT truncated.",
+        "description": "Prepare reviewed 60-turn long-term memory summaries.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
         "parameters": [
           {
             "name": "session_id",
@@ -1810,15 +1663,11 @@
                     },
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -1828,38 +1677,21 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
                   "additionalProperties": true,
-                  "description": "If chunked=true, only content from chunk 0 is present. Fetch every next_chunk_index via getResponseChunk to reconstruct the complete JSON; for small data original response shape is preserved."
+                  "description": "Includes characters, history, archive metadata, recent_scenes, audits. Preserve the full returned response."
                 }
               }
             }
@@ -1923,7 +1755,7 @@
       "get": {
         "operationId": "getResponseChunk",
         "summary": "Read one immutable 16k-character response chunk from any large read.",
-        "description": "If chunked=true, chunk 0 is already included. Fetch each next_chunk_index with the same read_id until all_chunks_read=true. Join content by index to reconstruct the full JSON. Never proceed using an incomplete response.",
+        "description": "When chunked=true, chunk 0 is already included. Call with the same read_id and each next_chunk_index until all_chunks_read=true. Join content by index to recover the full JSON.",
         "parameters": [
           {
             "name": "read_id",
@@ -1954,15 +1786,11 @@
                   "properties": {
                     "chunked": {
                       "type": "boolean",
-                      "description": "True means response is a 16k-character fragment, not a complete context. Read every index before using it."
+                      "description": "True when the original response was split into 16000-character parts."
                     },
                     "read_id": {
                       "type": "string",
-                      "description": "Stable UUID hex for this snapshotted large response."
-                    },
-                    "source": {
-                      "type": "string",
-                      "description": "Type of original response."
+                      "description": "Stable ID for getResponseChunk."
                     },
                     "chunk_index": {
                       "type": "integer",
@@ -1972,34 +1800,17 @@
                       "type": "integer",
                       "minimum": 1
                     },
-                    "chunk_chars_max": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "total_chars": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "description": "SHA-256 of complete original serialized JSON."
-                    },
                     "content": {
                       "type": "string",
-                      "description": "Exact fragment of one serialized JSON response; concatenate content by increasing chunk_index, then parse JSON."
+                      "description": "The original JSON response fragment."
                     },
                     "next_chunk_index": {
                       "type": "integer",
                       "minimum": 0,
-                      "nullable": true,
-                      "description": "Next unread index, or null when all read."
+                      "description": "Next unread index; null when completed."
                     },
                     "all_chunks_read": {
                       "type": "boolean"
-                    },
-                    "instruction": {
-                      "type": "string",
-                      "description": "Read all remaining chunks before acting on the complete response."
                     }
                   },
                   "additionalProperties": false
