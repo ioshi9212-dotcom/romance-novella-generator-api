@@ -130,8 +130,9 @@ def test_chunk_endpoint_requires_auth_and_detects_corruption(store, monkeypatch)
     url = f"/chunks/{first['read_id']}/1"
     assert client.get(url).status_code == 401
     binfile = store / ".response_chunks" / (first["read_id"] + ".bin")
+    info = json.loads((store / ".response_chunks" / (first["read_id"] + ".json")).read_text(encoding="utf-8"))
     with binfile.open("r+b") as handle:
-        handle.seek(16000)
+        handle.seek(info["offsets"][1][0])
         handle.write(b"corrupt")
     assert client.get(url, headers=KEY).status_code == 409
 
