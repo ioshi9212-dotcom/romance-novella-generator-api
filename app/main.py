@@ -17,8 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .response_chunks import present, read_chunk
 from .storage_paths import storage_root, storage_diagnostics
+from .initial_state import canonicalize_initial_state
 
-app = FastAPI(title="Novella Generator API", version="0.6.2")
+app = FastAPI(title="Novella Generator API", version="0.6.3")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -295,7 +296,7 @@ def read_data(folder: Path, path: str) -> dict[str, Any]:
     return data
 
 
-def validate_foundation(folder: Path) -> list[str]:
+def validate_foundation(folder: Path, *, state_override: dict[str, Any] | None = None) -> list[str]:
     issues: list[str] = []
     docs: dict[str, dict[str, Any]] = {}
     for name in sorted(CORE):
@@ -305,6 +306,8 @@ def validate_foundation(folder: Path) -> list[str]:
             issues.append("Не сохранён или повреждён " + name)
     if issues:
         return issues
+    if state_override is not None:
+        docs["state.json"] = state_override
 
     roster = docs["персонажи.json"].get("персонажи")
     if not isinstance(roster, list) or not roster:
@@ -335,7 +338,15 @@ def validate_foundation(folder: Path) -> list[str]:
     if not isinstance(present, list) or not any(
         isinstance(x, dict) and x.get("id") == pov_id for x in present
     ):
-        issues.append("POV должен быть физически присутствующим в начальном State")
+        observed = (
+            [x.get("id", x.get("имя", "?")) if isinstance(x, dict) else x for x in present]
+            if isinstance(present, list) else type(present).__name__
+        )
+        issues.append(
+            "POV должен быть физически присутствующим в начальном State; "
+            f"state.pov_id={pov_id!r}, физически={observed!r}. "
+            'Укажи физически: [{"id": "тот_же_ID_из_реестра"}].'
+        )
     for channel in ("физически", "удалённо"):
         for row in scene.get(channel, []) if isinstance(scene.get(channel), list) else []:
             if not isinstance(row, dict) or row.get("id") not in known:
@@ -507,9 +518,24 @@ def verify_novel(session_id: uuid.UUID, payload: VerifyNovel) -> dict[str, Any]:
             raise HTTPException(409, "Novel is not in review stage")
         if not payload.audited_against_raw or payload.unresolved_issues:
             raise HTTPException(409, {"code": "SEMANTIC_AUDIT_REQUIRED", "issues": payload.unresolved_issues})
-        issues = validate_foundation(folder)
+        # Normalize only explicit, uniquely resolvable participant references.
+        # Never invent presence or replace an unknown character with POV.
+        current_state = read_data(folder, "state.json")
+        registry_doc = read_data(folder, "персонажи.json")
+        roster = registry_doc.get("персонажи")
+        if isinstance(roster, list):
+            normalized_state, state_issues = canonicalize_initial_state(
+                current_state, roster
+            )
+        else:
+            normalized_state, state_issues = current_state, []
+        issues = state_issues + validate_foundation(
+            folder, state_override=normalized_state
+        )
         if issues:
             raise HTTPException(409, {"code": "FOUNDATION_INCOMPLETE", "issues": issues})
+        if normalized_state != current_state:
+            atomic_json(folder / "state.json", normalized_state)
         meta["этап"] = "готово_к_игре"
         atomic_json(folder / "сессия.json", meta)
         return summary(meta)
