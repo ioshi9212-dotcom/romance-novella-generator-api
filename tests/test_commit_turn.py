@@ -197,3 +197,15 @@ def test_real_multi_turn_history_remains_small_in_next_context(ready):
     assert second["последние_сцены"][0]["сцена"] == "Эйден посмотрел на символ."
     assert "x" * 1000 not in json.dumps(second["последние_сцены"])
     assert "x" * 1000 in json.dumps(second["персонажи_подробно"]["pov"])
+
+
+def test_commit_works_if_amvera_volume_disallows_hardlinks(ready, monkeypatch):
+    import app.turn_commit as tc
+    p = packet(ready)
+    def links_unsupported(*_args):
+        raise OSError("Operation not permitted on volume")
+    monkeypatch.setattr(tc.os, "link", links_unsupported)
+    result, _ = commit(ready, p, updates={"память/pov.json": [
+        {"op": "append", "path": "/знания/03.09.2026", "value": "новость"}
+    ]})
+    assert result.status_code == 200, result.text
