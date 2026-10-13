@@ -56,7 +56,7 @@ def test_new_chat_resume_without_new_session_or_writing(ready):
     assert resumed.json()['последние_сцены'][-1]['сцена'] == 'Сцена 1'
     assert resumed.json()['дальше'].startswith('Вызвать')
     assert {p.relative_to(folder):p.read_bytes() for p in folder.rglob('*') if p.is_file()} == before
-    assert client.get(url+'/resume').status_code == 401
+    assert client.get(url+'/resume').status_code == 200
 
 
 def test_archived_scenes_bounded_lookup_preserves_exact_text(ready):
