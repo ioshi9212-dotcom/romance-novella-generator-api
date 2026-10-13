@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.5.1",
+    "version": "0.5.2",
     "description": "Connect a custom ChatGPT novel to the Amvera backend. Canon is stored per session; scene writing is handled by the GPT."
   },
   "servers": [
