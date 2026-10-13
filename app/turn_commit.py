@@ -259,6 +259,70 @@ def verify_overlay(
         return issues
 
 
+
+def validate_relationship_steps(
+    changed: dict[str, dict[str, Any]],
+    exceptions: list[dict[str, Any]],
+    previously_registered: set[str],
+) -> None:
+    """Enforce gradual changes without imposing any relationship vocabulary.
+
+    Existing NPC->POV parameters may move by at most 3 per game turn.
+    The scene writer may mark a specific larger change as critical and state
+    why. Backend validates the declaration, not the literary severity.
+    New NPCs may enter with established backstory relationships.
+    """
+    delta_exceptions: dict[tuple[str, str], str] = {}
+    for exception in exceptions:
+        owner = exception['owner_id'].strip()
+        parameter = exception['parameter'].strip()
+        reason = exception['reason'].strip()
+        key = (owner, parameter)
+        if not parameter or not owner or len(reason) < 12:
+            raise HTTPException(422, "Critical relationship change must identify the owner, parameter and meaningful reason")
+        if key in delta_exceptions:
+            raise HTTPException(422, "Duplicate critical relationship exception for one parameter")
+        delta_exceptions[key] = reason
+
+    relation_change = changed.get('отношения.json')
+    if relation_change is None:
+        if delta_exceptions:
+            raise HTTPException(422, "Relationship exceptions require a real change to отношения.json")
+        return
+    before = relation_change['до'] or {}
+    after = relation_change['после']
+    previous_owners = before.get('персонажи', {})
+    current_owners = after.get('персонажи', {})
+    used: set[tuple[str, str]] = set()
+    for owner in set(previous_owners) | set(current_owners):
+        if owner not in previously_registered:
+            # A genuinely new permanent character can have established
+            # relationships from their pre-introduction personal history.
+            continue
+        prev = previous_owners.get(owner) or {}
+        current = current_owners.get(owner) or {}
+        old_params = (prev.get('к_POV') or {}).get('параметры') or {}
+        new_params = (current.get('к_POV') or {}).get('параметры') or {}
+        for metric in set(old_params) | set(new_params):
+            previous_value = old_params.get(metric, 0)
+            current_value = new_params.get(metric, 0)
+            # Invalid values are rejected by the foundation validator before
+            # the call to this function.
+            movement = abs(current_value - previous_value)
+            key = (owner, metric)
+            if movement > 3:
+                if key not in delta_exceptions:
+                    raise HTTPException(409, {
+                        "code": "RELATIONSHIP_CHANGE_TOO_LARGE",
+                        "character_id": owner, "parameter": metric,
+                        "actual_delta": movement, "normal_max_delta": 3,
+                        "hint": "Use a specific relationship_exceptions entry only for a critical event actually shown in the scene.",
+                    })
+                used.add(key)
+    if used != set(delta_exceptions):
+        raise HTTPException(422, "Critical relationship exceptions must refer to existing large changes")
+
+
 def save_turn(
     root: Path, meta: dict[str, Any], payload: dict[str, Any],
     valid_path: Callable[[str], bool], foundation_check: Callable[[Path], list[str]],
@@ -314,6 +378,7 @@ def save_turn(
         issues = verify_overlay(root, after, foundation_check)
         if issues:
             raise HTTPException(409, {'code': 'TURN_INVALID', 'issues': issues})
+    validate_relationship_steps(changed, payload.get('relationship_exceptions', []), existing)
     # Even a narrative-only turn must be durably archived to advance gameplay.
     entry = {
         'номер': number, 'turn_id': turn_id,
