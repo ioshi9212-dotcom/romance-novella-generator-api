@@ -18,3 +18,7 @@ jobs:
           python -m pip install pytest "httpx>=0.27,<1"
       - name: Run regression tests
         run: python -m pytest -q -s
+      - name: Stress-test 240 saved turns and sixteen audits
+        env:
+          NOVELLA_SIM_TURNS: "240"
+        run: python -m pytest -q -s tests/test_scenario_simulation.py::test_120_turn_story_full_lifecycle_with_checks_and_churn
