@@ -520,8 +520,14 @@ def verify_novel(session_id: uuid.UUID, payload: VerifyNovel) -> dict[str, Any]:
             raise HTTPException(409, {"code": "SEMANTIC_AUDIT_REQUIRED", "issues": payload.unresolved_issues})
         # Normalize only explicit, uniquely resolvable participant references.
         # Never invent presence or replace an unknown character with POV.
-        current_state = read_data(folder, "state.json")
-        registry_doc = read_data(folder, "персонажи.json")
+        try:
+            current_state = read_data(folder, "state.json")
+            registry_doc = read_data(folder, "персонажи.json")
+        except HTTPException:
+            raise HTTPException(409, {
+                "code": "FOUNDATION_INCOMPLETE",
+                "issues": validate_foundation(folder),
+            })
         roster = registry_doc.get("персонажи")
         if isinstance(roster, list):
             normalized_state, state_issues = canonicalize_initial_state(
