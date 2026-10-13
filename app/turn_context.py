@@ -103,6 +103,8 @@ def build_packet(
     selected_hook_indices: list[int],
     selected_secret_indices: list[int],
     additional_location_ids: list[str],
+    full_memory_character_ids: list[str] | None = None,
+    full_chronology: bool = False,
 ) -> dict[str, Any]:
     """Read one consistent snapshot under the caller's session lock."""
     # Read only these public directorial files each time; no full RAW, all cards,
@@ -118,6 +120,10 @@ def build_packet(
         if not isinstance(data, dict):
             raise HTTPException(409, f"Invalid context file: {path}")
         return data
+
+    from .session_continuity import get_checkpoint, working_history, working_memory
+    checkpoint = get_checkpoint(root, meta)
+    full_memory = set(full_memory_character_ids or [])
 
     novel = document("анкета.json")
     state = document("state.json")
@@ -139,6 +145,9 @@ def build_packet(
     if not pov_id or pov_id not in present:
         raise HTTPException(409, "POV must be in the active scene")
     selected_ids = _unique(present + additional_character_ids)
+    for character_id in full_memory:
+        if character_id not in selected_ids:
+            raise HTTPException(422, f"Full memory requested for unloaded character: {character_id}")
     for character_id in selected_ids:
         if character_id not in registry:
             raise HTTPException(422, f"Unknown character: {character_id}")
@@ -149,7 +158,11 @@ def build_packet(
         memory = document(f"память/{character_id}.json")
         if card.get("id") != character_id or memory.get("персонаж_id") != character_id:
             raise HTTPException(409, f"Card or memory belongs to another character: {character_id}")
-        character_data[character_id] = {"карточка": card, "память": memory}
+        if character_id not in full_memory:
+            memory, memory_info = working_memory(memory, character_id, checkpoint)
+        else:
+            memory_info = {"режим_памяти": "полный_по_запросу"}
+        character_data[character_id] = {"карточка": card, "память": memory, **memory_info}
 
     scene_location = state.get("локация") if isinstance(state.get("локация"), dict) else {}
     required_locations = _unique(([scene_location["id"]] if scene_location.get("id") else []) + additional_location_ids)
@@ -169,6 +182,12 @@ def build_packet(
     if not isinstance(hooks, list) or not all(isinstance(x, dict) for x in hooks):
         raise HTTPException(409, "Invalid hooks data")
 
+    if checkpoint and not full_chronology:
+        history, history_info = working_history(history, checkpoint)
+    elif checkpoint:
+        history_info = {"режим_хронологии": "полная_по_запросу"}
+    else:
+        history_info = {}
     active = set(selected_ids)
     packet = {
         "session_id": meta["id"],
@@ -178,7 +197,8 @@ def build_packet(
         "ввод_sha256": hashlib.sha256(user_input.encode("utf-8")).hexdigest(),
         "режиссёр": {
             "анкета": novel,
-            "хронология": history,  # compact world history, never silently cut off
+            "хронология": history,
+            **history_info,
             "state": state,
             "реестр": roster,
             "отношения": relations,
@@ -193,6 +213,7 @@ def build_packet(
         "персонажи_в_сцене": present,
         "дополнительно_выбранные_NPC": [cid for cid in selected_ids if cid not in present],
         "последние_сцены": _last_scenes(root),
+        "последнее_сжатие": checkpoint["through_turn"] if checkpoint else 0,
         "граница_знаний": (
             "Режиссёрские карточки, чужая память, скрытый лор и хронология не являются "
             "знаниями POV или NPC. Используй только доступную персонажу часть его прошлого, "
