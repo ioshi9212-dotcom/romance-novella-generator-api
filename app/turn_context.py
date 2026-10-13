@@ -27,8 +27,11 @@ def _scene_ids(state: dict[str, Any]) -> list[str]:
         for row in participants:
             if not isinstance(row, dict) or not isinstance(row.get("id"), str):
                 raise HTTPException(409, f"State: invalid participant in {field}")
-            ids.append(row["id"])
-    return _unique(ids)
+            character_id = row["id"]
+            if character_id in ids:
+                raise HTTPException(409, f"A character appears twice in scene participation: {character_id}")
+            ids.append(character_id)
+    return ids
 
 
 def _preview_entries(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
