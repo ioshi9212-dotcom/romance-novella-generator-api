@@ -1923,7 +1923,7 @@
       "get": {
         "operationId": "getResponseChunk",
         "summary": "Read one immutable 16k-character response chunk from any large read.",
-        "description": "Always use on chunked=true responses from getRuntimeInstructions, readRaw, readNovelDocument, prepareTurn, prepareAudit, resumeSession, readArchivedTurns and prepareCompaction. Chunk 0 was already returned by original request. Read next_chunk_index until all_chunks_read=true. Concatenate content by chunk_index into the original JSON. Does not rebuild or modify any game session.",
+        "description": "If chunked=true, chunk 0 is already included. Fetch each next_chunk_index with the same read_id until all_chunks_read=true. Join content by index to reconstruct the full JSON. Never proceed using an incomplete response.",
         "parameters": [
           {
             "name": "read_id",
