@@ -52,6 +52,14 @@ class SaveDocument(BaseModel):
     document: dict[str, Any]
 
 
+class PrepareTurn(BaseModel):
+    user_input: str = ""
+    additional_character_ids: list[str] = Field(default_factory=list)
+    selected_hook_indices: list[int] = Field(default_factory=list)
+    selected_secret_indices: list[int] = Field(default_factory=list)
+    additional_location_ids: list[str] = Field(default_factory=list)
+
+
 class VerifyNovel(BaseModel):
     audited_against_raw: bool = False
     unresolved_issues: list[str] = Field(default_factory=list)
@@ -359,3 +367,28 @@ def verify_novel(session_id: uuid.UUID, payload: VerifyNovel) -> dict[str, Any]:
         meta["этап"] = "готово_к_игре"
         atomic_json(folder / "сессия.json", meta)
         return summary(meta)
+
+
+@app.post("/sessions/{session_id}/prepare-turn", dependencies=[Depends(authorize)])
+def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
+    """Read-only context for the current turn; repeat to expand selected NPCs.
+
+    This operation does not advance the game or invent any actions. The writer
+    chooses events, and a future commit operation will persist the outcome.
+    """
+    from .turn_context import build_packet
+
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        if meta["этап"] not in {"готово_к_игре", "игра"}:
+            raise HTTPException(409, "Novel must be verified before preparing a turn")
+        return build_packet(
+            root=folder,
+            meta=meta,
+            user_input=payload.user_input,
+            additional_character_ids=payload.additional_character_ids,
+            selected_hook_indices=payload.selected_hook_indices,
+            selected_secret_indices=payload.selected_secret_indices,
+            additional_location_ids=payload.additional_location_ids,
+        )
