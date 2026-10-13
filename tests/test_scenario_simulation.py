@@ -67,7 +67,7 @@ def test_120_turn_story_full_lifecycle_with_checks_and_churn(ready, capsys):
     last_packet, total_bytes = None, 0
 
     for n in range(1, 121):
-        selected = ["aiden"] if n in touch_aiden and n < 20 else []
+        selected = ["aiden"] if n in touch_aiden and n != 22 else []
         # Aiden later joins the physical scene for two turns.
         request = {"user_input": f"(Мой ход {n})", "additional_character_ids": selected}
         packet, extra, duration = action(client, "POST", url + "/prepare-turn", body=request)
