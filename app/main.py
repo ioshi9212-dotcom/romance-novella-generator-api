@@ -16,7 +16,7 @@ import fcntl
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="Novella Generator API", version="0.5.1")
+app = FastAPI(title="Novella Generator API", version="0.5.2")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
