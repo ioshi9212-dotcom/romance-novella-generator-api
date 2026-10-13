@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 from copy import deepcopy
 from pathlib import Path
@@ -217,7 +218,10 @@ def verify_overlay(
         for name in ('анкета.json', 'персонажи.json', 'state.json', 'хронология.json',
                      'скрытый_лор_и_крючки.json', 'отношения.json', 'локации.json'):
             if name not in after:
-                os.link(root / name, sandbox / name)
+                try:
+                    os.link(root / name, sandbox / name)
+                except OSError:
+                    shutil.copyfile(root / name, sandbox / name)
         for subdir in ('карточки', 'память'):
             source = root / subdir
             dest = sandbox / subdir
@@ -226,7 +230,10 @@ def verify_overlay(
                 for file in source.glob('*.json'):
                     name = f'{subdir}/{file.name}'
                     if name not in after:
-                        os.link(file, dest / file.name)
+                        try:
+                            os.link(file, dest / file.name)
+                        except OSError:
+                            shutil.copyfile(file, dest / file.name)
         for name, document in after.items():
             destination = sandbox / name
             destination.parent.mkdir(parents=True, exist_ok=True)
