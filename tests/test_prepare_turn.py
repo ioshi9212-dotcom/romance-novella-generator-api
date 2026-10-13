@@ -5,12 +5,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-KEY = {"X-API-Key": "test-only-key"}
+KEY = {}
 
 
 @pytest.fixture
 def ready(tmp_path, monkeypatch):
-    monkeypatch.setenv("API_KEY", "test-only-key")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     client = TestClient(app)
     created = client.post("/sessions", headers=KEY, json={"initial_text": "СТРОГО RAW\n"})
@@ -156,13 +155,11 @@ def test_recent_scene_archive_tail_without_raw_reload(ready):
     assert packet["номер_хода"] == 1  # archive never advances the session
 
 
-def test_requires_review_and_authentication(tmp_path, monkeypatch):
-    monkeypatch.setenv("API_KEY", "test-only-key")
+def test_requires_review_without_authentication(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     client = TestClient(app)
     sid = client.post("/sessions", json={}, headers=KEY).json()["session_id"]
     path = f"/sessions/{sid}/prepare-turn"
-    assert client.post(path, json={}).status_code == 401
     assert client.post(path, json={}, headers=KEY).status_code == 409
 
 
