@@ -1,0 +1,1073 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Novella Generator Actions",
+    "version": "0.5.1",
+    "description": "Connect a custom ChatGPT novel to the Amvera backend. Canon is stored per session; scene writing is handled by the GPT."
+  },
+  "servers": [
+    {
+      "url": "https://novella-yumikofv.waw0.amvera.tech"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    },
+    "schemas": {
+      "CreateNovel": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "Stable idempotency key for draft creation."
+          },
+          "initial_text": {
+            "type": "string",
+            "description": "Initial RAW text, copied verbatim."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RawPart": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Stable unique ID for this RAW piece."
+          },
+          "text": {
+            "type": "string",
+            "description": "Exact text, without rewriting."
+          },
+          "question": {
+            "type": "string",
+            "description": "Original clarification question, if answering."
+          },
+          "file_name": {
+            "type": "string",
+            "description": "Source filename, when text came from a file."
+          }
+        },
+        "required": [
+          "event_id",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "StageCommand": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "подтверждаю",
+              "вопросов_больше_нет"
+            ]
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "SaveDocument": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Allowed filename, e.g. персонажи.json, карточки/pov.json, память/pov.json"
+          },
+          "document": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "path",
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "VerifyNovel": {
+        "type": "object",
+        "properties": {
+          "audited_against_raw": {
+            "type": "boolean"
+          },
+          "unresolved_issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PrepareTurn": {
+        "type": "object",
+        "properties": {
+          "user_input": {
+            "type": "string",
+            "description": "Exact user input; do not paraphrase."
+          },
+          "additional_character_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "selected_hook_indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "selected_secret_indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additional_location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "full_memory_character_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "full_chronology": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PatchOperation": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "set",
+              "append",
+              "remove",
+              "merge_by_id"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "JSON Pointer, e.g. /знания/13.10.2026"
+          },
+          "value": {
+            "description": "JSON value. Required for set, append, merge_by_id; may be a string, number, object, list, boolean or null."
+          }
+        },
+        "required": [
+          "op",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "CommitTurn": {
+        "type": "object",
+        "properties": {
+          "turn_id": {
+            "type": "string"
+          },
+          "user_input": {
+            "type": "string"
+          },
+          "context_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "scene": {
+            "type": "string",
+            "description": "Full completed scene text."
+          },
+          "updates": {
+            "type": "object",
+            "description": "Sparse patches by actual session JSON filename.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PatchOperation"
+              }
+            }
+          },
+          "additional_character_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "selected_hook_indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "selected_secret_indices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additional_location_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "full_memory_character_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "full_chronology": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "turn_id",
+          "context_sha256",
+          "scene"
+        ],
+        "additionalProperties": false
+      },
+      "AuditPrepare": {
+        "type": "object",
+        "properties": {
+          "character_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AuditCommit": {
+        "type": "object",
+        "properties": {
+          "through_turn": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "audit_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "character_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reviewed_against_archive": {
+            "type": "boolean"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_turns": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "updates": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PatchOperation"
+              }
+            }
+          }
+        },
+        "required": [
+          "through_turn",
+          "audit_sha256"
+        ],
+        "additionalProperties": false
+      },
+      "RollbackTurn": {
+        "type": "object",
+        "properties": {
+          "expected_turn_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_turn_id"
+        ],
+        "additionalProperties": false
+      },
+      "CompactionCommit": {
+        "type": "object",
+        "properties": {
+          "through_turn": {
+            "type": "integer",
+            "minimum": 60
+          },
+          "review_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "reviewed_against_archive": {
+            "type": "boolean"
+          },
+          "world_summary": {
+            "type": "string",
+            "description": "Reviewed factual long-term summary."
+          },
+          "character_summaries": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "through_turn",
+          "review_sha256",
+          "world_summary"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "checkHealth",
+        "summary": "Check whether the API is responding.",
+        "description": "Check whether the API is responding.",
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/runtime": {
+      "get": {
+        "operationId": "getRuntimeInstructions",
+        "summary": "Get current technical Rules and Skin Builder. Send prior hash to skip unchanged document text.",
+        "description": "Get current technical Rules and Skin Builder. Send prior hash to skip unchanged document text.",
+        "parameters": [
+          {
+            "name": "known_sha256",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "description": "Previously received runtime sha256; omit in a fresh chat."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions": {
+      "post": {
+        "operationId": "createNovel",
+        "summary": "Create or reuse one novel session and optionally save initial RAW.",
+        "description": "Create or reuse one novel session and optionally save initial RAW.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNovel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}": {
+      "get": {
+        "operationId": "getSession",
+        "summary": "Read session status and outstanding audit/compaction checkpoints.",
+        "description": "Read session status and outstanding audit/compaction checkpoints.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/raw": {
+      "post": {
+        "operationId": "appendRaw",
+        "summary": "Append one exact RAW message or answer, safely retryable by event_id.",
+        "description": "Append one exact RAW message or answer, safely retryable by event_id.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RawPart"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "readRaw",
+        "summary": "Read all original RAW text for content reconciliation.",
+        "description": "Read all original RAW text for content reconciliation.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/advance": {
+      "post": {
+        "operationId": "advanceCreation",
+        "summary": "Advance creation state after the appropriate confirmation.",
+        "description": "Advance creation state after the appropriate confirmation.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StageCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/data": {
+      "put": {
+        "operationId": "saveNovelDocument",
+        "summary": "Write one session JSON document during creation review.",
+        "description": "Write one session JSON document during creation review.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveDocument"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "readNovelDocument",
+        "summary": "Read one saved session document for review.",
+        "description": "Read one saved session document for review.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "JSON path: анкета.json, персонажи.json, память/<id>.json, etc."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/verify": {
+      "post": {
+        "operationId": "verifyNovel",
+        "summary": "Finish novel setup after real RAW-to-files audit.",
+        "description": "Finish novel setup after real RAW-to-files audit.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyNovel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/prepare-turn": {
+      "post": {
+        "operationId": "prepareTurn",
+        "summary": "Read complete selected context for the next game turn without mutating data.",
+        "description": "Read complete selected context for the next game turn without mutating data.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrepareTurn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/commit-turn": {
+      "post": {
+        "operationId": "commitTurn",
+        "summary": "Persist one full scene and only real JSON changes, atomically and idempotently.",
+        "description": "Persist one full scene and only real JSON changes, atomically and idempotently.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitTurn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/prepare-audit": {
+      "post": {
+        "operationId": "prepareAudit",
+        "summary": "Read archived last 15 turns and selected memories for review.",
+        "description": "Read archived last 15 turns and selected memories for review.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditPrepare"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/commit-audit": {
+      "post": {
+        "operationId": "commitAudit",
+        "summary": "Save evidence-linked audit fixes and mark the checkpoint reviewed.",
+        "description": "Save evidence-linked audit fixes and mark the checkpoint reviewed.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditCommit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/rollback-last-turn": {
+      "post": {
+        "operationId": "rollbackLastTurn",
+        "summary": "Undo exactly the most recent turn and all its persisted data changes.",
+        "description": "Undo exactly the most recent turn and all its persisted data changes.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackTurn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/resume": {
+      "get": {
+        "operationId": "resumeSession",
+        "summary": "Resume this existing novel in a new ChatGPT chat.",
+        "description": "Resume this existing novel in a new ChatGPT chat.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/turns": {
+      "get": {
+        "operationId": "readArchivedTurns",
+        "summary": "Read exact archived scenes for an inclusive range of up to 15 turns.",
+        "description": "Read exact archived scenes for an inclusive range of up to 15 turns.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          },
+          {
+            "name": "from_turn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "First archived turn."
+          },
+          {
+            "name": "to_turn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Last archived turn, inclusive."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/prepare-compaction": {
+      "post": {
+        "operationId": "prepareCompaction",
+        "summary": "Prepare reviewed 60-turn long-term memory summaries.",
+        "description": "Prepare reviewed 60-turn long-term memory summaries.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/commit-compaction": {
+      "post": {
+        "operationId": "commitCompaction",
+        "summary": "Save reviewed long-term summaries without deleting original records.",
+        "description": "Save reviewed long-term summaries without deleting original records.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID returned by createNovel."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompactionCommit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response from the novel backend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
