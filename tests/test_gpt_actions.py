@@ -53,6 +53,27 @@ def test_actions_schema_matches_api_and_has_no_unused_endpoints():
 
 
 
+def test_gpt_actions_operation_description_limits():
+    """The GPT editor rejects operation descriptions and summaries over 300 chars."""
+    spec = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
+    operations = [
+        (path, method, operation)
+        for path, methods in spec["paths"].items()
+        for method, operation in methods.items()
+        if method in {"get", "post", "put", "patch", "delete"}
+    ]
+    assert len(operations) == 20
+    assert not spec.get("security")
+    assert not spec["components"].get("securitySchemes")
+    for path, method, operation in operations:
+        assert operation.get("operationId"), (path, method)
+        for field in ("summary", "description"):
+            assert len(operation.get(field, "")) <= 300, (path, method, field)
+        for parameter in operation.get("parameters", []):
+            assert len(parameter.get("description", "")) <= 700, (path, method)
+    assert spec["paths"]["/chunks/{read_id}/{chunk_index}"]["get"]["operationId"] == "getResponseChunk"
+
+
 def test_every_openapi_object_schema_declares_properties():
     """GPT Actions rejects otherwise-valid maps when 'properties' is absent.
 
