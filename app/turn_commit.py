@@ -102,6 +102,17 @@ def apply_patches(existing: dict[str, Any] | None, operations: list[dict[str, An
             if not isinstance(parent[field], list):
                 raise HTTPException(422, 'Append target must be an array')
             parent[field].append(deepcopy(value))
+        elif op == 'merge_by_id':
+            if not isinstance(parent.get(field), list):
+                raise HTTPException(422, 'merge_by_id target must be an existing array')
+            if not isinstance(value, dict) or not isinstance(value.get('id'), str):
+                raise HTTPException(422, 'merge_by_id value must contain a character ID')
+            matches = [row for row in parent[field] if isinstance(row, dict) and row.get('id') == value['id']]
+            if len(matches) != 1:
+                raise HTTPException(422, 'merge_by_id requires exactly one matching record')
+            for key, new_value in value.items():
+                if key != 'id':
+                    matches[0][key] = deepcopy(new_value)
         elif op == 'remove':
             if field not in parent:
                 raise HTTPException(422, 'Cannot remove missing path')
