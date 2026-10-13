@@ -14,7 +14,8 @@ def test_actions_schema_matches_api_and_has_no_unused_endpoints():
     spec = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
     assert spec["openapi"].startswith("3.1.")
     assert spec["servers"][0]["url"] == "https://novella-yumikofv.waw0.amvera.tech"
-    assert spec["components"]["securitySchemes"]["ApiKeyAuth"]["name"] == "X-API-Key"
+    assert "security" not in spec
+    assert not spec["components"].get("securitySchemes")
 
     methods = {"get", "post", "put", "patch", "delete"}
     actual = {
@@ -97,11 +98,9 @@ def test_gpt_instructions_under_8000_chars():
     assert "getRuntimeInstructions" in text
 
 
-def test_runtime_documents_are_authenticated_and_cachable(monkeypatch):
-    monkeypatch.setenv("API_KEY", "test-secret")
+def test_runtime_documents_are_public_and_cachable(monkeypatch):
     client = TestClient(app)
-    assert client.get("/runtime").status_code == 401
-    first = client.get("/runtime", headers={"X-API-Key": "test-secret"})
+    first = client.get("/runtime", headers={})
     assert first.status_code == 200
     data = first.json()
     if data.get("chunked"):
@@ -110,7 +109,7 @@ def test_runtime_documents_are_authenticated_and_cachable(monkeypatch):
         while next_index is not None:
             result = client.get(
                 f"/chunks/{data['read_id']}/{next_index}",
-                headers={"X-API-Key": "test-secret"}
+                headers={}
             )
             assert result.status_code == 200, result.text
             chunk = result.json()
@@ -121,7 +120,7 @@ def test_runtime_documents_are_authenticated_and_cachable(monkeypatch):
     assert data["rules"].startswith("# Rules")
     assert data["skin_builder"].startswith("# Skin Builder")
     assert len(data["sha256"]) == 64
-    second = client.get("/runtime", headers={"X-API-Key": "test-secret"},
+    second = client.get("/runtime", headers={},
                         params={"known_sha256": data["sha256"]})
     assert second.status_code == 200
     assert second.json() == {
