@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.6.1",
+    "version": "0.6.2",
     "description": "Interactive novel backend. No authentication required. Use getResponseChunk for large read responses."
   },
   "servers": [
@@ -393,7 +393,7 @@
       "get": {
         "operationId": "checkHealth",
         "summary": "Check whether the API is responding.",
-        "description": "Check whether the API is responding.",
+        "description": "Check server and permanent storage. If 503 or storage not writable, never create a novel; Amvera must mount /data.",
         "responses": {
           "200": {
             "description": "Response from the novel backend.",
@@ -404,6 +404,25 @@
                   "properties": {
                     "ok": {
                       "type": "boolean"
+                    },
+                    "storage": {
+                      "type": "object",
+                      "description": "Mounted persistent volume diagnostics; no session data returned.",
+                      "properties": {
+                        "data_root": {
+                          "type": "string",
+                          "description": "Absolute root. Must be /data for Amvera."
+                        },
+                        "persistent_mount_detected": {
+                          "type": "boolean",
+                          "description": "True if OS recognizes the volume as a mount."
+                        },
+                        "writable": {
+                          "type": "boolean",
+                          "description": "True if volume directory is writable."
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": true
