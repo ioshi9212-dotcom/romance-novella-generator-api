@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -61,12 +62,14 @@ def make_scene(number):
 
 def test_120_turn_story_full_lifecycle_with_checks_and_churn(ready, capsys):
     client, url, root = ready
+    turn_count = int(os.environ.get('NOVELLA_SIM_TURNS', '120'))
+    assert turn_count >= 120 and turn_count % 60 == 0, 'Use 120, 180, 240, ... turns'
     start = time.perf_counter()
     seen_ids, stats = set(), defaultdict(int)
-    touch_aiden = {i for i in range(1, 121) if i % 11 == 0}
+    touch_aiden = {i for i in range(1, turn_count + 1) if i % 11 == 0}
     last_packet, total_bytes = None, 0
 
-    for n in range(1, 121):
+    for n in range(1, turn_count + 1):
         selected = ["aiden"] if n in touch_aiden and n != 22 else []
         # Aiden later joins the physical scene for two turns.
         request = {"user_input": f"(Мой ход {n})", "additional_character_ids": selected}
@@ -143,14 +146,14 @@ def test_120_turn_story_full_lifecycle_with_checks_and_churn(ready, capsys):
         stats["commits"] += 1
         last_packet = packet
 
-        if n in (40, 95, 119):
+        if n in (40, 95, 119, 215):
             resumed, chunks, _ = action(client, "GET", url + "/resume")
             stats["chunk_calls"] += chunks
             assert resumed["последний_ход"] == n
             assert resumed["следующий_ход"] == n + 1
             assert resumed["последние_сцены"][-1]["сцена"] == scene
             stats["resume_checks"] += 1
-        if n in (36, 78, 117):
+        if n in (36, 78, 117, 217):
             old, chunks, _ = action(client, "GET", url + "/turns", query={
                 "from_turn": n - 14, "to_turn": n
             })
@@ -205,16 +208,16 @@ def test_120_turn_story_full_lifecycle_with_checks_and_churn(ready, capsys):
                 assert compressed["full_memory_preserved"] is True
                 stats["compactions"] += 1
 
-    assert len(seen_ids) == 120
-    assert stats["audit_calls"] == 8
-    assert stats["compactions"] == 2
+    assert len(seen_ids) == turn_count
+    assert stats["audit_calls"] == turn_count // 15
+    assert stats["compactions"] == turn_count // 60
     archive = (root / "ходы.jsonl").read_text(encoding="utf-8").splitlines()
-    assert len(archive) == 120
-    assert [json.loads(line)["номер"] for line in archive] == list(range(1, 121))
+    assert len(archive) == turn_count
+    assert [json.loads(line)["номер"] for line in archive] == list(range(1, turn_count + 1))
     memory = json.loads((root / "память/pov.json").read_text(encoding="utf-8"))
     aiden = json.loads((root / "память/aiden.json").read_text(encoding="utf-8"))
     nao = json.loads((root / "память/new_35.json").read_text(encoding="utf-8"))
-    assert len(memory["личные_события"]["03.09.2026"]) == 1 + 24
+    assert len(memory["личные_события"]["03.09.2026"]) == 1 + turn_count // 5
     assert len(aiden["знания"]["03.09.2026"]) == 1 + len(touch_aiden)
     assert all("Эйден услышал" not in x for x in memory["личные_события"]["03.09.2026"])
     assert nao["знания"]["03.09.2026"] == ["Только личное прошлое Нао"]
@@ -224,14 +227,14 @@ def test_120_turn_story_full_lifecycle_with_checks_and_churn(ready, capsys):
         "user_input": "(Следующий ход)", "full_memory_character_ids": ["pov"]
     })
     stats["chunk_calls"] += chunks
-    assert next_packet["номер_хода"] == 121
-    assert next_packet["последнее_сжатие"] == 120
-    assert len(next_packet["персонажи_подробно"]["pov"]["память"]["личные_события"]["03.09.2026"]) == 25
+    assert next_packet["номер_хода"] == turn_count + 1
+    assert next_packet["последнее_сжатие"] == turn_count
+    assert len(next_packet["персонажи_подробно"]["pov"]["память"]["личные_события"]["03.09.2026"]) == 1 + turn_count // 5
     assert "aiden" not in next_packet["персонажи_подробно"]
     duration_s = round(time.perf_counter() - start, 3)
     output = {
-        "test": "synthetic_120_turns", "turns": 120, "audits": 8,
-        "compactions": 2, "api_chunk_followups": stats["chunk_calls"],
+        "test": f"synthetic_{turn_count}_turns", "turns": turn_count, "audits": turn_count // 15,
+        "compactions": turn_count // 60, "api_chunk_followups": stats["chunk_calls"],
         "total_scene_utf8_bytes": total_bytes, "duration_seconds": duration_s,
         "prepare_ms_total": stats["prepare_ms_total"],
         "story_files_preserved": True,
