@@ -89,7 +89,8 @@
           },
           "document": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "properties": {}
           }
         },
         "required": [
@@ -209,7 +210,8 @@
               "items": {
                 "$ref": "#/components/schemas/PatchOperation"
               }
-            }
+            },
+            "properties": {}
           },
           "additional_character_ids": {
             "type": "array",
@@ -307,7 +309,8 @@
                 "type": "integer",
                 "minimum": 1
               }
-            }
+            },
+            "properties": {}
           },
           "updates": {
             "type": "object",
@@ -316,7 +319,8 @@
               "items": {
                 "$ref": "#/components/schemas/PatchOperation"
               }
-            }
+            },
+            "properties": {}
           }
         },
         "required": [
@@ -359,7 +363,8 @@
             "type": "object",
             "additionalProperties": {
               "type": "string"
-            }
+            },
+            "properties": {}
           }
         },
         "required": [
