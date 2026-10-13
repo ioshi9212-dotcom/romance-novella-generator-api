@@ -118,6 +118,8 @@ def recover_maintenance(root: Path) -> None:
                 durable_json(destination, document)
         if transaction['operation'] == 'audit':
             _append_once(root, AUDIT_LOG, transaction['receipt'])
+        elif transaction['operation'] == 'compaction':
+            pass  # The checkpoint and session metadata are journaled above.
         elif transaction['operation'] == 'rollback':
             old_turn = transaction['turn_id']
             prev = transaction['meta_after']['последний_ход']
@@ -284,6 +286,11 @@ def rollback_last(root: Path, meta: dict[str, Any], expected_turn_id: str) -> di
         previous[name] = change['до']
     meta_after = deepcopy(meta)
     meta_after['последний_ход'] = number - 1
+    # A compact checkpoint for the removed turn must not cite undone events.
+    if int(meta.get('last_compacted_turn', 0)) == number:
+        from .session_continuity import CHECKPOINT
+        previous[CHECKPOINT] = None
+        meta_after['last_compacted_turn'] = 0
     if undo_audit:
         meta_after['last_audited_turn'] = int(audit.get('previous_audited_turn',0))
         if meta_after.get('last_compaction_review_turn') == number:
