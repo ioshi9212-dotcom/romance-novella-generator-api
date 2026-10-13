@@ -24,11 +24,7 @@ CORE = {
     "скрытый_лор_и_крючки.json", "отношения.json", "локации.json",
 }
 IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
-RELATIONSHIP_AXES = {
-    "доверие", "близость", "привязанность", "симпатия", "влечение",
-    "уважение", "подозрение", "настороженность", "раздражение", "обида",
-    "ревность", "страх", "соперничество",
-}
+MAX_RELATIONSHIP_PARAMETERS = 10
 
 
 class CreateNovel(BaseModel):
@@ -75,12 +71,21 @@ class PatchOperation(BaseModel):
         return self
 
 
+class RelationshipException(BaseModel):
+    """Explicit exception to the normal 0–3 relationship movement per turn."""
+    model_config = ConfigDict(extra="forbid")
+    owner_id: str = Field(min_length=1)
+    parameter: str = Field(min_length=1)
+    reason: str = Field(min_length=12)
+
+
 class CommitTurn(BaseModel):
     turn_id: str
     user_input: str = ""
     context_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     scene: str = Field(min_length=1)
     updates: dict[str, list[PatchOperation]] = Field(default_factory=dict)
+    relationship_exceptions: list[RelationshipException] = Field(default_factory=list)
     additional_character_ids: list[str] = Field(default_factory=list)
     selected_hook_indices: list[int] = Field(default_factory=list)
     selected_secret_indices: list[int] = Field(default_factory=list)
@@ -321,8 +326,13 @@ def validate_foundation(folder: Path) -> list[str]:
             if not isinstance(metrics, dict):
                 issues.append(f"Некорректные числовые параметры: {owner}")
             else:
+                if len(metrics) > MAX_RELATIONSHIP_PARAMETERS:
+                    issues.append(f"Слишком много параметров отношений {owner}: максимум {MAX_RELATIONSHIP_PARAMETERS}")
                 for metric, value in metrics.items():
-                    if metric not in RELATIONSHIP_AXES or isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 100:
+                    if not isinstance(metric, str) or not metric.strip() or (
+                        isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not 0 <= value <= 100
+                    ):
                         issues.append(f"Некорректная шкала отношений {owner}: {metric}")
             npc_relations = record.get("к_другим_NPC") or {}
             if not isinstance(npc_relations, dict):
