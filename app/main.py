@@ -339,6 +339,28 @@ def health() -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/runtime", dependencies=[Depends(authorize)])
+def get_runtime_instructions(known_sha256: str | None = None) -> dict[str, Any]:
+    """Return current technical Rules and Skin Builder only when their version changed."""
+    base = Path(__file__).resolve().parent.parent / "runtime"
+    try:
+        rules = (base / "rules.md").read_text(encoding="utf-8")
+        skin = (base / "scene_builder.md").read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(503, "Runtime documents are unavailable") from exc
+    fingerprint = hashlib.sha256(json.dumps(
+        [rules, skin], ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()
+    changed = fingerprint != known_sha256
+    return {
+        "sha256": fingerprint,
+        "changed": changed,
+        "rules": rules if changed else "",
+        "skin_builder": skin if changed else "",
+    }
+
+
+
 @app.post("/sessions", dependencies=[Depends(authorize)])
 def create_novel(payload: CreateNovel) -> dict[str, Any]:
     key = os.environ.get("API_KEY", "")
