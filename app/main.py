@@ -16,7 +16,7 @@ import fcntl
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="Novella Generator API", version="0.3.0")
+app = FastAPI(title="Novella Generator API", version="0.4.0")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -85,6 +85,24 @@ class CommitTurn(BaseModel):
     additional_location_ids: list[str] = Field(default_factory=list)
 
 
+class AuditPrepare(BaseModel):
+    character_ids: list[str] = Field(default_factory=list)
+
+
+class AuditCommit(BaseModel):
+    through_turn: int = Field(ge=1)
+    audit_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    character_ids: list[str] = Field(default_factory=list)
+    reviewed_against_archive: bool = False
+    findings: list[str] = Field(default_factory=list)
+    evidence_turns: dict[str, list[int]] = Field(default_factory=dict)
+    updates: dict[str, list[PatchOperation]] = Field(default_factory=dict)
+
+
+class RollbackTurn(BaseModel):
+    expected_turn_id: str = Field(min_length=1)
+
+
 class VerifyNovel(BaseModel):
     audited_against_raw: bool = False
     unresolved_issues: list[str] = Field(default_factory=list)
@@ -109,7 +127,9 @@ def locked(folder: Path):
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         try:
             from .turn_commit import recover_pending
+            from .turn_maintenance import recover_maintenance
             recover_pending(folder)
+            recover_maintenance(folder)
             yield
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
@@ -143,6 +163,10 @@ def summary(meta: dict[str, Any]) -> dict[str, Any]:
         "этап": meta["этап"],
         "последний_ход": meta["последний_ход"],
         "источников": len(meta.get("_raw_receipts", {})),
+        "аудит_по_ход": int(meta.get("last_audited_turn", 0)),
+        "аудит_требуется": int(meta.get("последний_ход", 0)) >= 15 and (
+            (int(meta.get("последний_ход", 0)) // 15) * 15 > int(meta.get("last_audited_turn", 0))
+        ),
     }
 
 
@@ -413,6 +437,9 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
         meta = load(folder)
         if meta["этап"] not in {"готово_к_игре", "игра"}:
             raise HTTPException(409, "Novel must be verified before preparing a turn")
+        from .turn_maintenance import audit_due
+        if audit_due(meta):
+            raise HTTPException(409, {"code": "AUDIT_REQUIRED", "through_turn": meta["последний_ход"]})
         return build_packet(
             root=folder,
             meta=meta,
@@ -435,6 +462,9 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
         meta = load(folder)
         if meta["этап"] not in {"готово_к_игре", "игра"}:
             raise HTTPException(409, "Novel must be verified before committing a turn")
+        from .turn_maintenance import audit_due
+        if audit_due(meta):
+            raise HTTPException(409, {"code": "AUDIT_REQUIRED", "through_turn": meta["последний_ход"]})
         if not payload.scene.strip():
             raise HTTPException(422, "Scene must not be blank")
         return save_turn(
@@ -445,3 +475,36 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
             foundation_check=validate_foundation,
             build_packet=build_packet,
         )
+
+@app.post("/sessions/{session_id}/prepare-audit", dependencies=[Depends(authorize)])
+def prepare_audit_endpoint(session_id: uuid.UUID, payload: AuditPrepare) -> dict[str, Any]:
+    """Read exact last 15 turns and relevant personal memories for review."""
+    from .turn_maintenance import prepare_audit
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        if meta["этап"] not in {"готово_к_игре", "игра"}:
+            raise HTTPException(409, "Session is not in game mode")
+        return prepare_audit(folder, meta, payload.character_ids)
+
+
+@app.post("/sessions/{session_id}/commit-audit", dependencies=[Depends(authorize)])
+def commit_audit_endpoint(session_id: uuid.UUID, payload: AuditCommit) -> dict[str, Any]:
+    """Save reviewed, evidence-linked corrections without creating a game turn."""
+    from .turn_maintenance import commit_audit
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        if meta["этап"] not in {"готово_к_игре", "игра"}:
+            raise HTTPException(409, "Session is not in game mode")
+        return commit_audit(folder, meta, payload.model_dump(), valid_path, validate_foundation)
+
+
+@app.post("/sessions/{session_id}/rollback-last-turn", dependencies=[Depends(authorize)])
+def rollback_last_turn_endpoint(session_id: uuid.UUID, payload: RollbackTurn) -> dict[str, Any]:
+    """Rollback only the exact last archived turn, transactionally."""
+    from .turn_maintenance import rollback_last
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        return rollback_last(folder, meta, payload.expected_turn_id)
