@@ -132,11 +132,12 @@ def test_120_turn_story_full_lifecycle_with_checks_and_churn(ready, capsys):
         scene = make_scene(n)
         total_bytes += len(scene.encode("utf-8"))
         assert 1_800 <= len(scene.replace(" ", "")) <= 3_000
-        saved, _, _ = action(client, "POST", url + "/commit-turn", body={
+        save_request = {
             "turn_id": packet["turn_id"], "user_input": request["user_input"],
             "context_sha256": packet["контекст_sha256"], "scene": scene,
             "updates": updates, "additional_character_ids": selected
-        })
+        }
+        saved, _, _ = action(client, "POST", url + "/commit-turn", body=save_request)
         assert saved["status"] == "saved"
         assert saved["номер_хода"] == n
         stats["commits"] += 1
@@ -160,6 +161,11 @@ def test_120_turn_story_full_lifecycle_with_checks_and_churn(ready, capsys):
             stats["archival_checks"] += 1
 
         if n % 15 == 0:
+            # Network retries must remain idempotent, including checkpoints
+            # that block *new* turns while an audit or compaction is due.
+            repeated = client.post(url + "/commit-turn", json=save_request)
+            assert repeated.status_code == 200, repeated.text
+            assert repeated.json()["status"] == "already_saved"
             blocked = client.post(url + "/prepare-turn", json={"user_input": "не должно пройти"})
             assert blocked.status_code == 409, blocked.text
             assert blocked.json()["detail"]["code"] == "AUDIT_REQUIRED"
