@@ -100,3 +100,16 @@ def test_nonaligned_pov_and_relationships_still_rejected(api):
     assert response.status_code == 409
     assert any("pov_id различается" in x for x in response.json()["detail"]["issues"])
     assert doc["pov_id"] == "Лиам"
+
+
+def test_missing_required_state_retains_foundation_validation_error(api):
+    path = start_review(api)
+    docs = make_docs()
+    docs.pop("state.json")
+    for name, document in docs.items():
+        written = api.put(path + "/data", json={"path": name, "document": document})
+        assert written.status_code == 200, written.text
+    verification = api.post(path + "/verify", json={"audited_against_raw": True})
+    assert verification.status_code == 409, verification.text
+    assert verification.json()["detail"]["code"] == "FOUNDATION_INCOMPLETE"
+    assert any("state.json" in issue for issue in verification.json()["detail"]["issues"])
