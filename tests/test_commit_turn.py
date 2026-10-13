@@ -171,12 +171,12 @@ def test_recover_after_crash_with_partial_archive_and_partial_files(ready, monke
     assert memory['знания']['03.09.2026'][-1] == 'важное'
 
 
-def test_pure_narrative_turn_and_authentication(ready):
+def test_pure_narrative_turn_keyless_retry(ready):
     p = packet(ready)
     client, url, root = ready
     result, request = commit(ready, p, updates={})
     assert result.status_code == 200
-    assert client.post(url+'/commit-turn', json=request).status_code == 401
+    assert client.post(url+'/commit-turn', json=request).json()['status'] == 'already_saved'
     assert client.post(url+'/commit-turn', json={}).status_code == 401
     assert json.loads((root/'сессия.json').read_text(encoding='utf-8'))['этап'] == 'игра'
 
