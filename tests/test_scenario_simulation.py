@@ -297,3 +297,68 @@ def test_critical_relationship_and_rollback_restores_everything(ready):
     scores = json.loads((root/"отношения.json").read_text(encoding="utf-8"))["персонажи"]["aiden"]["к_POV"]["параметры"]
     assert scores == {"доверие": 42}
     assert not (root/"ходы.jsonl").read_text(encoding="utf-8").strip()
+
+
+def test_simultaneous_commit_retries_and_competing_writers(ready):
+    """Two simulated GPT calls must never duplicate or overwrite a turn."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    client, url, root = ready
+    first, _, _ = action(client, "POST", url + "/prepare-turn", body={
+        "user_input": "(Первый многопоточный ход)"
+    })
+    payload = {
+        "turn_id": first["turn_id"], "user_input": first["ввод_игрока"],
+        "context_sha256": first["контекст_sha256"],
+        "scene": make_scene(1), "updates": {}
+    }
+
+    def submit(body):
+        r = client.post(url + "/commit-turn", json=body)
+        return r.status_code, r.json()
+
+    with ThreadPoolExecutor(max_workers=5) as threads:
+        results = list(threads.map(submit, [payload] * 5))
+    assert all(status == 200 for status, _ in results), results
+    assert sorted(doc["status"] for _, doc in results) == (
+        ["already_saved"] * 4 + ["saved"]
+    )
+    assert len((root / "ходы.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+
+    second, _, _ = action(client, "POST", url + "/prepare-turn", body={
+        "user_input": "(Второй многопоточный ход)"
+    })
+    base = {
+        "turn_id": second["turn_id"], "user_input": second["ввод_игрока"],
+        "context_sha256": second["контекст_sha256"], "updates": {}
+    }
+    a, b = {**base, "scene": make_scene(2)}, {**base, "scene": make_scene(3)}
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        competing = list(threads.map(submit, [a, b]))
+    assert sorted(status for status, _ in competing) == [200, 409], competing
+    archived = [json.loads(row) for row in (root / "ходы.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [row["номер"] for row in archived] == [1, 2]
+    assert archived[-1]["сцена"] in (a["scene"], b["scene"])
+
+
+def test_prepare_commit_refuses_direct_out_of_band_file_mutation(ready):
+    """A silently changed memory file invalidates an old prepared context."""
+    client, url, root = ready
+    packet, _, _ = action(client, "POST", url + "/prepare-turn", body={
+        "user_input": "(Проверяю устаревший контекст)"
+    })
+    memory_file = root / "память" / "pov.json"
+    before = json.loads(memory_file.read_text(encoding="utf-8"))
+    tampered = json.loads(memory_file.read_text(encoding="utf-8"))
+    tampered["знания"]["03.09.2026"].append("внешнее изменение до сохранения")
+    memory_file.write_text(json.dumps(tampered, ensure_ascii=False), encoding="utf-8")
+    response = client.post(url + "/commit-turn", json={
+        "turn_id": packet["turn_id"], "user_input": packet["ввод_игрока"],
+        "context_sha256": packet["контекст_sha256"],
+        "scene": make_scene(1), "updates": {}
+    })
+    assert response.status_code == 409
+    assert not (root / "ходы.jsonl").exists()
+    after = json.loads(memory_file.read_text(encoding="utf-8"))
+    assert "внешнее изменение до сохранения" in after["знания"]["03.09.2026"]
+    assert after != before
