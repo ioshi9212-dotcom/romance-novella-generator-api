@@ -51,6 +51,45 @@ def test_actions_schema_matches_api_and_has_no_unused_endpoints():
                 assert parameter["required"] is True
 
 
+
+def test_every_openapi_object_schema_declares_properties():
+    """GPT Actions rejects otherwise-valid maps when 'properties' is absent.
+
+    Include nested objects and every response, not just components/schemas.
+    Dynamic maps must keep additionalProperties to preserve novel document IDs.
+    """
+    spec = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
+
+    def visit(node, location):
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert "properties" in node, f"Object schema missing properties: {location}"
+                assert isinstance(node["properties"], dict)
+            for name, value in node.items():
+                visit(value, f"{location}/{name}")
+        elif isinstance(node, list):
+            for idx, value in enumerate(node):
+                visit(value, f"{location}/{idx}")
+
+    visit(spec, "$")
+    methods = {"get", "post", "put", "patch", "delete"}
+    for route, items in spec["paths"].items():
+        for method, operation in items.items():
+            if method not in methods:
+                continue
+            response = operation["responses"]["200"]["content"]["application/json"]["schema"]
+            assert response["type"] == "object", (route, method)
+            assert response["properties"], (route, method)
+    for name, expected_type in (
+        ("SaveDocument", "document"),
+        ("CommitTurn", "updates"),
+        ("AuditCommit", "updates"),
+        ("CompactionCommit", "character_summaries"),
+    ):
+        dynamic = spec["components"]["schemas"][name]["properties"][expected_type]
+        assert "additionalProperties" in dynamic, name
+
+
 def test_gpt_instructions_under_8000_chars():
     text = (ROOT / "gpt/custom_gpt_instructions.md").read_text(encoding="utf-8")
     assert len(text) <= 8000
