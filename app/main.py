@@ -14,9 +14,9 @@ from typing import Any, Literal
 
 import fcntl
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="Novella Generator API", version="0.1.0")
+app = FastAPI(title="Novella Generator API", version="0.3.0")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -60,6 +60,31 @@ class PrepareTurn(BaseModel):
     additional_location_ids: list[str] = Field(default_factory=list)
 
 
+class PatchOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    op: Literal["set", "append", "remove"]
+    path: str
+    value: Any = None
+
+    @model_validator(mode="after")
+    def require_patch_value(self):
+        if self.op in {"set", "append"} and "value" not in self.model_fields_set:
+            raise ValueError("set/append operations require an explicit value")
+        return self
+
+
+class CommitTurn(BaseModel):
+    turn_id: str
+    user_input: str = ""
+    context_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    scene: str = Field(min_length=1)
+    updates: dict[str, list[PatchOperation]] = Field(default_factory=dict)
+    additional_character_ids: list[str] = Field(default_factory=list)
+    selected_hook_indices: list[int] = Field(default_factory=list)
+    selected_secret_indices: list[int] = Field(default_factory=list)
+    additional_location_ids: list[str] = Field(default_factory=list)
+
+
 class VerifyNovel(BaseModel):
     audited_against_raw: bool = False
     unresolved_issues: list[str] = Field(default_factory=list)
@@ -83,6 +108,8 @@ def locked(folder: Path):
     with (folder / ".lock").open("a+b") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         try:
+            from .turn_commit import recover_pending
+            recover_pending(folder)
             yield
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
@@ -294,7 +321,9 @@ def create_novel(payload: CreateNovel) -> dict[str, Any]:
 
 @app.get("/sessions/{session_id}", dependencies=[Depends(authorize)])
 def get_session(session_id: uuid.UUID) -> dict[str, Any]:
-    return summary(load(session_dir(session_id)))
+    folder = session_dir(session_id)
+    with locked(folder):
+        return summary(load(folder))
 
 
 @app.post("/sessions/{session_id}/raw", dependencies=[Depends(authorize)])
@@ -348,8 +377,9 @@ def put_document(session_id: uuid.UUID, payload: SaveDocument) -> dict[str, str]
 @app.get("/sessions/{session_id}/data", dependencies=[Depends(authorize)])
 def get_document(session_id: uuid.UUID, path: str) -> dict[str, Any]:
     folder = session_dir(session_id)
-    load(folder)
-    return {"path": path, "document": read_data(folder, path)}
+    with locked(folder):
+        load(folder)
+        return {"path": path, "document": read_data(folder, path)}
 
 
 @app.post("/sessions/{session_id}/verify", dependencies=[Depends(authorize)])
@@ -391,4 +421,27 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
             selected_hook_indices=payload.selected_hook_indices,
             selected_secret_indices=payload.selected_secret_indices,
             additional_location_ids=payload.additional_location_ids,
+        )
+
+
+@app.post("/sessions/{session_id}/commit-turn", dependencies=[Depends(authorize)])
+def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
+    """Apply sparse JSON changes and archive a complete scene as one recoverable turn."""
+    from .turn_commit import save_turn
+    from .turn_context import build_packet
+
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        if meta["этап"] not in {"готово_к_игре", "игра"}:
+            raise HTTPException(409, "Novel must be verified before committing a turn")
+        if not payload.scene.strip():
+            raise HTTPException(422, "Scene must not be blank")
+        return save_turn(
+            root=folder,
+            meta=meta,
+            payload=payload.model_dump(),
+            valid_path=valid_path,
+            foundation_check=validate_foundation,
+            build_packet=build_packet,
         )
