@@ -245,6 +245,13 @@
           },
           "full_chronology": {
             "type": "boolean"
+          },
+          "relationship_exceptions": {
+            "type": "array",
+            "description": "Only for a specific numeric NPC relationship change exceeding the usual 0–3 points per turn after an actual critical event.",
+            "items": {
+              "$ref": "#/components/schemas/RelationshipException"
+            }
           }
         },
         "required": [
@@ -359,6 +366,30 @@
           "through_turn",
           "review_sha256",
           "world_summary"
+        ],
+        "additionalProperties": false
+      },
+      "RelationshipException": {
+        "type": "object",
+        "description": "Explicitly documented critical change for one NPC's numeric parameter; no predefined parameter names.",
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parameter": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 12
+          }
+        },
+        "required": [
+          "owner_id",
+          "parameter",
+          "reason"
         ],
         "additionalProperties": false
       }
