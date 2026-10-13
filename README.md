@@ -27,7 +27,7 @@
 
 ## Подключение ChatGPT GPT Actions
 
-1. После развёртывания свежего коммита в Amvera открой редактор своего GPT. В поле **Instructions** вставь полностью текст `gpt/custom_gpt_instructions.md` (он проверяется на максимум 8000 символов).
+1. После развёртывания свежего коммита в Amvera открой редактор своего GPT. В поле **Instructions** **замени старое содержимое полностью** текстом `gpt/ВСТАВИТЬ_В_ПОЛЕ_INSTRUCTIONS.txt` (около 2 400 символов, включая пробелы и переносы). Альтернативный файл с заголовками: `gpt/custom_gpt_instructions.md`. **Не вставляй** сюда `инструкция.md`, `runtime/rules.md`, `runtime/scene_builder.md` или OpenAPI-схему: они нужны отдельно.
 2. В разделе **Actions → Create new action** вставь `openapi.json` или импортируй ссылку `https://raw.githubusercontent.com/ioshi9212-dotcom/romance-novella-generator-api/main/openapi.json`. Это отдельная схема на **19 действий**, включая создание новеллы, подготовку/сохранение, аудит, откат, сжатие и продолжение.
 3. Настрой **Authentication → API Key → Custom Header** с заголовком **`X-API-Key`**. Укажи тот же секрет, что в переменной `API_KEY` в Amvera. **Не включай значение ключа в инструкцию, YAML/JSON, GitHub или переписку.**
 4. В Preview сначала проверь `checkHealth`, затем `getRuntimeInstructions`. Второй запрос требует настроенной аутентификации и возвращает `rules`, `skin_builder`, их `sha256` и признак `changed`. При неизменённом хеше возвращаются пустые тексты, чтобы не гонять одинаковые правила.
