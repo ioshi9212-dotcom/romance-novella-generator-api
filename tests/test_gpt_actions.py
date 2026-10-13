@@ -104,6 +104,19 @@ def test_runtime_documents_are_authenticated_and_cachable(monkeypatch):
     first = client.get("/runtime", headers={"X-API-Key": "test-secret"})
     assert first.status_code == 200
     data = first.json()
+    if data.get("chunked"):
+        chunks = {0: data["content"]}
+        next_index = data["next_chunk_index"]
+        while next_index is not None:
+            result = client.get(
+                f"/chunks/{data['read_id']}/{next_index}",
+                headers={"X-API-Key": "test-secret"}
+            )
+            assert result.status_code == 200, result.text
+            chunk = result.json()
+            chunks[next_index] = chunk["content"]
+            next_index = chunk["next_chunk_index"]
+        data = json.loads("".join(chunks[index] for index in range(data["chunk_count"])))
     assert data["changed"] is True
     assert data["rules"].startswith("# Rules")
     assert data["skin_builder"].startswith("# Skin Builder")
