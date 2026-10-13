@@ -62,14 +62,14 @@ class PrepareTurn(BaseModel):
 
 class PatchOperation(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    op: Literal["set", "append", "remove"]
+    op: Literal["set", "append", "remove", "merge_by_id"]
     path: str
     value: Any = None
 
     @model_validator(mode="after")
     def require_patch_value(self):
-        if self.op in {"set", "append"} and "value" not in self.model_fields_set:
-            raise ValueError("set/append operations require an explicit value")
+        if self.op in {"set", "append", "merge_by_id"} and "value" not in self.model_fields_set:
+            raise ValueError("set/append/merge_by_id operations require an explicit value")
         return self
 
 
