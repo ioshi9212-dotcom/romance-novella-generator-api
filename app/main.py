@@ -16,7 +16,7 @@ import fcntl
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="Novella Generator API", version="0.4.0")
+app = FastAPI(title="Novella Generator API", version="0.5.0")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -58,6 +58,8 @@ class PrepareTurn(BaseModel):
     selected_hook_indices: list[int] = Field(default_factory=list)
     selected_secret_indices: list[int] = Field(default_factory=list)
     additional_location_ids: list[str] = Field(default_factory=list)
+    full_memory_character_ids: list[str] = Field(default_factory=list)
+    full_chronology: bool = False
 
 
 class PatchOperation(BaseModel):
@@ -83,6 +85,8 @@ class CommitTurn(BaseModel):
     selected_hook_indices: list[int] = Field(default_factory=list)
     selected_secret_indices: list[int] = Field(default_factory=list)
     additional_location_ids: list[str] = Field(default_factory=list)
+    full_memory_character_ids: list[str] = Field(default_factory=list)
+    full_chronology: bool = False
 
 
 class AuditPrepare(BaseModel):
@@ -101,6 +105,14 @@ class AuditCommit(BaseModel):
 
 class RollbackTurn(BaseModel):
     expected_turn_id: str = Field(min_length=1)
+
+
+class CompactionCommit(BaseModel):
+    through_turn: int = Field(ge=60)
+    review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reviewed_against_archive: bool = False
+    world_summary: str = Field(min_length=1)
+    character_summaries: dict[str, str] = Field(default_factory=dict)
 
 
 class VerifyNovel(BaseModel):
@@ -163,6 +175,10 @@ def summary(meta: dict[str, Any]) -> dict[str, Any]:
         "этап": meta["этап"],
         "последний_ход": meta["последний_ход"],
         "источников": len(meta.get("_raw_receipts", {})),
+        "последнее_сжатие": int(meta.get("last_compacted_turn", 0)),
+        "сжатие_требуется": (int(meta.get("последний_ход", 0)) > 0 and
+                              int(meta.get("последний_ход", 0)) % 60 == 0 and
+                              int(meta.get("last_compacted_turn", 0)) < int(meta.get("последний_ход", 0))),
         "аудит_по_ход": int(meta.get("last_audited_turn", 0)),
         "аудит_требуется": int(meta.get("последний_ход", 0)) >= 15 and (
             (int(meta.get("последний_ход", 0)) // 15) * 15 > int(meta.get("last_audited_turn", 0))
@@ -440,6 +456,9 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
         from .turn_maintenance import audit_due
         if audit_due(meta):
             raise HTTPException(409, {"code": "AUDIT_REQUIRED", "through_turn": meta["последний_ход"]})
+        from .session_continuity import compaction_due
+        if compaction_due(meta):
+            raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
         return build_packet(
             root=folder,
             meta=meta,
@@ -448,6 +467,8 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
             selected_hook_indices=payload.selected_hook_indices,
             selected_secret_indices=payload.selected_secret_indices,
             additional_location_ids=payload.additional_location_ids,
+            full_memory_character_ids=payload.full_memory_character_ids,
+            full_chronology=payload.full_chronology,
         )
 
 
@@ -465,6 +486,9 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
         from .turn_maintenance import audit_due
         if audit_due(meta):
             raise HTTPException(409, {"code": "AUDIT_REQUIRED", "through_turn": meta["последний_ход"]})
+        from .session_continuity import compaction_due
+        if compaction_due(meta):
+            raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
         if not payload.scene.strip():
             raise HTTPException(422, "Scene must not be blank")
         return save_turn(
@@ -475,6 +499,7 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
             foundation_check=validate_foundation,
             build_packet=build_packet,
         )
+
 
 @app.post("/sessions/{session_id}/prepare-audit", dependencies=[Depends(authorize)])
 def prepare_audit_endpoint(session_id: uuid.UUID, payload: AuditPrepare) -> dict[str, Any]:
@@ -508,3 +533,37 @@ def rollback_last_turn_endpoint(session_id: uuid.UUID, payload: RollbackTurn) ->
     with locked(folder):
         meta = load(folder)
         return rollback_last(folder, meta, payload.expected_turn_id)
+
+
+@app.get("/sessions/{session_id}/resume", dependencies=[Depends(authorize)])
+def resume_endpoint(session_id: uuid.UUID) -> dict[str, Any]:
+    """Lightweight read-only handoff to a new ChatGPT conversation."""
+    from .session_continuity import resume_session
+    folder = session_dir(session_id)
+    with locked(folder):
+        return resume_session(folder, load(folder))
+
+
+@app.get("/sessions/{session_id}/turns", dependencies=[Depends(authorize)])
+def read_archive_endpoint(session_id: uuid.UUID, from_turn: int = 1, to_turn: int = 1) -> dict[str, Any]:
+    """Retrieve up to 15 exact archived scenes only when details are needed."""
+    from .session_continuity import archived_scenes
+    folder = session_dir(session_id)
+    with locked(folder):
+        return archived_scenes(folder, load(folder), from_turn, to_turn)
+
+
+@app.post("/sessions/{session_id}/prepare-compaction", dependencies=[Depends(authorize)])
+def prepare_compaction_endpoint(session_id: uuid.UUID) -> dict[str, Any]:
+    from .session_continuity import prepare_compaction
+    folder = session_dir(session_id)
+    with locked(folder):
+        return prepare_compaction(folder, load(folder))
+
+
+@app.post("/sessions/{session_id}/commit-compaction", dependencies=[Depends(authorize)])
+def commit_compaction_endpoint(session_id: uuid.UUID, payload: CompactionCommit) -> dict[str, Any]:
+    from .session_continuity import commit_compaction
+    folder = session_dir(session_id)
+    with locked(folder):
+        return commit_compaction(folder, load(folder), payload.model_dump())
