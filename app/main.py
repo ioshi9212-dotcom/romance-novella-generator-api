@@ -416,7 +416,7 @@ def add_raw(session_id: uuid.UUID, part: RawPart) -> dict[str, Any]:
 
 
 @app.get("/sessions/{session_id}/raw", dependencies=[Depends(authorize)])
-def get_raw(session_id: uuid.UUID) -> dict[str, str]:
+def get_raw(session_id: uuid.UUID) -> dict[str, Any]:
     folder = session_dir(session_id)
     with locked(folder):
         load(folder)
