@@ -15,7 +15,20 @@ def packet(ready, **options):
     response = client.post(url + '/prepare-turn', headers=KEY,
                            json={'user_input': 'Продолжаю разговор', **options})
     assert response.status_code == 200, response.text
-    return response.json()
+    data = response.json()
+    if data.get("chunked"):
+        segments = {0: data["content"]}
+        next_index = data["next_chunk_index"]
+        while next_index is not None:
+            chunk = client.get(
+                f"/chunks/{data['read_id']}/{next_index}", headers=KEY
+            )
+            assert chunk.status_code == 200, chunk.text
+            item = chunk.json()
+            segments[next_index] = item["content"]
+            next_index = item["next_chunk_index"]
+        data = json.loads("".join(segments[i] for i in range(data["chunk_count"])))
+    return data
 
 
 def commit(ready, prepared, *, scene='Эйден посмотрел на символ.', updates=None, **options):
