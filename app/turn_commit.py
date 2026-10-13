@@ -282,7 +282,8 @@ def save_turn(
             raise HTTPException(409, 'An already saved turn cannot be replaced')
         raise HTTPException(409, f'Stale or invalid turn_id, next expected: {proposed}')
 
-    selection = {k: payload.get(k, []) for k in ('additional_character_ids', 'selected_hook_indices', 'selected_secret_indices', 'additional_location_ids')}
+    selection = {k: payload.get(k, []) for k in ('additional_character_ids', 'selected_hook_indices', 'selected_secret_indices', 'additional_location_ids', 'full_memory_character_ids')}
+    selection['full_chronology'] = payload.get('full_chronology', False)
     packet = build_packet(
         root=root, meta=meta, user_input=payload['user_input'],
         **selection,
