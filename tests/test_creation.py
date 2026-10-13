@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -96,3 +98,15 @@ def test_missing_memory_and_pov_leaks_rejected(api):
     assert any("отношения от имени POV" in x for x in issues)
     assert any("шкала отношений" in x for x in issues)
     assert req(api, "PUT", path + "/data", json={"path": "../../evil", "document": {}}).status_code == 400
+
+def test_resume_after_raw_metadata_interruption(api, tmp_path):
+    sid = init(api)
+    folder = tmp_path / "sessions" / sid
+    session_file = folder / "сессия.json"
+    meta = json.loads(session_file.read_text(encoding="utf-8"))
+    meta["_raw_receipts"].pop("initial")
+    session_file.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    sid_retry = init(api)
+    assert sid_retry == sid
+    assert req(api, "GET", f"/sessions/{sid}/raw").json()["raw"].count("===== RAW initial ") == 1
+    assert req(api, "GET", f"/sessions/{sid}").json()["источников"] == 1
