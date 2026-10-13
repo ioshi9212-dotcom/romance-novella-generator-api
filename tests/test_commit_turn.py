@@ -209,3 +209,25 @@ def test_commit_works_if_amvera_volume_disallows_hardlinks(ready, monkeypatch):
         {"op": "append", "path": "/знания/03.09.2026", "value": "новость"}
     ]})
     assert result.status_code == 200, result.text
+
+def test_registry_single_npc_update_without_resending_entire_roster(ready):
+    p = packet(ready)
+    result, _ = commit(ready, p, updates={"персонажи.json": [
+        {"op": "merge_by_id", "path": "/персонажи",
+         "value": {"id": "aiden", "последняя_встреча": "Кофейня", "что_делает": "отдыхает дома"}}
+    ]})
+    assert result.status_code == 200, result.text
+    reg = json.loads((ready[2]/"персонажи.json").read_text(encoding="utf-8"))["персонажи"]
+    assert len(reg) == 3
+    assert reg[1]["последняя_встреча"] == "Кофейня"
+    assert reg[1]["где_сейчас"] == "дома"
+    assert reg[2]["что_делает"] == "отдыхает"
+
+
+def test_registry_update_unknown_id_is_rejected(ready):
+    p = packet(ready)
+    result, _ = commit(ready, p, updates={"персонажи.json": [
+        {"op": "merge_by_id", "path": "/персонажи", "value": {"id": "absent", "что_делает": "ходит"}}
+    ]})
+    assert result.status_code == 422
+    assert not (ready[2]/"ходы.jsonl").exists()
