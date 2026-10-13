@@ -23,7 +23,10 @@ def init(api):
 
 
 def test_health_and_keyless_creation(api):
-    assert api.get("/health").json() == {"ok": True}
+    health = api.get("/health")
+    assert health.status_code == 200, health.text
+    assert health.json()["ok"] is True
+    assert health.json()["storage"]["data_root"].startswith("/")
     assert api.post("/sessions", json={}).status_code == 200
     assert req(api, "GET", "/sessions/00000000-0000-0000-0000-000000000000").status_code == 404
 
