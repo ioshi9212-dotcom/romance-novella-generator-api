@@ -119,7 +119,8 @@ def test_gpt_instructions_under_8000_chars():
     assert "getRuntimeInstructions" in text
 
 
-def test_runtime_documents_are_public_and_cachable(monkeypatch):
+def test_runtime_documents_are_public_and_cachable(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
     client = TestClient(app)
     first = client.get("/runtime", headers={})
     assert first.status_code == 200
