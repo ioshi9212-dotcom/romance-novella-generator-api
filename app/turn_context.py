@@ -86,7 +86,13 @@ def _last_scenes(root: Path, count: int = 2) -> list[dict[str, Any]]:
         raise HTTPException(409, "Turn archive contains a damaged record") from exc
     if not all(isinstance(row, dict) for row in history):
         raise HTTPException(409, "Turn archive contains an invalid record")
-    return history
+    # Archive receipts also contain reversible JSON changes. Never feed those
+    # large technical snapshots into the scene-writing context.
+    return [
+        {"номер": row.get("номер"), "turn_id": row.get("turn_id"),
+         "ввод": row.get("ввод", ""), "сцена": row.get("сцена", "")}
+        for row in history
+    ]
 
 
 def build_packet(
