@@ -164,3 +164,29 @@ def test_requires_review_and_authentication(tmp_path, monkeypatch):
     path = f"/sessions/{sid}/prepare-turn"
     assert client.post(path, json={}).status_code == 401
     assert client.post(path, json={}, headers=KEY).status_code == 409
+
+
+def test_complete_old_memory_and_chronology_not_silently_dropped(ready):
+    _, _, folder = ready
+    memory_path = folder / "память" / "pov.json"
+    memory = json.loads(memory_path.read_text(encoding="utf-8"))
+    memory["знания"]["01.01.2025"] = [f"старый факт {i}" for i in range(240)]
+    memory_path.write_text(json.dumps(memory, ensure_ascii=False), encoding="utf-8")
+    history_path = folder / "хронология.json"
+    history = json.loads(history_path.read_text(encoding="utf-8"))
+    history["дни"]["01.01.2025"] = {"утро": ["давний поворот"]}
+    history_path.write_text(json.dumps(history, ensure_ascii=False), encoding="utf-8")
+    packet = request_turn(ready).json()
+    assert len(packet["персонажи_подробно"]["pov"]["память"]["знания"]["01.01.2025"]) == 240
+    assert packet["режиссёр"]["хронология"]["дни"]["01.01.2025"]["утро"] == ["давний поворот"]
+
+
+def test_duplicate_physical_remote_participation_rejected(ready):
+    _, _, folder = ready
+    path = folder / "state.json"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    state["удалённо"].append({"id": "pov", "связь": "звонок"})
+    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    result = request_turn(ready)
+    assert result.status_code == 409
+    assert "twice" in result.text
