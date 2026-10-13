@@ -177,7 +177,7 @@ def test_pure_narrative_turn_keyless_retry(ready):
     result, request = commit(ready, p, updates={})
     assert result.status_code == 200
     assert client.post(url+'/commit-turn', json=request).json()['status'] == 'already_saved'
-    assert client.post(url+'/commit-turn', json={}).status_code == 401
+    assert client.post(url+'/commit-turn', json={}).status_code == 422
     assert json.loads((root/'сессия.json').read_text(encoding='utf-8'))['этап'] == 'игра'
 
 
