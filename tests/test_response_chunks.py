@@ -1,6 +1,7 @@
 """Regression tests for lossless, stable, 16k-character GPT Actions transport."""
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -76,7 +77,7 @@ def test_runtime_is_chunked_when_rules_are_large(store, monkeypatch):
     assert first.get("chunked")
     reconstructed = reconstruct(client, first)
     assert reconstructed["rules"].startswith("# Rules")
-    assert reconstructed["skin_builder"].startswith("# Skin Builder")
+    assert reconstructed["skin_builder"] == (Path(__file__).resolve().parents[1] / "runtime/scene_builder.md").read_text(encoding="utf-8")
     # The unchanged-version read remains tiny, not another chunked read.
     cached = client.get("/runtime", headers=KEY, params={"known_sha256": reconstructed["sha256"]})
     assert cached.status_code == 200 and cached.json()["changed"] is False
