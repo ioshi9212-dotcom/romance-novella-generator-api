@@ -544,12 +544,17 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
         meta = load(folder)
         if meta["этап"] not in {"готово_к_игре", "игра"}:
             raise HTTPException(409, "Novel must be verified before committing a turn")
-        from .turn_maintenance import audit_due
-        if audit_due(meta):
-            raise HTTPException(409, {"code": "AUDIT_REQUIRED", "through_turn": meta["последний_ход"]})
-        from .session_continuity import compaction_due
-        if compaction_due(meta):
-            raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
+        # A retry of an ALREADY saved turn must remain idempotent even when
+        # its 15th-turn audit or 60th-turn compaction is pending. Newly proposed
+        # turns still cannot bypass either checkpoint.
+        next_id = f"{meta['id']}:{int(meta['последний_ход']) + 1}"
+        if payload.turn_id == next_id:
+            from .turn_maintenance import audit_due
+            if audit_due(meta):
+                raise HTTPException(409, {"code": "AUDIT_REQUIRED", "through_turn": meta["последний_ход"]})
+            from .session_continuity import compaction_due
+            if compaction_due(meta):
+                raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
         if not payload.scene.strip():
             raise HTTPException(422, "Scene must not be blank")
         return save_turn(
