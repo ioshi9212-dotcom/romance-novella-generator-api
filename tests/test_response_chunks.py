@@ -61,7 +61,6 @@ def test_large_unicode_and_utf8_snapshot_survives_restart(store, monkeypatch):
     assert len(envelope["content"]) <= CHUNK_CHARS
     # Simulate a later request/process: the immutable file is the data source.
     client = TestClient(app)
-    monkeypatch.setenv("API_KEY", "test-only-key")
     assert reconstruct(client, envelope) == original
     # Repeating the same chunk is safe; complete read remains complete.
     twice = client.get(f"/chunks/{envelope['read_id']}/1", headers=KEY).json()
@@ -70,7 +69,6 @@ def test_large_unicode_and_utf8_snapshot_survives_restart(store, monkeypatch):
 
 
 def test_runtime_is_chunked_when_rules_are_large(store, monkeypatch):
-    monkeypatch.setenv("API_KEY", "test-only-key")
     client = TestClient(app)
     result = client.get("/runtime", headers=KEY)
     assert result.status_code == 200
@@ -85,7 +83,6 @@ def test_runtime_is_chunked_when_rules_are_large(store, monkeypatch):
 
 
 def test_raw_immutable_even_if_original_source_changes(store, monkeypatch):
-    monkeypatch.setenv("API_KEY", "test-only-key")
     client = TestClient(app)
     sid = client.post("/sessions", headers=KEY, json={"initial_text": "один" * 14000}).json()["session_id"]
     base = f"/sessions/{sid}"
@@ -117,18 +114,16 @@ def test_prepare_turn_full_character_data_remains_lossless(ready):
 
 @pytest.mark.parametrize("invalid,status", [("invalid",422),("0"*32,404)])
 def test_invalid_chunk_id_rejected(store, monkeypatch,invalid,status):
-    monkeypatch.setenv("API_KEY", "test-only-key")
     client = TestClient(app)
     r = client.get(f"/chunks/{invalid}/0", headers=KEY)
     assert r.status_code == status
 
 
-def test_chunk_endpoint_requires_auth_and_detects_corruption(store, monkeypatch):
-    monkeypatch.setenv("API_KEY", "test-only-key")
+def test_chunk_endpoint_is_keyless_and_detects_corruption(store, monkeypatch):
     first = present({"x": "🪷" * 20000}, "unit")
     client = TestClient(app)
     url = f"/chunks/{first['read_id']}/1"
-    assert client.get(url).status_code == 401
+    assert client.get(url).status_code == 200
     binfile = store / ".response_chunks" / (first["read_id"] + ".bin")
     info = json.loads((store / ".response_chunks" / (first["read_id"] + ".json")).read_text(encoding="utf-8"))
     with binfile.open("r+b") as handle:
@@ -139,7 +134,6 @@ def test_chunk_endpoint_requires_auth_and_detects_corruption(store, monkeypatch)
 
 def test_expired_chunk_rejected(store, monkeypatch):
     import time
-    monkeypatch.setenv("API_KEY", "test-only-key")
     first = present({"x": "long" * 5000}, "unit")
     path = store / ".response_chunks" / (first["read_id"] + ".json")
     metadata = json.loads(path.read_text(encoding="utf-8"))
