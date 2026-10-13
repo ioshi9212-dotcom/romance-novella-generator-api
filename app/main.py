@@ -16,8 +16,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .response_chunks import present, read_chunk
+from .storage_paths import storage_root, storage_diagnostics
 
-app = FastAPI(title="Novella Generator API", version="0.6.1")
+app = FastAPI(title="Novella Generator API", version="0.6.2")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -133,7 +134,7 @@ def server_namespace() -> str:
     configuration is required. Random namespace prevents predictable UUID5
     session IDs even when someone guesses the public request_id.
     """
-    data_root = Path(os.environ.get("DATA_DIR", "./data"))
+    data_root = storage_root()
     data_root.mkdir(parents=True, exist_ok=True)
     marker = data_root / ".session_namespace"
     with (data_root / ".session_namespace.lock").open("a+b") as handle:
@@ -156,12 +157,25 @@ def server_namespace() -> str:
 
 
 def session_dir(session_id: uuid.UUID) -> Path:
-    return Path(os.environ.get("DATA_DIR", "./data")) / "sessions" / str(session_id)
+    return storage_root() / "sessions" / str(session_id)
 
 
 @contextmanager
-def locked(folder: Path):
-    folder.mkdir(parents=True, exist_ok=True)
+def locked(folder: Path, *, create: bool = False):
+    # A read of an unknown session must not generate a ghost directory.
+    # Never overwrite partial/raw data with a newly invented session.
+    if create:
+        folder.mkdir(parents=True, exist_ok=True)
+    elif not (folder / "сессия.json").is_file():
+        if folder.is_dir() and any(item.name != ".lock" for item in folder.iterdir()):
+            raise HTTPException(
+                503, "SESSION_METADATA_MISSING: Session files remain but "
+                "сессия.json is missing. Preserve this directory for recovery."
+            )
+        raise HTTPException(
+            404, "SESSION_NOT_FOUND: Session is absent from persistent storage. "
+            "Check session_id and Amvera Data volume; do not start a replacement automatically."
+        )
     with (folder / ".lock").open("a+b") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         try:
@@ -367,8 +381,9 @@ def validate_foundation(folder: Path) -> list[str]:
 
 
 @app.get("/health")
-def health() -> dict[str, bool]:
-    return {"ok": True}
+def health() -> dict[str, Any]:
+    # An accessible API process is not healthy unless its storage is usable.
+    return {"ok": True, "storage": storage_diagnostics()}
 
 
 @app.get("/runtime")
@@ -404,7 +419,7 @@ def create_novel(payload: CreateNovel) -> dict[str, Any]:
     session_id = (uuid.uuid5(uuid.NAMESPACE_URL, server_namespace() + ":" + payload.request_id)
                   if payload.request_id else uuid.uuid4())
     folder = session_dir(session_id)
-    with locked(folder):
+    with locked(folder, create=True):
         if (folder / "сессия.json").exists():
             meta = load(folder)
             if payload.initial_text and meta.get("_initial_text_digest") != hashlib.sha256(payload.initial_text.encode()).hexdigest():
