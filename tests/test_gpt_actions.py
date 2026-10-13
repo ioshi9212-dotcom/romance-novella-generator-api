@@ -118,7 +118,7 @@ def test_runtime_documents_are_public_and_cachable(monkeypatch):
         data = json.loads("".join(chunks[index] for index in range(data["chunk_count"])))
     assert data["changed"] is True
     assert data["rules"].startswith("# Rules")
-    assert data["skin_builder"].startswith("# Skin Builder")
+    assert data["skin_builder"] == (ROOT / "runtime/scene_builder.md").read_text(encoding="utf-8")
     assert len(data["sha256"]) == 64
     second = client.get("/runtime", headers={},
                         params={"known_sha256": data["sha256"]})
