@@ -2,27 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.6.0",
-    "description": "Connect a custom ChatGPT novel to the Amvera backend. Canon is stored per session; scene writing is handled by the GPT."
+    "version": "0.6.1",
+    "description": "Public no-key backend for an interactive novel. Each novel has an unguessable session ID. The server stores and returns the canon."
   },
   "servers": [
     {
       "url": "https://novella-yumikofv.waw0.amvera.tech"
     }
   ],
-  "security": [
-    {
-      "ApiKeyAuth": []
-    }
-  ],
   "components": {
-    "securitySchemes": {
-      "ApiKeyAuth": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-API-Key"
-      }
-    },
     "schemas": {
       "CreateNovel": {
         "type": "object",
@@ -423,8 +411,7 @@
               }
             }
           }
-        },
-        "security": []
+        }
       }
     },
     "/runtime": {
