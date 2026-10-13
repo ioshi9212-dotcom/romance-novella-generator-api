@@ -16,7 +16,9 @@ import fcntl
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-app = FastAPI(title="Novella Generator API", version="0.5.2")
+from .response_chunks import present, read_chunk
+
+app = FastAPI(title="Novella Generator API", version="0.6.0")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -362,13 +364,19 @@ def get_runtime_instructions(known_sha256: str | None = None) -> dict[str, Any]:
         [rules, skin], ensure_ascii=False, separators=(",", ":")
     ).encode("utf-8")).hexdigest()
     changed = fingerprint != known_sha256
-    return {
+    return present({
         "sha256": fingerprint,
         "changed": changed,
         "rules": rules if changed else "",
         "skin_builder": skin if changed else "",
-    }
+    }, "runtime")
 
+
+
+@app.get("/chunks/{read_id}/{chunk_index}", dependencies=[Depends(authorize)])
+def get_response_chunk(read_id: str, chunk_index: int) -> dict[str, Any]:
+    """Read one immutable response fragment without rebuilding context."""
+    return read_chunk(read_id, chunk_index)
 
 
 @app.post("/sessions", dependencies=[Depends(authorize)])
@@ -410,9 +418,10 @@ def add_raw(session_id: uuid.UUID, part: RawPart) -> dict[str, Any]:
 @app.get("/sessions/{session_id}/raw", dependencies=[Depends(authorize)])
 def get_raw(session_id: uuid.UUID) -> dict[str, str]:
     folder = session_dir(session_id)
-    load(folder)
-    path = folder / "raw.txt"
-    return {"raw": path.read_text(encoding="utf-8") if path.exists() else ""}
+    with locked(folder):
+        load(folder)
+        path = folder / "raw.txt"
+        return present({"raw": path.read_text(encoding="utf-8") if path.exists() else ""}, "raw")
 
 
 @app.post("/sessions/{session_id}/advance", dependencies=[Depends(authorize)])
@@ -451,7 +460,7 @@ def get_document(session_id: uuid.UUID, path: str) -> dict[str, Any]:
     folder = session_dir(session_id)
     with locked(folder):
         load(folder)
-        return {"path": path, "document": read_data(folder, path)}
+        return present({"path": path, "document": read_data(folder, path)}, "document")
 
 
 @app.post("/sessions/{session_id}/verify", dependencies=[Depends(authorize)])
@@ -491,7 +500,7 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
         from .session_continuity import compaction_due
         if compaction_due(meta):
             raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
-        return build_packet(
+        return present(build_packet(
             root=folder,
             meta=meta,
             user_input=payload.user_input,
@@ -501,7 +510,7 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
             additional_location_ids=payload.additional_location_ids,
             full_memory_character_ids=payload.full_memory_character_ids,
             full_chronology=payload.full_chronology,
-        )
+        ), "prepare-turn")
 
 
 @app.post("/sessions/{session_id}/commit-turn", dependencies=[Depends(authorize)])
@@ -542,7 +551,7 @@ def prepare_audit_endpoint(session_id: uuid.UUID, payload: AuditPrepare) -> dict
         meta = load(folder)
         if meta["этап"] not in {"готово_к_игре", "игра"}:
             raise HTTPException(409, "Session is not in game mode")
-        return prepare_audit(folder, meta, payload.character_ids)
+        return present(prepare_audit(folder, meta, payload.character_ids), "prepare-audit")
 
 
 @app.post("/sessions/{session_id}/commit-audit", dependencies=[Depends(authorize)])
@@ -573,7 +582,7 @@ def resume_endpoint(session_id: uuid.UUID) -> dict[str, Any]:
     from .session_continuity import resume_session
     folder = session_dir(session_id)
     with locked(folder):
-        return resume_session(folder, load(folder))
+        return present(resume_session(folder, load(folder)), "resume")
 
 
 @app.get("/sessions/{session_id}/turns", dependencies=[Depends(authorize)])
@@ -582,7 +591,7 @@ def read_archive_endpoint(session_id: uuid.UUID, from_turn: int = 1, to_turn: in
     from .session_continuity import archived_scenes
     folder = session_dir(session_id)
     with locked(folder):
-        return archived_scenes(folder, load(folder), from_turn, to_turn)
+        return present(archived_scenes(folder, load(folder), from_turn, to_turn), "turns")
 
 
 @app.post("/sessions/{session_id}/prepare-compaction", dependencies=[Depends(authorize)])
@@ -590,7 +599,7 @@ def prepare_compaction_endpoint(session_id: uuid.UUID) -> dict[str, Any]:
     from .session_continuity import prepare_compaction
     folder = session_dir(session_id)
     with locked(folder):
-        return prepare_compaction(folder, load(folder))
+        return present(prepare_compaction(folder, load(folder)), "prepare-compaction")
 
 
 @app.post("/sessions/{session_id}/commit-compaction", dependencies=[Depends(authorize)])
