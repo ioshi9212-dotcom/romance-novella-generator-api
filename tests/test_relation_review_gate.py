@@ -125,3 +125,34 @@ def test_stranger_cannot_be_given_backstory_metrics(api):
     rejected = verify(api, url)
     assert rejected.status_code == 409
     assert "не_знакомы" not in rejected.text or "незнакомых" in rejected.text
+
+
+def test_verified_initial_relationships_can_be_repaired_before_first_turn(api):
+    url = setup(api, report("чувство_c"), {"чувство_c": 64})
+    assert verify(api, url).status_code == 200
+    previous = api.get(url + "/data", params={"path": "отношения.json"}).json()["document"]
+    original_id = api.get(url).json()["session_id"]
+    previous["стартовая_сверка"] = report(*FACETS)
+    previous["персонажи"]["char_aiden"]["к_POV"]["параметры"] = {
+        "чувство_a": 91, "чувство_b": 72, "чувство_c": 64
+    }
+    update = api.put(url + "/data", json={"path": "отношения.json", "document": previous})
+    assert update.status_code == 200, update.text
+    stored = api.get(url + "/data", params={"path": "отношения.json"}).json()["document"]
+    assert len(stored["персонажи"]["char_aiden"]["к_POV"]["параметры"]) == 3
+    assert api.get(url).json()["session_id"] == original_id
+    assert api.get(url).json()["последний_ход"] == 0
+    assert api.put(url + "/data", json={"path": "анкета.json", "document": {}}).status_code == 409
+
+
+def test_bad_verified_relationship_correction_preserves_existing_document(api):
+    url = setup(api, report("чувство_c"), {"чувство_c": 64})
+    assert verify(api, url).status_code == 200
+    before = api.get(url + "/data", params={"path": "отношения.json"}).json()["document"]
+    changed = {**before, "стартовая_сверка": report(*FACETS)}
+    changed["стартовая_сверка"]["char_aiden"]["аспекты"][0]["цитата_из_RAW"] = "Эдриан живёт на Луне и управляет кораблём."
+    changed["персонажи"]["char_aiden"]["к_POV"]["параметры"] = {key: 50 for key in FACETS}
+    rejected = api.put(url + "/data", json={"path": "отношения.json", "document": changed})
+    assert rejected.status_code == 409
+    unchanged = api.get(url + "/data", params={"path": "отношения.json"}).json()["document"]
+    assert unchanged == before
