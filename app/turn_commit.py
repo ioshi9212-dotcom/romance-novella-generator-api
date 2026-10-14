@@ -353,7 +353,14 @@ def save_turn(
         **selection,
     )
     if payload['context_sha256'] != packet['контекст_sha256']:
-        raise HTTPException(409, 'Context has changed; prepare-turn must be called again with the same selections')
+        raise HTTPException(409, {
+            'code': 'STALE_TURN_CONTEXT',
+            'reason': (
+                'Game data, Rules or Skin Builder changed after prepare-turn. '
+                'Repeat prepareTurn, read all chunks and write the scene using '
+                'the current Skin Builder before committing.'
+            ),
+        })
 
     loaded = set(packet['персонажи_подробно'])
     existing = {row['id'] for row in packet['режиссёр']['реестр']['персонажи']}
