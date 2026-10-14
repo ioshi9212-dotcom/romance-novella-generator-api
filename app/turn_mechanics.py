@@ -48,7 +48,7 @@ def _spoken_in_scene(scene: str, speaker: str, registry: dict[str, dict[str, Any
 
 
 def add_relationship_changes(patches: dict[str, list[dict[str, Any]]], changes: list[dict[str, Any]],
-                             packet: dict[str, Any]) -> None:
+                             packet: dict[str, Any], participants: set[str]) -> None:
     """Translate declared delta/new axis to *sparse* patches without discarding axes."""
     if not changes:
         return
@@ -58,7 +58,6 @@ def add_relationship_changes(patches: dict[str, list[dict[str, Any]]], changes: 
             "hint": "Use either relationship_changes or updates['отношения.json'], never both."
         })
     saved = packet["режиссёр"]["отношения"].get("персонажи", {})
-    participants = set(packet["персонажи_в_сцене"])
     registry = {c["id"] for c in packet["режиссёр"]["реестр"]["персонажи"]}
     seen: set[tuple[str, str]] = set()
     operations = []
@@ -99,7 +98,7 @@ def add_relationship_changes(patches: dict[str, list[dict[str, Any]]], changes: 
 
 def add_heard_statements(patches: dict[str, list[dict[str, Any]]],
                          statements: list[dict[str, Any]], packet: dict[str, Any],
-                         *, user_input: str, scene: str) -> None:
+                         participants: set[str], *, user_input: str, scene: str) -> None:
     """Append speaker-attributed *quotes* to each recipient's own knowledge.
 
     Verifies source is public POV speech (outside brackets) or an actual
@@ -109,7 +108,6 @@ def add_heard_statements(patches: dict[str, list[dict[str, Any]]],
     if not statements:
         return
     registry = {p["id"]: p for p in packet["режиссёр"]["реестр"]["персонажи"]}
-    participants = set(packet["персонажи_в_сцене"])
     pov = packet["режиссёр"]["state"]["pov_id"]
     public_input = _spoken_outside_parentheses(user_input)
     date = packet["режиссёр"]["state"].get("дата")
@@ -147,5 +145,5 @@ def add_heard_statements(patches: dict[str, list[dict[str, Any]]],
         memory_key = f"память/{listener}.json"
         patches.setdefault(memory_key, []).append({
             "op": "append", "path": f"/знания/{date}",
-            "value": f"{speaker_name} сказал(а): «{quote}»",
+            "value": f"Со слов {speaker_name}: «{quote}»",
         })
