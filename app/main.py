@@ -19,7 +19,7 @@ from .response_chunks import present, read_chunk
 from .storage_paths import storage_root, storage_diagnostics
 from .initial_state import canonicalize_initial_state
 
-app = FastAPI(title="Novella Generator API", version="0.6.3")
+app = FastAPI(title="Novella Generator API", version="0.6.4")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -400,21 +400,15 @@ def health() -> dict[str, Any]:
 @app.get("/runtime")
 def get_runtime_instructions(known_sha256: str | None = None) -> dict[str, Any]:
     """Return current technical Rules and Skin Builder only when their version changed."""
-    base = Path(__file__).resolve().parent.parent / "runtime"
-    try:
-        rules = (base / "rules.md").read_text(encoding="utf-8")
-        skin = (base / "scene_builder.md").read_text(encoding="utf-8")
-    except OSError as exc:
-        raise HTTPException(503, "Runtime documents are unavailable") from exc
-    fingerprint = hashlib.sha256(json.dumps(
-        [rules, skin], ensure_ascii=False, separators=(",", ":")
-    ).encode("utf-8")).hexdigest()
-    changed = fingerprint != known_sha256
+    from .runtime_docs import read_runtime
+
+    active = read_runtime()
+    changed = active["sha256"] != known_sha256
     return present({
-        "sha256": fingerprint,
+        "sha256": active["sha256"],
         "changed": changed,
-        "rules": rules if changed else "",
-        "skin_builder": skin if changed else "",
+        "rules": active["rules"] if changed else "",
+        "skin_builder": active["skin_builder"] if changed else "",
     }, "runtime")
 
 
