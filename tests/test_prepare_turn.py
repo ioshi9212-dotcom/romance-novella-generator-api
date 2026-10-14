@@ -12,7 +12,7 @@ KEY = {}
 def ready(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     client = TestClient(app)
-    created = client.post("/sessions", headers=KEY, json={"initial_text": "СТРОГО RAW\n"})
+    created = client.post("/sessions", headers=KEY, json={"initial_text": "СТРОГО RAW\nЭйден доверяет Елене."})
     assert created.status_code == 200, created.text
     sid = created.json()["session_id"]
     url = f"/sessions/{sid}"
@@ -28,7 +28,7 @@ def ready(tmp_path, monkeypatch):
             {"id": "veronica", "имя": "Вероника", "стартовый": True, "где_сейчас": "кофейня", "что_делает": "отдыхает"},
         ]},
         "хронология.json": {"дни": {"02.09.2026": {"вечер": ["Эйден начал исследование"]}}},
-        "отношения.json": {"pov_id": "pov", "персонажи": {"aiden": {"к_POV": {"параметры": {"доверие": 42}}}}},
+        "отношения.json": {"pov_id": "pov", "персонажи": {"aiden": {"к_POV": {"параметры": {"доверие": 42}}}}, "стартовая_сверка": {"aiden": {"статус": "есть_история", "аспекты": [{"показатель": "доверие", "цитата_из_RAW": "Эйден доверяет Елене."}]}, "veronica": {"статус": "есть_история", "аспекты": []}}},
         "скрытый_лор_и_крючки.json": {
             "скрытый_лор": [
                 {"суть": "Эйден тайно связан с исследователями", "связанные_id": ["aiden"]},
