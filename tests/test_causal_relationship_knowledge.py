@@ -13,6 +13,14 @@ def _put_aiden_in_scene(root):
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
+def _veronica_joins_physically(root):
+    path = root / "state.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["удалённо"] = [p for p in data["удалённо"] if p["id"] != "veronica"]
+    data["физически"].append({"id": "veronica"})
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
 def _relations(root):
     return json.loads((root / "отношения.json").read_text(encoding="utf-8"))["персонажи"]["aiden"]["к_POV"]["параметры"]
 
@@ -91,6 +99,7 @@ def test_relation_input_rejects_wrong_axis_mode_and_conflicting_patches(ready):
 
 def test_heard_public_fact_but_not_hidden_three_month_timing(ready):
     client, url, root = ready
+    _veronica_joins_physically(root)
     user = "Я сделала пирсинг. (Это было три месяца назад. Никто не знает.)"
     prepared = _prepare(ready, user)
     success, _ = commit(ready, prepared,
@@ -110,6 +119,7 @@ def test_heard_public_fact_but_not_hidden_three_month_timing(ready):
 
 def test_hidden_timing_is_never_a_valid_heard_quote(ready):
     client, url, root = ready
+    _veronica_joins_physically(root)
     user = "Я сделала пирсинг. (Это было три месяца назад.)"
     p = _prepare(ready, user)
     r, _ = commit(ready, p, scene="**Вероника** - И давно?",
@@ -124,6 +134,7 @@ def test_hidden_timing_is_never_a_valid_heard_quote(ready):
 
 def test_false_statement_is_recorded_as_report_not_objective_truth(ready):
     _, _, root = ready
+    _veronica_joins_physically(root)
     p = _prepare(ready, "Я никогда не делала пирсинг.")
     done, _ = commit(ready, p, heard_statements=[
         {"listener_id": "veronica", "speaker_id": "pov", "quote": "Я никогда не делала пирсинг."}
@@ -185,3 +196,38 @@ def test_first_impression_can_form_for_npc_entering_during_scene(ready):
     )
     assert entered.status_code == 200, entered.text
     assert _relations(root) == {"доверие": 42, "первое впечатление": 2}
+
+
+def test_remote_text_recipient_does_not_overhear_room_speech(ready):
+    client, url, root = ready
+    p = _prepare(ready, "Я скрыла документы.")
+    result, _ = commit(ready, p, heard_statements=[
+        {"listener_id": "veronica", "speaker_id": "pov", "quote": "Я скрыла документы."}
+    ])
+    assert result.status_code == 409
+    assert result.json()["detail"]["code"] == "HEARD_STATEMENT_SOURCE_MISSING"
+    assert not (root / "ходы.jsonl").exists()
+
+
+def test_private_direct_message_is_known_only_to_its_recipient(ready):
+    client, url, root = ready
+    p = _prepare(ready, "(написать Вероника - Я скрыла документы.)")
+    result, _ = commit(ready, p, heard_statements=[
+        {"listener_id": "veronica", "speaker_id": "pov", "quote": "Я скрыла документы."}
+    ])
+    assert result.status_code == 200, result.text
+    memory = json.loads((root / "память/veronica.json").read_text(encoding="utf-8"))
+    assert "Со слов Елена: «Я скрыла документы.»" in memory["знания"]["03.09.2026"]
+    assert "скрыла документы" not in (root / "память/aiden.json").read_text(encoding="utf-8")
+
+
+def test_direct_message_cannot_leak_to_other_remote_participant(ready):
+    client, url, root = ready
+    # Contact is addressed to Aiden, not Veronica, so the prepared state only
+    # exposes her as a remote participant and cannot grant the other person's text.
+    p = _prepare(ready, "(написать Эйден - Я скрыла документы.)")
+    response, _ = commit(ready, p, heard_statements=[
+        {"listener_id": "veronica", "speaker_id": "pov", "quote": "Я скрыла документы."}
+    ])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "HEARD_STATEMENT_SOURCE_MISSING"
