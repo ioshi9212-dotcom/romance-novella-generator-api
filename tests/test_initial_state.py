@@ -14,6 +14,8 @@ def setup_and_verify(api, state_overrides, *, names=None):
     docs["персонажи.json"]["персонажи"][1]["имя"] = "Лиам Торн"
     if names:
         docs["персонажи.json"]["персонажи"].extend(names)
+        for person in names:
+            docs["отношения.json"]["стартовая_сверка"][person["id"]] = {"статус": "не_знакомы", "аспекты": []}
         for item in names:
             cid = item["id"]
             docs[f"карточки/{cid}.json"] = {"id": cid}
