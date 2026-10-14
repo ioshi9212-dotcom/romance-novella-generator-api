@@ -380,7 +380,17 @@ def save_turn(
 
     loaded = set(packet['персонажи_подробно'])
     existing = {row['id'] for row in packet['режиссёр']['реестр']['персонажи']}
-    patches = payload['updates']
+    from .turn_mechanics import add_relationship_changes, add_heard_statements
+
+    # Materialize optional causal deltas and attributed heard quotes from the
+    # exact prepared state. The archive records the resulting sparse patches,
+    # so rollback and 15/60-turn audits work without a second persistence path.
+    patches = deepcopy(payload['updates'])
+    add_relationship_changes(patches, payload.get('relationship_changes', []), packet)
+    add_heard_statements(
+        patches, payload.get('heard_statements', []), packet,
+        user_input=payload['user_input'], scene=payload['scene'],
+    )
     after: dict[str, dict[str, Any]] = {}
     changed: dict[str, dict[str, Any]] = {}
     for name, operations in patches.items():
