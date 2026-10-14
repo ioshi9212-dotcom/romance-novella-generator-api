@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.6.3",
+    "version": "0.6.4",
     "description": "Interactive novel backend. No authentication required. Use getResponseChunk for large read responses."
   },
   "servers": [
@@ -1048,7 +1048,7 @@
       "post": {
         "operationId": "prepareTurn",
         "summary": "Read complete selected context for the next game turn without mutating data.",
-        "description": "Read complete selected context for the next game turn without mutating data.. If chunked=true, fetch all parts with getResponseChunk before using the data.",
+        "description": "Returns the full active Skin Builder for every turn (актуальные_инструкции). Always read every response chunk. A stale turn is rejected if the Skin Builder or Rules changed before commit.",
         "parameters": [
           {
             "name": "session_id",
@@ -1141,6 +1141,30 @@
                     },
                     "all_chunks_read": {
                       "type": "boolean"
+                    },
+                    "актуальные_инструкции": {
+                      "type": "object",
+                      "description": "Latest deployed Skin Builder sent IN FULL on every turn. Always follow it instead of any older in-chat version. Changes invalidate stale commit hashes.",
+                      "properties": {
+                        "skin_builder": {
+                          "type": "string",
+                          "description": "Complete latest literary Skin Builder; never use cached older scene instructions."
+                        },
+                        "skin_builder_sha256": {
+                          "type": "string"
+                        },
+                        "rules_sha256": {
+                          "type": "string",
+                          "description": "If this differs from previously loaded Rules, refresh them using getRuntimeInstructions."
+                        },
+                        "runtime_sha256": {
+                          "type": "string"
+                        },
+                        "применение": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": true,
