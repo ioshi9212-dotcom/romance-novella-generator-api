@@ -20,7 +20,7 @@ from .storage_paths import storage_root, storage_diagnostics
 from .initial_state import canonicalize_initial_state
 from .initial_relationships import verify_initial_relationship_review
 
-app = FastAPI(title="Novella Generator API", version="0.6.5")
+app = FastAPI(title="Novella Generator API", version="0.6.6")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -83,12 +83,39 @@ class RelationshipException(BaseModel):
     reason: str = Field(min_length=12)
 
 
+class RelationshipChange(BaseModel):
+    """A causal scene-level delta, evaluated by GPT, applied by the server."""
+    model_config = ConfigDict(extra="forbid")
+    owner_id: str = Field(min_length=1)
+    parameter: str = Field(min_length=1)
+    delta: int | None = Field(default=None, ge=-100, le=100)
+    initial_value: int | None = Field(default=None, ge=1, le=100)
+
+    @model_validator(mode="after")
+    def change_mode(self):
+        if (self.delta is None) == (self.initial_value is None):
+            raise ValueError("Choose exactly one of delta (existing axis) or initial_value (new axis)")
+        if self.delta == 0:
+            raise ValueError("Zero delta is not a change; omit this row")
+        return self
+
+
+class HeardStatement(BaseModel):
+    """A verbatim assertion heard by one NPC, never a verified world truth."""
+    model_config = ConfigDict(extra="forbid")
+    listener_id: str = Field(min_length=1)
+    speaker_id: str = Field(min_length=1)
+    quote: str = Field(min_length=1)
+
+
 class CommitTurn(BaseModel):
     turn_id: str
     user_input: str = ""
     context_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     scene: str = Field(min_length=1)
     updates: dict[str, list[PatchOperation]] = Field(default_factory=dict)
+    relationship_changes: list[RelationshipChange] = Field(default_factory=list)
+    heard_statements: list[HeardStatement] = Field(default_factory=list)
     relationship_exceptions: list[RelationshipException] = Field(default_factory=list)
     additional_character_ids: list[str] = Field(default_factory=list)
     selected_hook_indices: list[int] = Field(default_factory=list)
