@@ -102,10 +102,10 @@ def test_heard_public_fact_but_not_hidden_three_month_timing(ready):
     assert success.status_code == 200, success.text
     stored = json.loads((root / "память/veronica.json").read_text(encoding="utf-8"))
     entries = stored["знания"]["03.09.2026"]
-    assert "Елена сказал(а): «Я сделала пирсинг.»" in entries
+    assert "Со слов Елена: «Я сделала пирсинг.»" in entries
     assert "три месяца" not in str(entries)
     next_turn = _prepare(ready, "Какой сегодня день?")
-    assert "Елена сказал(а): «Я сделала пирсинг.»" in next_turn["персонажи_подробно"]["veronica"]["память"]["знания"]["03.09.2026"]
+    assert "Со слов Елена: «Я сделала пирсинг.»" in next_turn["персонажи_подробно"]["veronica"]["память"]["знания"]["03.09.2026"]
 
 
 def test_hidden_timing_is_never_a_valid_heard_quote(ready):
@@ -131,7 +131,7 @@ def test_false_statement_is_recorded_as_report_not_objective_truth(ready):
     assert done.status_code == 200, done.text
     stored = json.loads((root / "память/veronica.json").read_text(encoding="utf-8"))
     assert stored["знания"]["03.09.2026"][-1] == (
-        "Елена сказал(а): «Я никогда не делала пирсинг.»"
+        "Со слов Елена: «Я никогда не делала пирсинг.»"
     )
 
 
@@ -149,7 +149,7 @@ def test_heard_npc_dialogue_is_attributed_and_atomic_with_relation_delta(ready):
     assert result.status_code == 200, result.text
     assert _relations(root)["доверие"] == 41
     memory = json.loads((root / "память/pov.json").read_text(encoding="utf-8"))
-    assert memory["знания"]["03.09.2026"][-1] == "Эйден сказал(а): «Вчера я уволился.»"
+    assert memory["знания"]["03.09.2026"][-1] == "Со слов Эйден: «Вчера я уволился.»"
     archive = [json.loads(row) for row in (root / "ходы.jsonl").read_text(encoding="utf-8").splitlines()]
     assert set(archive[0]["изменения"]) == {"отношения.json", "память/pov.json"}
 
@@ -164,3 +164,24 @@ def test_only_actual_spoken_lines_are_sources_not_narrator_notes(ready):
                        }])
     assert denied.status_code == 409
     assert denied.json()["detail"]["code"] == "HEARD_STATEMENT_SOURCE_MISSING"
+
+
+def test_first_impression_can_form_for_npc_entering_during_scene(ready):
+    client, url, root = ready
+    p = packet(ready, additional_character_ids=["aiden"])
+    # Aiden was loaded for a plausible appearance, but was not initially in the
+    # room. The state patch explicitly puts him in the scene before saving.
+    entered, _ = commit(
+        ready, p, additional_character_ids=["aiden"],
+        scene="Эйден вошёл и впервые встретил Елену.",
+        updates={"state.json": [{
+            "op": "append", "path": "/физически",
+            "value": {"id": "aiden", "одежда": "пальто"},
+        }]},
+        relationship_changes=[{
+            "owner_id": "aiden", "parameter": "первое впечатление",
+            "initial_value": 2,
+        }],
+    )
+    assert entered.status_code == 200, entered.text
+    assert _relations(root) == {"доверие": 42, "первое впечатление": 2}
