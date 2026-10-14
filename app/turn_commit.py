@@ -386,9 +386,19 @@ def save_turn(
     # exact prepared state. The archive records the resulting sparse patches,
     # so rollback and 15/60-turn audits work without a second persistence path.
     patches = deepcopy(payload['updates'])
-    add_relationship_changes(patches, payload.get('relationship_changes', []), packet)
+    participants = set(packet['персонажи_в_сцене'])
+    if patches.get('state.json'):
+        # A scene can bring new people in or let others leave. Their contact
+        # and resulting attitudes count within the same turn, never only at
+        # the initial frame of prepareTurn.
+        after_state = apply_patches(packet['режиссёр']['state'], patches['state.json'])
+        for field in ('физически', 'удалённо'):
+            for person in after_state.get(field, []):
+                if isinstance(person, dict) and isinstance(person.get('id'), str):
+                    participants.add(person['id'])
+    add_relationship_changes(patches, payload.get('relationship_changes', []), packet, participants)
     add_heard_statements(
-        patches, payload.get('heard_statements', []), packet,
+        patches, payload.get('heard_statements', []), packet, participants,
         user_input=payload['user_input'], scene=payload['scene'],
     )
     after: dict[str, dict[str, Any]] = {}
