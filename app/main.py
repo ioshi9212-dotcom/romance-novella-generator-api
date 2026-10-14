@@ -18,8 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .response_chunks import present, read_chunk
 from .storage_paths import storage_root, storage_diagnostics
 from .initial_state import canonicalize_initial_state
+from .initial_relationships import verify_initial_relationship_review
 
-app = FastAPI(title="Novella Generator API", version="0.6.4")
+app = FastAPI(title="Novella Generator API", version="0.6.5")
 
 PHASES = ("сбор", "вопросы", "готово_к_записи", "запись_и_сверка", "готово_к_игре")
 CORE = {
@@ -534,6 +535,16 @@ def verify_novel(session_id: uuid.UUID, payload: VerifyNovel) -> dict[str, Any]:
         )
         if issues:
             raise HTTPException(409, {"code": "FOUNDATION_INCOMPLETE", "issues": issues})
+        from_roster = roster if isinstance(roster, list) else []
+        relationship_issues = verify_initial_relationship_review(
+            folder, from_roster, read_data(folder, "отношения.json"),
+            normalized_state.get("pov_id", ""),
+        )
+        if relationship_issues:
+            raise HTTPException(409, {
+                "code": "RELATIONSHIP_REVIEW_REQUIRED",
+                "issues": relationship_issues,
+            })
         if normalized_state != current_state:
             atomic_json(folder / "state.json", normalized_state)
         meta["этап"] = "готово_к_игре"
