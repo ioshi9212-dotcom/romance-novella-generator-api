@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.6.4",
+    "version": "0.6.5",
     "description": "Interactive novel backend. No authentication required. Use getResponseChunk for large read responses."
   },
   "servers": [
@@ -836,7 +836,7 @@
       "put": {
         "operationId": "saveNovelDocument",
         "summary": "Write one session JSON document during creation review.",
-        "description": "Write one session JSON document during creation review.",
+        "description": "Save documents during creation review. Before turn 1, verified sessions also permit corrections to отношения.json, provided all source-backed relationship facets pass validation.",
         "parameters": [
           {
             "name": "session_id",
@@ -978,7 +978,7 @@
       "post": {
         "operationId": "verifyNovel",
         "summary": "Finish novel setup after real RAW-to-files audit.",
-        "description": "Finish novel setup after real RAW-to-files audit.",
+        "description": "Verify canon and mandatory startup relationship review. Every NPC needs a source-backed facet checklist in отношения.json; missing evidence blocks startup.",
         "parameters": [
           {
             "name": "session_id",
