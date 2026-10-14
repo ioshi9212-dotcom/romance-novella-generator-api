@@ -173,7 +173,14 @@ def test_complete_old_memory_and_chronology_not_silently_dropped(ready):
     history = json.loads(history_path.read_text(encoding="utf-8"))
     history["дни"]["01.01.2025"] = {"утро": ["давний поворот"]}
     history_path.write_text(json.dumps(history, ensure_ascii=False), encoding="utf-8")
-    packet = request_turn(ready).json()
+    response = request_turn(ready)
+    assert response.status_code == 200, response.text
+    first = response.json()
+    if first.get("chunked"):
+        from test_scenario_simulation import consume
+        packet, _ = consume(ready[0], first)
+    else:
+        packet = first
     assert len(packet["персонажи_подробно"]["pov"]["память"]["знания"]["01.01.2025"]) == 240
     assert packet["режиссёр"]["хронология"]["дни"]["01.01.2025"]["утро"] == ["давний поворот"]
 
