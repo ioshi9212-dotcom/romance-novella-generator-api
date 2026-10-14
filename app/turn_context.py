@@ -191,6 +191,21 @@ def build_packet(
     else:
         history_info = {}
     active = set(selected_ids)
+    # A presentation-ready view of ALL existing relation metrics for characters
+    # participating in this scene. Do not confuse "changed this turn" with
+    # "visible in the footer"; off-screen loaded NPCs are not displayed.
+    owners = relations.get("персонажи", {})
+    visible_relations: dict[str, dict[str, Any]] = {}
+    if isinstance(owners, dict):
+        for cid in present:
+            if cid == pov_id:
+                continue
+            record = owners.get(cid, {})
+            relation = record.get("к_POV", {}) if isinstance(record, dict) else {}
+            metrics = relation.get("параметры", {}) if isinstance(relation, dict) else {}
+            if isinstance(metrics, dict) and metrics:
+                display_name = registry[cid].get("имя") or cid
+                visible_relations[cid] = {"имя": display_name, "параметры": metrics}
     packet = {
         # The actual scene instruction text is sent on *every* prepare-turn.
         # A remembered GPT instruction from an older chat can never replace it.
@@ -226,6 +241,7 @@ def build_packet(
         },
         "персонажи_подробно": character_data,
         "персонажи_в_сцене": present,
+        "отношения_участников_для_футера": visible_relations,
         "дополнительно_выбранные_NPC": [cid for cid in selected_ids if cid not in present],
         "последние_сцены": _last_scenes(root),
         "последнее_сжатие": checkpoint["through_turn"] if checkpoint else 0,
