@@ -491,7 +491,32 @@ def put_document(session_id: uuid.UUID, payload: SaveDocument) -> dict[str, str]
     with locked(folder):
         meta = load(folder)
         if meta["этап"] != "запись_и_сверка":
-            raise HTTPException(409, "Novel files can only be written during creation review")
+            # Correct a botched initial relationship summary in a VERIFIED novel,
+            # but only before the first archived game turn. Never rewrite past
+            # gameplay or permit editing arbitrary canon after verification.
+            if not (
+                meta["этап"] == "готово_к_игре"
+                and int(meta["последний_ход"]) == 0
+                and payload.path == "отношения.json"
+            ):
+                raise HTTPException(409, "Novel files can only be written during creation review")
+            from .turn_commit import verify_overlay
+            problems = verify_overlay(
+                folder, {"отношения.json": payload.document}, validate_foundation
+            )
+            roster = read_data(folder, "персонажи.json").get("персонажи")
+            state = read_data(folder, "state.json")
+            if not isinstance(roster, list):
+                problems.append("Character registry is invalid")
+            else:
+                problems += verify_initial_relationship_review(
+                    folder, roster, payload.document, state.get("pov_id", "")
+                )
+            if problems:
+                raise HTTPException(409, {
+                    "code": "RELATIONSHIP_REVIEW_REQUIRED",
+                    "issues": problems,
+                })
         atomic_json(folder / payload.path, payload.document)
         return {"path": payload.path, "status": "saved"}
 
