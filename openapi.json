@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.6.5",
+    "version": "0.6.6",
     "description": "Interactive novel backend. No authentication required. Use getResponseChunk for large read responses."
   },
   "servers": [
@@ -242,6 +242,20 @@
             "items": {
               "$ref": "#/components/schemas/RelationshipException"
             }
+          },
+          "relationship_changes": {
+            "type": "array",
+            "description": "Optional scene-caused changes. Evaluate participants each turn; existing axis uses delta, new one uses initial_value. Server applies against stored baseline without erasing other axes.",
+            "items": {
+              "$ref": "#/components/schemas/RelationshipChange"
+            }
+          },
+          "heard_statements": {
+            "type": "array",
+            "description": "Optional important heard speech only. Server verifies an actual public spoken quote and stores it as an attributed assertion, even if false. Never send POV thoughts.",
+            "items": {
+              "$ref": "#/components/schemas/HeardStatement"
+            }
           }
         },
         "required": [
@@ -385,6 +399,57 @@
           "reason"
         ],
         "additionalProperties": false
+      },
+      "RelationshipChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "description": "NPC id actually participating in scene."
+          },
+          "parameter": {
+            "type": "string",
+            "description": "Free-form axis name."
+          },
+          "delta": {
+            "type": "integer",
+            "description": "Change to existing axis; ordinary range -3..3, critical exception available."
+          },
+          "initial_value": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "First substantive impression/new axis, never an invented automatic baseline."
+          }
+        },
+        "required": [
+          "owner_id",
+          "parameter"
+        ]
+      },
+      "HeardStatement": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "listener_id": {
+            "type": "string",
+            "description": "Participating recipient NPC id."
+          },
+          "speaker_id": {
+            "type": "string",
+            "description": "Participant who actually spoke."
+          },
+          "quote": {
+            "type": "string",
+            "description": "Exact public spoken phrase, never a private thought. Stored as 'speaker said ...', not as world truth."
+          }
+        },
+        "required": [
+          "listener_id",
+          "speaker_id",
+          "quote"
+        ]
       }
     }
   },
@@ -1180,7 +1245,7 @@
       "post": {
         "operationId": "commitTurn",
         "summary": "Persist one full scene and only real JSON changes, atomically and idempotently.",
-        "description": "Persist one full scene and only real JSON changes, atomically and idempotently.",
+        "description": "Save scene; use relationship_changes for per-scene numeric movements and heard_statements for sourced quotes, not world truths. Simple speech needs no claim ledger. Repeating same commit is safe.",
         "parameters": [
           {
             "name": "session_id",
