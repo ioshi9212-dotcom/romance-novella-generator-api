@@ -303,6 +303,22 @@ def validate_relationship_steps(
         current = current_owners.get(owner) or {}
         old_params = (prev.get('к_POV') or {}).get('параметры') or {}
         new_params = (current.get('к_POV') or {}).get('параметры') or {}
+        # Replacing the entire parameter dictionary with the newly changed
+        # metric used to silently erase unrelated existing relationship axes.
+        # Existing axes remain as-is (or at value 0); never drop them as a
+        # side effect of adding or changing another metric.
+        dropped = sorted(set(old_params) - set(new_params))
+        if dropped:
+            raise HTTPException(409, {
+                "code": "RELATIONSHIP_METRICS_DROPPED",
+                "character_id": owner,
+                "missing_parameters": dropped,
+                "hint": (
+                    "Do not replace the whole parameters object. "
+                    "Use set /персонажи/<id>/к_POV/параметры/<parameter> "
+                    "to change only one metric and preserve all others."
+                ),
+            })
         for metric in set(old_params) | set(new_params):
             previous_value = old_params.get(metric, 0)
             current_value = new_params.get(metric, 0)
