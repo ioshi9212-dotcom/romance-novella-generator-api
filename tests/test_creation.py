@@ -17,7 +17,7 @@ def req(api, method, path, **kwargs):
 
 
 def init(api):
-    r = req(api, "POST", "/sessions", json={"request_id": "test-unique", "initial_text": "Первая строка\n Вторая строка "})
+    r = req(api, "POST", "/sessions", json={"request_id": "test-unique", "initial_text": "Первая строка\n Вторая строка \nЭйден не доверяет героине."})
     assert r.status_code == 200, r.text
     return r.json()["session_id"]
 
@@ -57,7 +57,7 @@ def make_docs():
         "state.json": {"pov_id": "char_pov", "физически": [{"id": "char_pov"}], "удалённо": []},
         "хронология.json": {"дни": {}},
         "скрытый_лор_и_крючки.json": {"скрытый_лор": [], "крючки": []},
-        "отношения.json": {"pov_id": "char_pov", "персонажи": {"char_aiden": {"к_POV": {"параметры": {"доверие": 0}}}}},
+        "отношения.json": {"pov_id": "char_pov", "персонажи": {"char_aiden": {"к_POV": {"параметры": {"доверие": 0}}}}, "стартовая_сверка": {"char_aiden": {"статус": "есть_история", "аспекты": [{"показатель": "доверие", "цитата_из_RAW": "Эйден не доверяет героине."}]}}},
         "локации.json": {"локации": []},
         "карточки/char_pov.json": {"id": "char_pov"},
         "карточки/char_aiden.json": {"id": "char_aiden"},
