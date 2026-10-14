@@ -34,7 +34,7 @@ def _spoken_outside_parentheses(value: str) -> str:
 
 _DIRECT_MESSAGE = re.compile(
     r"(?iu)(?:написать|отправить|ответить|сказать|сообщить|шепнуть|переслать)"
-    r"\\s+(?P<recipient>[^\\s,:;()\\n]+)\\s*[-—:]\\s*(?P<text>.+)"
+    r"\s+(?P<recipient>[^\s,:;()\n]+)\s*[-—:]\s*(?P<text>.+)"
 )
 
 
@@ -49,13 +49,13 @@ def _explicit_message_to(user_input: str, recipient: str,
             aliases.add(name.casefold())
             aliases.add(name.split()[0].casefold())
     sources: list[str] = []
-    for bracket in re.findall(r"\\(([^()]*)\\)", user_input):
+    for bracket in re.findall(r"\(([^()]*)\)", user_input):
         found = _DIRECT_MESSAGE.search(bracket)
         if found and found.group("recipient").strip().casefold() in aliases:
             # A following physical action (e.g. 'Встать') must not become part
             # of the message. All this source can provide is explicit text.
             sources.append(found.group("text"))
-    return "\\n".join(sources)
+    return "\n".join(sources)
 
 
 def _spoken_in_scene(scene: str, speaker: str, registry: dict[str, dict[str, Any]]) -> str:
