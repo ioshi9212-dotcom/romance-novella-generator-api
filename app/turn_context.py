@@ -122,6 +122,8 @@ def build_packet(
         return data
 
     from .session_continuity import get_checkpoint, working_history, working_memory
+    from .runtime_docs import read_runtime
+    active_runtime = read_runtime()
     checkpoint = get_checkpoint(root, meta)
     full_memory = set(full_memory_character_ids or [])
 
@@ -190,6 +192,19 @@ def build_packet(
         history_info = {}
     active = set(selected_ids)
     packet = {
+        # The actual scene instruction text is sent on *every* prepare-turn.
+        # A remembered GPT instruction from an older chat can never replace it.
+        "актуальные_инструкции": {
+            "skin_builder": active_runtime["skin_builder"],
+            "skin_builder_sha256": active_runtime["skin_builder_sha256"],
+            "rules_sha256": active_runtime["rules_sha256"],
+            "runtime_sha256": active_runtime["sha256"],
+            "применение": (
+                "Используй именно этот полный Skin Builder для текущей сцены, "
+                "даже если в чате ранее была другая версия. "
+                "При изменении rules_sha256 обнови технические Rules через getRuntimeInstructions."
+            ),
+        },
         "session_id": meta["id"],
         "номер_хода": meta["последний_ход"] + 1,
         "turn_id": f"{meta['id']}:{meta['последний_ход'] + 1}",
@@ -223,7 +238,8 @@ def build_packet(
     }
     # Identifies the exact assembled context even if the same turn is prepared
     # again with additional selected NPCs. No read-side effects or pending files.
-    snapshot = json.dumps(packet["режиссёр"], sort_keys=True, ensure_ascii=False)
+    snapshot = json.dumps(packet["актуальные_инструкции"], sort_keys=True, ensure_ascii=False)
+    snapshot += json.dumps(packet["режиссёр"], sort_keys=True, ensure_ascii=False)
     snapshot += json.dumps(packet["персонажи_подробно"], sort_keys=True, ensure_ascii=False)
     snapshot += json.dumps(packet["последние_сцены"], sort_keys=True, ensure_ascii=False)
     packet["контекст_sha256"] = hashlib.sha256(snapshot.encode("utf-8")).hexdigest()
