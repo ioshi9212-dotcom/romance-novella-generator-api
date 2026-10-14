@@ -32,6 +32,32 @@ def _spoken_outside_parentheses(value: str) -> str:
     return "".join(result)
 
 
+_DIRECT_MESSAGE = re.compile(
+    r"(?iu)(?:написать|отправить|ответить|сказать|сообщить|шепнуть|переслать)"
+    r"\\s+(?P<recipient>[^\\s,:;()\\n]+)\\s*[-—:]\\s*(?P<text>.+)"
+)
+
+
+def _explicit_message_to(user_input: str, recipient: str,
+                         registry: dict[str, dict[str, Any]]) -> str:
+    """Only the *named recipient* sees a communication inside POV brackets."""
+    row = registry[recipient]
+    aliases = {recipient.casefold()}
+    for field in ("имя", "полное_имя", "имя_и_фамилия", "name"):
+        name = row.get(field)
+        if isinstance(name, str) and name.strip():
+            aliases.add(name.casefold())
+            aliases.add(name.split()[0].casefold())
+    sources: list[str] = []
+    for bracket in re.findall(r"\\(([^()]*)\\)", user_input):
+        found = _DIRECT_MESSAGE.search(bracket)
+        if found and found.group("recipient").strip().casefold() in aliases:
+            # A following physical action (e.g. 'Встать') must not become part
+            # of the message. All this source can provide is explicit text.
+            sources.append(found.group("text"))
+    return "\\n".join(sources)
+
+
 def _spoken_in_scene(scene: str, speaker: str, registry: dict[str, dict[str, Any]]) -> str:
     aliases = {speaker.casefold()}
     row = registry[speaker]
@@ -132,9 +158,25 @@ def add_heard_statements(patches: dict[str, list[dict[str, Any]]],
         taken.add((listener, speaker, quote))
         # No substring from POV's thought may count as proof, even when it is
         # visible to the director in the same input.
-        source_from_user = speaker == pov and quote in public_input
+        state = packet["режиссёр"]["state"]
+        physical = {p["id"] for p in state.get("физически", []) if isinstance(p, dict)}
+        source_from_user = speaker == pov and listener in physical and quote in public_input
+        addressed_from_user = speaker == pov and quote in _explicit_message_to(
+            user_input, listener, registry
+        )
         source_from_dialogue = quote in _spoken_in_scene(scene, speaker, registry)
-        if not (source_from_user or source_from_dialogue):
+        # A remote text-only participant cannot overhear ordinary dialogue
+        # in a physical room. Private/direct messages are checked by recipient.
+        remote_text_ids = {
+            p["id"] for p in state.get("удалённо", [])
+            if isinstance(p, dict) and any(
+                hint in str(p.get("связь", "")).casefold()
+                for hint in ("сообщен", "переписк", "чат", "смс")
+            )
+        }
+        if listener in remote_text_ids:
+            source_from_dialogue = False
+        if not (source_from_user or addressed_from_user or source_from_dialogue):
             raise HTTPException(409, {
                 "code": "HEARD_STATEMENT_SOURCE_MISSING",
                 "listener_id": listener,
