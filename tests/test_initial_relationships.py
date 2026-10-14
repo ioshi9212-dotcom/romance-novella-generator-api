@@ -7,9 +7,24 @@ from test_creation import api, make_docs, start_review
 
 
 def _verified_story(api, facets):
-    url = start_review(api)
+    raw_lines = [
+        f"Эйден показывает самостоятельное отношение {key} к героине."
+        for key in facets
+    ]
+    started = api.post("/sessions", json={"initial_text": "\\n".join(raw_lines) or "Эйден и героиня ранее не знакомы."})
+    assert started.status_code == 200, started.text
+    url = "/sessions/" + started.json()["session_id"]
+    for command in ("подтверждаю", "вопросов_больше_нет", "подтверждаю"):
+        assert api.post(url + "/advance", json={"command": command}).status_code == 200
     docs = make_docs()
     docs["отношения.json"]["персонажи"]["char_aiden"]["к_POV"]["параметры"] = facets
+    docs["отношения.json"]["стартовая_сверка"]["char_aiden"] = {
+        "статус": "есть_история" if facets else "не_знакомы",
+        "аспекты": [
+            {"показатель": key, "цитата_из_RAW": f"Эйден показывает самостоятельное отношение {key} к героине."}
+            for key in facets
+        ],
+    }
     for path, payload in docs.items():
         response = api.put(url + "/data", json={"path": path, "document": payload})
         assert response.status_code == 200, (path, response.text)
