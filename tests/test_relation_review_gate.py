@@ -148,8 +148,10 @@ def test_verified_initial_relationships_can_be_repaired_before_first_turn(api):
 def test_bad_verified_relationship_correction_preserves_existing_document(api):
     url = setup(api, report("чувство_c"), {"чувство_c": 64})
     assert verify(api, url).status_code == 200
+    from copy import deepcopy
     before = api.get(url + "/data", params={"path": "отношения.json"}).json()["document"]
-    changed = {**before, "стартовая_сверка": report(*FACETS)}
+    changed = deepcopy(before)
+    changed["стартовая_сверка"] = report(*FACETS)
     changed["стартовая_сверка"]["char_aiden"]["аспекты"][0]["цитата_из_RAW"] = "Эдриан живёт на Луне и управляет кораблём."
     changed["персонажи"]["char_aiden"]["к_POV"]["параметры"] = {key: 50 for key in FACETS}
     rejected = api.put(url + "/data", json={"path": "отношения.json", "document": changed})
