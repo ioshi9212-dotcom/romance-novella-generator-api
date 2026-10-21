@@ -105,7 +105,7 @@ def repair_placeholder(folder: Path, meta: dict, *, event_id: str | None, text: 
     path = folder / "raw.txt"
     if not path.is_file():
         raise HTTPException(409, "No RAW to repair")
-    raw = path.read_text(encoding="utf-8")
+    raw = path.read_bytes().decode("utf-8")
     sections = _source_sections(raw)
     if event_id is None:
         candidates = [e for e, _d, _a, _b, _p, body in sections if body.strip().upper() == "PLACEHOLDER"]
