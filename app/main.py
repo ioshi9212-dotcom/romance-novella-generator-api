@@ -285,7 +285,7 @@ def append_source(folder: Path, meta: dict[str, Any], part: RawPart) -> None:
     marker = f"===== RAW {part.event_id} {digest} =====\n"
     # Recover safely if the RAW append succeeded but metadata write was interrupted.
     if raw_file.exists():
-        text = raw_file.read_text(encoding="utf-8")
+        text = raw_file.read_bytes().decode("utf-8")
         for line in text.splitlines(keepends=True):
             if line.startswith(f"===== RAW {part.event_id} "):
                 if line != marker:
@@ -536,7 +536,7 @@ def get_raw(session_id: uuid.UUID) -> dict[str, Any]:
     with locked(folder):
         load(folder)
         path = folder / "raw.txt"
-        return present({"raw": path.read_text(encoding="utf-8") if path.exists() else ""}, "raw")
+        return present({"raw": path.read_bytes().decode("utf-8") if path.exists() else ""}, "raw")
 
 
 @app.post("/sessions/{session_id}/advance")
@@ -613,7 +613,7 @@ def verify_novel(session_id: uuid.UUID, payload: VerifyNovel) -> dict[str, Any]:
         if not payload.audited_against_raw or payload.unresolved_issues:
             raise HTTPException(409, {"code": "SEMANTIC_AUDIT_REQUIRED", "issues": payload.unresolved_issues})
         if (folder / "raw.txt").is_file():
-            corrupted = placeholder_events((folder / "raw.txt").read_text(encoding="utf-8"))
+            corrupted = placeholder_events((folder / "raw.txt").read_bytes().decode("utf-8"))
             if corrupted:
                 raise HTTPException(409, {"code": "RAW_PLACEHOLDER_NOT_REPAIRED", "event_ids": corrupted})
         if meta.get("_raw_repair_requires_review"):
