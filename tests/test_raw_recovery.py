@@ -115,7 +115,9 @@ def test_guard_checksum_and_never_overwrite_valid_source(api, monkeypatch):
         another, "novel.txt", len(another.encode("utf-8")), hashlib.sha256(another.encode("utf-8")).hexdigest()
     ))
     assert api.post(url, json=file_payload(another)).status_code == 409
-    assert original in api.get(f"/sessions/{sid}/raw").json()["raw"]
+    from app.main import session_dir
+    import uuid
+    assert original in (session_dir(uuid.UUID(sid)) / "raw.txt").read_text(encoding="utf-8")
 
 
 def test_verification_rejects_placeholder_even_if_user_claims_review(api):
