@@ -107,6 +107,6 @@ def test_skin_builder_requires_full_footer_not_only_changed_metrics():
     text = (Path(__file__).resolve().parents[1] / "runtime" / "scene_builder.md").read_text(encoding="utf-8")
     section = text.split("\nОтношения:\n", 1)[1].split("\n\nХод ", 1)[0]
     assert "все" in section.lower()
-    assert "неизменившиеся" in section
-    assert "дельта 0" in section
-    assert "не выводи отсутствующих" in section.lower()
+    assert "неизменённый" in section.lower()
+    assert "значение/0" in section
+    assert "отсутствующих offscreen npc не показывай" in section.lower()
