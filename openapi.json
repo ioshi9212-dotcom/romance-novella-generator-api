@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.6.7",
+    "version": "0.6.8",
     "description": "Interactive novel backend. No authentication required. Use getResponseChunk for large read responses."
   },
   "servers": [
@@ -480,6 +480,65 @@
         },
         "required": [
           "openaiFileIdRefs"
+        ]
+      },
+      "RawChunkInput": {
+        "type": "object",
+        "title": "RawChunkInput",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "append",
+              "recover",
+              "repair"
+            ],
+            "default": "append",
+            "description": "append: normal intake; recover: add missing source before verify; repair: replace only PLACEHOLDER"
+          },
+          "part_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0-based index of this raw byte chunk"
+          },
+          "total_parts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 427
+          },
+          "chunk_b64": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384,
+            "description": "Standard base64 encoding of up to 12,288 ORIGINAL file bytes. Do not base64 encode a paraphrase or local path."
+          },
+          "expected_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5242880
+          },
+          "expected_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "file_name": {
+            "type": "string",
+            "description": "Original filename, e.g. story.txt. Keep identical across all parts."
+          }
+        },
+        "required": [
+          "event_id",
+          "part_index",
+          "total_parts",
+          "chunk_b64",
+          "expected_bytes",
+          "expected_sha256"
         ]
       }
     }
@@ -2157,6 +2216,79 @@
           },
           "422": {
             "description": "Invalid file, origin or placeholder."
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/raw/chunk": {
+      "post": {
+        "operationId": "appendRawChunk",
+        "summary": "Transfer exact TXT bytes in verified base64 chunks",
+        "description": "Use only when file download_link is a local path or unusable. Read original TXT bytes; send indexed <=12,288-byte base64 parts with fixed byte count and SHA-256. Final part writes RAW only when all parts match.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Existing session UUID. Never create another session just for upload."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RawChunkInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upload progress, or verified saved/restored RAW.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "этап": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "event_id": {
+                      "type": "string"
+                    },
+                    "received_parts": {
+                      "type": "integer"
+                    },
+                    "total_parts": {
+                      "type": "integer"
+                    },
+                    "bytes": {
+                      "type": "integer"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SHA/length mismatch, existing source conflict or wrong creation stage."
+          },
+          "422": {
+            "description": "Invalid part or upload metadata."
           }
         }
       }
