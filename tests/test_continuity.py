@@ -94,8 +94,10 @@ def test_60_turn_compaction_reviews_then_works_as_delta_and_can_fetch_full(ready
     assert prepared['режиссёр']['хронология']['дни']=={}
     assert 'События до 60' in prepared['режиссёр']['сводка_прошлых_событий']
     assert prepared['персонажи_подробно']['pov']['старые_даты_доступны']['знания']==['03.09.2026']
-    full = client.post(url+'/prepare-turn',headers=KEY,json={
-        'user_input':'продолжаю','full_memory_character_ids':['pov'],'full_chronology':True}).json()
+    full_response = client.post(url+'/prepare-turn',headers=KEY,json={
+        'user_input':'продолжаю','full_memory_character_ids':['pov'],'full_chronology':True})
+    from test_scenario_simulation import consume
+    full, _ = consume(client, full_response.json())
     assert len(full['персонажи_подробно']['pov']['память']['знания']['03.09.2026'])==7
     assert full['режиссёр']['хронология']['дни']['02.09.2026']
     assert full['контекст_sha256']!=prepared['контекст_sha256']
@@ -107,6 +109,73 @@ def test_60_turn_compaction_reviews_then_works_as_delta_and_can_fetch_full(ready
     recent=prep(ready)
     assert recent['персонажи_подробно']['pov']['память']['знания']['03.09.2026']==['новое после 60-го хода']
     assert folder.joinpath('память/pov.json').read_text().count('сведения о событии')==6
+
+
+
+def test_undated_legacy_memory_sections_are_preserved_at_60_turn_checkpoint(ready):
+    client, url, folder = reach_60(ready)
+    aiden_path = folder / 'память/aiden.json'
+    aiden = json.loads(aiden_path.read_text(encoding='utf-8'))
+    aiden['знания'] = ['Старая запись без даты', {'источник': 'личное наблюдение'}]
+    aiden['личные_события'] = 'Старые события без структуры дат'
+    aiden_path.write_text(json.dumps(aiden, ensure_ascii=False), encoding='utf-8')
+    veronica_path = folder / 'память/veronica.json'
+    veronica = json.loads(veronica_path.read_text(encoding='utf-8'))
+    veronica['знания'] = None
+    veronica_path.write_text(json.dumps(veronica, ensure_ascii=False), encoding='utf-8')
+    originals = {p: p.read_bytes() for p in (aiden_path, veronica_path)}
+
+    report, _, result = compact(ready)
+    assert result['through_turn'] == 60
+    assert report['characters']['aiden']['память']['знания'] == aiden['знания']
+    assert report['characters']['veronica']['память']['знания'] is None
+    assert all(p.read_bytes() == content for p, content in originals.items())
+    assert client.get(url).json()['сжатие_требуется'] is False
+
+    packet_response = client.post(url + '/prepare-turn', headers=KEY, json={
+        'user_input': 'Продолжить существующую историю без потери памяти',
+        'additional_character_ids': ['aiden'],
+    })
+    assert packet_response.status_code == 200, packet_response.text
+    packet = packet_response.json()
+    from test_scenario_simulation import consume
+    if packet.get('chunked'):
+        packet, _ = consume(client, packet)
+    aiden_view = packet['персонажи_подробно']['aiden']
+    veronica_view = packet['персонажи_подробно']['veronica']
+    assert aiden_view['память']['знания'] == aiden['знания']
+    assert aiden_view['память']['личные_события'] == aiden['личные_события']
+    assert veronica_view['память']['знания'] is None
+    assert set(aiden_view['недатированные_разделы_сохранены_полностью']) == {
+        'знания', 'личные_события',
+    }
+    assert 'знания' in veronica_view['недатированные_разделы_сохранены_полностью']
+    assert aiden_view['старые_даты_доступны']['знания'] == []
+
+    # A change to an opaque field invalidates the summary rather than losing
+    # or hiding new content behind the previous snapshot.
+    aiden['знания'].append('Новое наблюдение')
+    aiden_path.write_text(json.dumps(aiden, ensure_ascii=False), encoding='utf-8')
+    response = client.post(url + '/prepare-turn', headers=KEY, json={
+        'user_input': 'Продолжить существующую историю без потери памяти',
+        'additional_character_ids': ['aiden'],
+    })
+    assert response.status_code == 200, response.text
+    changed = response.json()
+    if changed.get('chunked'):
+        changed, _ = consume(client, changed)
+    aiden_view = changed['персонажи_подробно']['aiden']
+    assert aiden_view['сжатие_недействительно'] is True
+    assert aiden_view['память']['знания'] == aiden['знания']
+
+
+def test_undated_sections_are_indexed_without_destructive_normalization():
+    from app.session_continuity import SECTIONS, _index_doc, _tail_doc
+    journal = {'знания': ['факт'], 'личные_события': None}
+    snapshot = _index_doc(journal, SECTIONS)
+    assert _tail_doc(journal, snapshot, SECTIONS) == journal
+    changed = {'знания': ['факт', 'ещё факт'], 'личные_события': None}
+    assert _tail_doc(changed, snapshot, SECTIONS) is None
 
 
 def test_stale_compact_prefix_falls_back_to_full_not_missing_data(ready):

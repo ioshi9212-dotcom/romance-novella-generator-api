@@ -72,10 +72,17 @@ def request_turn(ready, **options):
     return client.post(url + "/prepare-turn", headers=KEY, json={"user_input": "Я пошла на работу", **options})
 
 
+def unpack_turn(ready, response):
+    from test_scenario_simulation import consume
+    assert response.status_code == 200, response.text
+    packet, _ = consume(ready[0], response.json())
+    return packet
+
+
 def test_active_physical_remote_only_and_director_overview(ready):
     response = request_turn(ready)
     assert response.status_code == 200, response.text
-    packet = response.json()
+    packet = unpack_turn(ready, response)
     assert packet["номер_хода"] == 1
     assert packet["ввод_игрока"] == "Я пошла на работу"
     assert packet["персонажи_в_сцене"] == ["pov", "veronica"]
@@ -92,7 +99,7 @@ def test_active_physical_remote_only_and_director_overview(ready):
 
 
 def test_expansion_loads_npc_full_memory_motives_lore_and_places(ready):
-    packet = request_turn(ready, additional_character_ids=["aiden"], additional_location_ids=["archive"]).json()
+    packet = unpack_turn(ready, request_turn(ready, additional_character_ids=["aiden"], additional_location_ids=["archive"]))
     assert packet["дополнительно_выбранные_NPC"] == ["aiden"]
     assert packet["персонажи_подробно"]["aiden"]["карточка"]["характер"] == "одержим вейрами"
     assert packet["персонажи_подробно"]["aiden"]["память"]["личные_события"] == {"03.09.2026": ["личное событие aiden"]}
@@ -103,7 +110,7 @@ def test_expansion_loads_npc_full_memory_motives_lore_and_places(ready):
 
 
 def test_global_secret_visible_in_index_but_full_only_on_request(ready):
-    packet = request_turn(ready, selected_secret_indices=[1], selected_hook_indices=[1]).json()
+    packet = unpack_turn(ready, request_turn(ready, selected_secret_indices=[1], selected_hook_indices=[1]))
     assert len(packet["режиссёр"]["тайны_обзор"]) == 2
     assert len(packet["режиссёр"]["крючки_обзор"]) == 2
     assert [x["индекс"] for x in packet["режиссёр"]["релевантные_тайны"]] == [1]
@@ -111,9 +118,9 @@ def test_global_secret_visible_in_index_but_full_only_on_request(ready):
 
 
 def test_no_implicit_loading_by_name_or_duplicates_and_input_stays(ready):
-    first = request_turn(ready, user_input="Эйден где-то дома").json()
+    first = unpack_turn(ready, request_turn(ready, user_input="Эйден где-то дома"))
     assert "aiden" not in first["персонажи_подробно"]
-    second = request_turn(ready, additional_character_ids=["aiden", "aiden"]).json()
+    second = unpack_turn(ready, request_turn(ready, additional_character_ids=["aiden", "aiden"]))
     assert list(second["персонажи_подробно"]) == ["pov", "veronica", "aiden"]
     assert first["turn_id"] == second["turn_id"]
     assert first["контекст_sha256"] != second["контекст_sha256"]
@@ -132,15 +139,15 @@ def test_unknown_ids_and_indices_are_errors_not_silent_skips(ready):
 def test_read_only_and_reads_fresh_files_on_every_call(ready):
     _, _, folder = ready
     before = {p.relative_to(folder): p.read_bytes() for p in folder.rglob("*.json")}
-    packet = request_turn(ready).json()
-    assert request_turn(ready).json() == packet
+    packet = unpack_turn(ready, request_turn(ready))
+    assert unpack_turn(ready, request_turn(ready)) == packet
     after = {p.relative_to(folder): p.read_bytes() for p in folder.rglob("*.json")}
     assert before == after
     memory = folder / "память" / "veronica.json"
     data = json.loads(memory.read_text(encoding="utf-8"))
     data["знания"]["03.09.2026"].append("Вероника узнала о новом письме")
     memory.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    updated = request_turn(ready).json()
+    updated = unpack_turn(ready, request_turn(ready))
     assert updated["контекст_sha256"] != packet["контекст_sha256"]
     assert "Вероника узнала о новом письме" in updated["персонажи_подробно"]["veronica"]["память"]["знания"]["03.09.2026"]
 
@@ -150,7 +157,7 @@ def test_recent_scene_archive_tail_without_raw_reload(ready):
     with (folder / "ходы.jsonl").open("w", encoding="utf-8") as output:
         for i in range(1, 7):
             output.write(json.dumps({"номер": i, "ввод": "ход", "сцена": "сцена" + str(i)}, ensure_ascii=False) + "\n")
-    packet = request_turn(ready).json()
+    packet = unpack_turn(ready, request_turn(ready))
     assert [x["номер"] for x in packet["последние_сцены"]] == [5, 6]
     assert packet["номер_хода"] == 1  # archive never advances the session
 

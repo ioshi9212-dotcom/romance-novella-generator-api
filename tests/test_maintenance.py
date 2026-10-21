@@ -11,7 +11,9 @@ def prep(ready, **extra):
     client, url, _ = ready
     r = client.post(url + '/prepare-turn', headers=KEY, json={'user_input':'продолжаю', **extra})
     assert r.status_code == 200, r.text
-    return r.json()
+    from test_scenario_simulation import consume
+    decoded, _ = consume(client, r.json())
+    return decoded
 
 
 def save(ready, prepared, updates=None, **additional):
