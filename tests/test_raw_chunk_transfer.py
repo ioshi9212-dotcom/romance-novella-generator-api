@@ -114,7 +114,7 @@ def test_fallback_in_existing_review_session_missing_raw(api):
     result = send_parts(api, sid, parts(original, mode="recover"))
     assert result["status"] == "restored_review_required"
     assert original in get_raw_bytes(sid)
-    assert b"Первое короткое пояснение" in get_raw_bytes(sid)
+    assert "Первое короткое пояснение".encode("utf-8") in get_raw_bytes(sid)
     assert api.get(f"/sessions/{sid}").json()["этап"] == "запись_и_сверка"
 
 
@@ -157,7 +157,7 @@ def test_local_path_guides_to_working_fallback(api):
     sid = new_session(api, "legacy-still-works")
     resp = api.post(f"/sessions/{sid}/raw", json={"event_id": "old_method", "text": "Текст оригинала."})
     assert resp.status_code == 200
-    assert b"Текст оригинала" in get_raw_bytes(sid)
+    assert "Текст оригинала".encode("utf-8") in get_raw_bytes(sid)
 
 
 def test_no_append_overwrite_and_no_game_stage_chunk(api):
@@ -171,4 +171,4 @@ def test_no_append_overwrite_and_no_game_stage_chunk(api):
         assert api.post(f"/sessions/{sid}/raw/chunk", json=chunk).status_code == 200
     last = api.post(f"/sessions/{sid}/raw/chunk", json=list(parts(original))[-1])
     assert last.status_code == 409
-    assert b"Ранее сохранённое" in get_raw_bytes(sid)
+    assert "Ранее сохранённое".encode("utf-8") in get_raw_bytes(sid)
