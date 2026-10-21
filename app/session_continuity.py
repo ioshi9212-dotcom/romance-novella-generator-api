@@ -19,6 +19,9 @@ from .turn_maintenance import MAINTENANCE, _recent_turns, audit_due, recover_mai
 
 CHECKPOINT = 'сводка_контекста.json'
 SECTIONS = ('знания', 'личные_события')
+# Checkpoint marker for legacy memory sections stored as a list/string/null.
+# Such content stays in the working view rather than being silently hidden.
+UNDATED_SECTION = '__undated_full_section__'
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -50,7 +53,12 @@ def _index_doc(source: dict[str, Any], sections: tuple[str, ...]) -> dict[str, A
     for section in sections:
         dates = source.get(section, {})
         if not isinstance(dates, dict):
-            raise HTTPException(409, f'Invalid dated section: {section}')
+            # Historical sessions can contain an undated list, string, or null.
+            # Anchor it, but never drop it from the working memory view.
+            result[section] = {
+                UNDATED_SECTION: {'undated': True, 'sha256': sha(dates)}
+            }
+            continue
         result[section] = {}
         for day, values in dates.items():
             if isinstance(values, list):
@@ -66,7 +74,17 @@ def _tail_doc(source: dict[str, Any], anchors: dict[str, Any], sections: tuple[s
     for section in sections:
         entries = source.get(section, {})
         old = anchors.get(section, {})
-        if not isinstance(entries, dict) or not isinstance(old, dict):
+        if not isinstance(old, dict):
+            return None
+        marker = old.get(UNDATED_SECTION)
+        if len(old) == 1 and isinstance(marker, dict) and marker.get('undated') is True:
+            # Undated legacy content cannot be sliced by date. Keep it intact
+            # in each turn packet, and invalidate the checkpoint if it changes.
+            if isinstance(entries, dict) or sha(entries) != marker.get('sha256'):
+                return None
+            remaining[section] = deepcopy(entries)
+            continue
+        if not isinstance(entries, dict):
             return None
         compacted = {}
         for day, old_rec in old.items():
@@ -123,8 +141,13 @@ def working_memory(source: dict[str, Any], cid: str, cp: dict[str, Any] | None) 
         'сводка_личной_памяти': cp['character_summaries'][cid],
         'сжато_по_ход': cp['through_turn'],
         'старые_даты_доступны': {
-            section:list(cp['memory_anchors'][cid][section]) for section in SECTIONS
+            section:[day for day in cp['memory_anchors'][cid][section]
+                     if day != UNDATED_SECTION] for section in SECTIONS
         },
+        'недатированные_разделы_сохранены_полностью': [
+            section for section in SECTIONS
+            if UNDATED_SECTION in cp['memory_anchors'][cid][section]
+        ],
     }
 
 
