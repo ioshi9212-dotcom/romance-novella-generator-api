@@ -94,8 +94,10 @@ def test_60_turn_compaction_reviews_then_works_as_delta_and_can_fetch_full(ready
     assert prepared['режиссёр']['хронология']['дни']=={}
     assert 'События до 60' in prepared['режиссёр']['сводка_прошлых_событий']
     assert prepared['персонажи_подробно']['pov']['старые_даты_доступны']['знания']==['03.09.2026']
-    full = client.post(url+'/prepare-turn',headers=KEY,json={
-        'user_input':'продолжаю','full_memory_character_ids':['pov'],'full_chronology':True}).json()
+    full_response = client.post(url+'/prepare-turn',headers=KEY,json={
+        'user_input':'продолжаю','full_memory_character_ids':['pov'],'full_chronology':True})
+    from test_scenario_simulation import consume
+    full, _ = consume(client, full_response.json())
     assert len(full['персонажи_подробно']['pov']['память']['знания']['03.09.2026'])==7
     assert full['режиссёр']['хронология']['дни']['02.09.2026']
     assert full['контекст_sha256']!=prepared['контекст_sha256']
