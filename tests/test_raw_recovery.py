@@ -137,3 +137,35 @@ def test_repair_refuses_missing_file_url(monkeypatch):
                 "https://files.oaiusercontent.com.evil.test/file"):
         with pytest.raises(HTTPException):
             fetch_openai_file([{"name": "source.txt", "download_link": url}])
+
+
+def test_crlf_original_preserved_byte_for_byte_in_raw_and_chunked_api(api, monkeypatch):
+    import json
+    import uuid
+    from app.main import session_dir
+
+    sid = create_placeholder(api)
+    seed = "По ту сторону Аверна.\r\nРината возвращается.\r\n"
+    n = 113600 - len(seed.encode("utf-8"))
+    text = seed + "x" * n
+    expected = text.encode("utf-8")
+    assert len(expected) == 113600 and b"\r\n" in expected
+    monkeypatch.setattr("app.main.fetch_openai_file", lambda refs: (
+        text, "novel.txt", len(expected), hashlib.sha256(expected).hexdigest()
+    ))
+    result = api.post(f"/sessions/{sid}/raw/repair-file", json=file_payload(text))
+    assert result.status_code == 200, result.text
+    raw_bytes = (session_dir(uuid.UUID(sid)) / "raw.txt").read_bytes()
+    assert expected in raw_bytes
+    assert b"\r\n" in raw_bytes
+    # The GPT Actions read path must not quietly normalize CRLF either.
+    response = api.get(f"/sessions/{sid}/raw").json()
+    assert response.get("chunked")
+    parts = [response["content"]]
+    index = response["next_chunk_index"]
+    while index is not None:
+        chunk = api.get(f"/chunks/{response['read_id']}/{index}").json()
+        parts.append(chunk["content"])
+        index = chunk["next_chunk_index"]
+    returned = json.loads("".join(parts))["raw"]
+    assert expected in returned.encode("utf-8")
