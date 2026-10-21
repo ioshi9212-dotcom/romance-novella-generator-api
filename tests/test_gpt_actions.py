@@ -39,7 +39,7 @@ def test_actions_schema_matches_api_and_has_no_unused_endpoints():
 
     schemas = spec["components"]["schemas"]
     dynamic = app.openapi()["components"]["schemas"]
-    for name in ("CreateNovel", "RawPart", "StageCommand", "SaveDocument",
+    for name in ("CreateNovel", "RawPart", "RawFileInput", "StageCommand", "SaveDocument",
                  "VerifyNovel", "PrepareTurn", "PatchOperation", "CommitTurn",
                  "AuditPrepare", "AuditCommit", "RollbackTurn", "CompactionCommit"):
         assert set(schemas[name]["properties"]) == set(dynamic[name]["properties"])
@@ -62,7 +62,7 @@ def test_gpt_actions_operation_description_limits():
         for method, operation in methods.items()
         if method in {"get", "post", "put", "patch", "delete"}
     ]
-    assert len(operations) == 20
+    assert len(operations) == 22
     assert not spec.get("security")
     assert not spec["components"].get("securitySchemes")
     for path, method, operation in operations:
