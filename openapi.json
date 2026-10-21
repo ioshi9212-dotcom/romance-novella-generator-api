@@ -450,6 +450,37 @@
           "speaker_id",
           "quote"
         ]
+      },
+      "RawFileInput": {
+        "type": "object",
+        "title": "RawFileInput",
+        "properties": {
+          "openaiFileIdRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 1,
+            "description": "One attached source file provided by GPT Actions"
+          },
+          "event_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          },
+          "expected_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5242880
+          },
+          "expected_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "openaiFileIdRefs"
+        ]
       }
     }
   },
