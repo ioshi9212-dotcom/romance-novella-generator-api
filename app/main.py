@@ -20,6 +20,7 @@ from .storage_paths import storage_root, storage_diagnostics
 from .initial_state import canonicalize_initial_state
 from .initial_relationships import verify_initial_relationship_review
 from .raw_file_transfer import fetch_openai_file, repair_placeholder, placeholder_events, reject_placeholder
+from .raw_chunk_transfer import ingest_part
 
 app = FastAPI(title="Novella Generator API", version="0.6.6")
 
@@ -50,6 +51,18 @@ class RawFileInput(BaseModel):
     event_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,80}$")
     expected_bytes: int | None = Field(default=None, ge=1, le=5 * 1024 * 1024)
     expected_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class RawChunkInput(BaseModel):
+    # Byte-preserving GPT Actions fallback when openaiFileIdRefs is only /mnt/data/...
+    event_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    mode: Literal["append", "recover", "repair"] = "append"
+    part_index: int = Field(ge=0)
+    total_parts: int = Field(ge=1, le=427)
+    chunk_b64: str = Field(min_length=1, max_length=16384)
+    expected_bytes: int = Field(ge=1, le=5 * 1024 * 1024)
+    expected_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    file_name: str | None = None
 
 
 class StageCommand(BaseModel):
@@ -270,7 +283,7 @@ def source_digest(part: RawPart) -> str:
     return hashlib.sha256(json.dumps(source, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def append_source(folder: Path, meta: dict[str, Any], part: RawPart) -> None:
+def append_source(folder: Path, meta: dict[str, Any], part: RawPart, *, allow_recovery: bool = False) -> None:
     reject_placeholder(part.text)
     receipts = meta.setdefault("_raw_receipts", {})
     digest = source_digest(part)
@@ -280,7 +293,9 @@ def append_source(folder: Path, meta: dict[str, Any], part: RawPart) -> None:
             raise HTTPException(409, "event_id was already used for different material")
         return
     if meta["этап"] not in ("сбор", "вопросы"):
-        raise HTTPException(409, "RAW intake is closed at this stage")
+        if not (allow_recovery and meta["этап"] in ("готово_к_записи", "запись_и_сверка")
+                and int(meta.get("последний_ход", 0)) == 0):
+            raise HTTPException(409, "RAW intake is closed at this stage")
     raw_file = folder / "raw.txt"
     marker = f"===== RAW {part.event_id} {digest} =====\n"
     # Recover safely if the RAW append succeeded but metadata write was interrupted.
@@ -526,6 +541,20 @@ def repair_raw_file(session_id: uuid.UUID, payload: RawFileInput) -> dict[str, A
         result = repair_placeholder(
             folder, meta, event_id=payload.event_id, text=text, byte_count=size,
             sha256=sha, atomic_json=atomic_json, source_digest=source_digest, RawPart=RawPart
+        )
+        return {**summary(meta), **result}
+
+
+@app.post("/sessions/{session_id}/raw/chunk")
+def append_raw_chunk(session_id: uuid.UUID, payload: RawChunkInput) -> dict[str, Any]:
+    """Backup transport using verified base64 chunks copied from actual file bytes."""
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        result = ingest_part(
+            folder, meta, payload, append_source=append_source,
+            repair_placeholder=repair_placeholder, RawPart=RawPart,
+            source_digest=source_digest, atomic_json=atomic_json,
         )
         return {**summary(meta), **result}
 
