@@ -32,11 +32,21 @@ def fetch_openai_file(refs: list[object]) -> tuple[str, str, int, str]:
         raise HTTPException(422, "Exactly one attached TXT file is required")
     ref = refs[0]
     url = ref.get("download_link")
-    if not isinstance(url, str):
-        raise HTTPException(422, "GPT Actions did not supply the file download_link")
+    if not isinstance(url, str) or url.startswith(("/mnt/data/", "sandbox:/")):
+        raise HTTPException(
+            422, {"code": "FILE_REFERENCE_LOCAL_ONLY",
+                  "message": "ChatGPT supplied a local file path, not a server-accessible URL. "
+                             "Use appendRawChunk with exact base64 bytes or the original appendRaw action; "
+                             "never retry the local path as a URL."})
     parts = urlsplit(url)
-    if parts.scheme != "https" or parts.hostname != "files.oaiusercontent.com" or parts.username or parts.password or parts.port not in (None, 443):
-        raise HTTPException(422, "Unsupported file download host")
+    host = (parts.hostname or "").lower()
+    if (parts.scheme != "https" or not (host == "files.oaiusercontent.com" or
+        host.endswith(".oaiusercontent.com")) or parts.username or parts.password or
+        parts.port not in (None, 443)):
+        raise HTTPException(
+            422, {"code": "FILE_REFERENCE_UNSUPPORTED_HOST",
+                  "message": "This file reference cannot be fetched by Amvera. "
+                             "Use appendRawChunk with actual file bytes or appendRaw if exact text is available."})
     name = ref.get("name", "source.txt")
     if not isinstance(name, str) or not name.lower().endswith(".txt"):
         raise HTTPException(422, "Upload a UTF-8 .txt source, not a converted summary")
