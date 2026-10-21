@@ -9,7 +9,9 @@ def prepare(ready):
     client, url, _ = ready
     response = client.post(url + "/prepare-turn", headers=KEY, json={"user_input": "(Посмотреть на него)"})
     assert response.status_code == 200, response.text
-    return response.json()
+    from test_scenario_simulation import consume
+    packet, _ = consume(client, response.json())
+    return packet
 
 
 def save(ready, packet, updates, *, scene="Он остановился и посмотрел на неё.", exceptions=None):
