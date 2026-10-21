@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Novella Generator Actions",
-    "version": "0.6.6",
+    "version": "0.6.7",
     "description": "Interactive novel backend. No authentication required. Use getResponseChunk for large read responses."
   },
   "servers": [
@@ -1925,6 +1925,145 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/raw/file": {
+      "post": {
+        "operationId": "appendRawFile",
+        "summary": "Import full original TXT directly into existing session RAW",
+        "description": "Send one original UTF-8 .txt file directly from ChatGPT as a new RAW entry. Never substitute PLACEHOLDER, a summary or generated excerpts. Only valid during RAW intake.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID existing session, never create another."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "openaiFileIdRefs": {
+                    "type": "array",
+                    "description": "One original TXT file attached to ChatGPT. GPT Actions supplies download URL automatically, never invent URL.",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "event_id": {
+                    "type": "string",
+                    "description": "Required unique RAW event_id.",
+                    "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                  },
+                  "expected_bytes": {
+                    "type": "integer",
+                    "description": "Expected original UTF-8 file byte length, e.g. 113600.",
+                    "minimum": 1
+                  },
+                  "expected_sha256": {
+                    "type": "string",
+                    "description": "Optional SHA-256 checksum of original UTF-8 bytes.",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "openaiFileIdRefs",
+                  "event_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "RAW accepted or repaired, with byte count and SHA-256; no original text echoed."
+          },
+          "409": {
+            "description": "Mismatch, non-placeholder event, ambiguous source or closed creation."
+          },
+          "422": {
+            "description": "Invalid file, origin or placeholder."
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/raw/repair-file": {
+      "post": {
+        "operationId": "repairRawFile",
+        "summary": "Safely restore original TXT over erroneous RAW PLACEHOLDER",
+        "description": "Recover exactly one PLACEHOLDER entry in the existing session. Attach the original complete UTF-8 .txt from the conversation, not extracted text or a summary. Use openaiFileIdRefs and expected_bytes (if known). Existing non-placeholder RAW is never overwritten; return verification byte length and SHA-256. Before verifyNovel, read complete repaired RAW and redo JSON consistency review.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "UUID existing session, never create another."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "openaiFileIdRefs": {
+                    "type": "array",
+                    "description": "One original TXT file attached to ChatGPT. GPT Actions supplies download URL automatically, never invent URL.",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "event_id": {
+                    "type": "string",
+                    "description": "Optional exact erroneous RAW event_id; if omitted, auto-select only when there is one PLACEHOLDER.",
+                    "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                  },
+                  "expected_bytes": {
+                    "type": "integer",
+                    "description": "Expected original UTF-8 file byte length, e.g. 113600.",
+                    "minimum": 1
+                  },
+                  "expected_sha256": {
+                    "type": "string",
+                    "description": "Optional SHA-256 checksum of original UTF-8 bytes.",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "openaiFileIdRefs"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "RAW accepted or repaired, with byte count and SHA-256; no original text echoed."
+          },
+          "409": {
+            "description": "Mismatch, non-placeholder event, ambiguous source or closed creation."
+          },
+          "422": {
+            "description": "Invalid file, origin or placeholder."
           }
         }
       }
