@@ -19,6 +19,7 @@ from .response_chunks import present, read_chunk
 from .storage_paths import storage_root, storage_diagnostics
 from .initial_state import canonicalize_initial_state
 from .initial_relationships import verify_initial_relationship_review
+from .raw_file_transfer import fetch_openai_file, repair_placeholder, placeholder_events, reject_placeholder
 
 app = FastAPI(title="Novella Generator API", version="0.6.6")
 
@@ -41,6 +42,14 @@ class RawPart(BaseModel):
     text: str = Field(min_length=1)
     question: str | None = None
     file_name: str | None = None
+
+
+class RawFileInput(BaseModel):
+    # GPT Actions populates this special array with file reference dictionaries.
+    openaiFileIdRefs: list[Any] = Field(min_length=1, max_length=1)
+    event_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    expected_bytes: int | None = Field(default=None, ge=1, le=5 * 1024 * 1024)
+    expected_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class StageCommand(BaseModel):
@@ -262,6 +271,7 @@ def source_digest(part: RawPart) -> str:
 
 
 def append_source(folder: Path, meta: dict[str, Any], part: RawPart) -> None:
+    reject_placeholder(part.text)
     receipts = meta.setdefault("_raw_receipts", {})
     digest = source_digest(part)
     previous = receipts.get(part.event_id)
@@ -449,6 +459,8 @@ def get_response_chunk(read_id: str, chunk_index: int) -> dict[str, Any]:
 
 @app.post("/sessions")
 def create_novel(payload: CreateNovel) -> dict[str, Any]:
+    if payload.initial_text:
+        reject_placeholder(payload.initial_text)
     session_id = (uuid.uuid5(uuid.NAMESPACE_URL, server_namespace() + ":" + payload.request_id)
                   if payload.request_id else uuid.uuid4())
     folder = session_dir(session_id)
@@ -481,6 +493,41 @@ def add_raw(session_id: uuid.UUID, part: RawPart) -> dict[str, Any]:
         meta = load(folder)
         append_source(folder, meta, part)
         return summary(meta)
+
+
+@app.post("/sessions/{session_id}/raw/file")
+def append_raw_file(session_id: uuid.UUID, payload: RawFileInput) -> dict[str, Any]:
+    """Stream an actual ChatGPT TXT attachment into RAW, without model transcription."""
+    text, name, size, sha = fetch_openai_file(payload.openaiFileIdRefs)
+    if payload.expected_bytes is not None and payload.expected_bytes != size:
+        raise HTTPException(409, "RAW file byte count mismatch; nothing was written")
+    if payload.expected_sha256 is not None and payload.expected_sha256 != sha:
+        raise HTTPException(409, "RAW file SHA-256 mismatch; nothing was written")
+    if not payload.event_id:
+        raise HTTPException(422, "event_id is required when adding a new RAW source")
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        append_source(folder, meta, RawPart(event_id=payload.event_id, text=text, file_name=name))
+        return {**summary(meta), "event_id": payload.event_id, "bytes": size, "sha256": sha}
+
+
+@app.post("/sessions/{session_id}/raw/repair-file")
+def repair_raw_file(session_id: uuid.UUID, payload: RawFileInput) -> dict[str, Any]:
+    """Replace only a corrupted placeholder using the entire original TXT attachment."""
+    text, _name, size, sha = fetch_openai_file(payload.openaiFileIdRefs)
+    if payload.expected_bytes is not None and payload.expected_bytes != size:
+        raise HTTPException(409, "RAW file byte count mismatch; nothing was written")
+    if payload.expected_sha256 is not None and payload.expected_sha256 != sha:
+        raise HTTPException(409, "RAW file SHA-256 mismatch; nothing was written")
+    folder = session_dir(session_id)
+    with locked(folder):
+        meta = load(folder)
+        result = repair_placeholder(
+            folder, meta, event_id=payload.event_id, text=text, byte_count=size,
+            sha256=sha, atomic_json=atomic_json, source_digest=source_digest, RawPart=RawPart
+        )
+        return {**summary(meta), **result}
 
 
 @app.get("/sessions/{session_id}/raw")
@@ -565,6 +612,15 @@ def verify_novel(session_id: uuid.UUID, payload: VerifyNovel) -> dict[str, Any]:
             raise HTTPException(409, "Novel is not in review stage")
         if not payload.audited_against_raw or payload.unresolved_issues:
             raise HTTPException(409, {"code": "SEMANTIC_AUDIT_REQUIRED", "issues": payload.unresolved_issues})
+        if (folder / "raw.txt").is_file():
+            corrupted = placeholder_events((folder / "raw.txt").read_text(encoding="utf-8"))
+            if corrupted:
+                raise HTTPException(409, {"code": "RAW_PLACEHOLDER_NOT_REPAIRED", "event_ids": corrupted})
+        if meta.get("_raw_repair_requires_review"):
+            # The caller must read the repaired RAW and rewrite/review any old JSON.
+            # Expose the pending flag. Verification still requires audited_against_raw;
+            # the backend cannot itself prove semantic equivalence.
+            pass
         # Normalize only explicit, uniquely resolvable participant references.
         # Never invent presence or replace an unknown character with POV.
         try:
@@ -600,6 +656,7 @@ def verify_novel(session_id: uuid.UUID, payload: VerifyNovel) -> dict[str, Any]:
         if normalized_state != current_state:
             atomic_json(folder / "state.json", normalized_state)
         meta["этап"] = "готово_к_игре"
+        meta.pop("_raw_repair_requires_review", None)
         atomic_json(folder / "сессия.json", meta)
         return summary(meta)
 
