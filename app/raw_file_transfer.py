@@ -109,9 +109,19 @@ def repair_placeholder(folder: Path, meta: dict, *, event_id: str | None, text: 
     sections = _source_sections(raw)
     if event_id is None:
         candidates = [e for e, _d, _a, _b, _p, body in sections if body.strip().upper() == "PLACEHOLDER"]
-        if len(candidates) != 1:
+        if len(candidates) == 1:
+            event_id = candidates[0]
+        elif not candidates:
+            # An interrupted client may repeat the identical successful upload.
+            # It is safe only if exactly one stored source matches every byte.
+            matching = [e for e, _d, _a, _b, _p, body in sections
+                        if hashlib.sha256(body.encode("utf-8")).hexdigest() == sha256]
+            if len(matching) == 1:
+                event_id = matching[0]
+            else:
+                raise HTTPException(409, {"code": "SELECT_PLACEHOLDER_EVENT", "event_ids": []})
+        else:
             raise HTTPException(409, {"code": "SELECT_PLACEHOLDER_EVENT", "event_ids": candidates})
-        event_id = candidates[0]
     selected = [row for row in sections if row[0] == event_id]
     if len(selected) != 1:
         raise HTTPException(409, "Unknown or duplicate RAW event; refusing repair")
