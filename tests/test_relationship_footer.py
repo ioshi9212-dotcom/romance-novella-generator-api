@@ -104,9 +104,15 @@ def test_replacing_all_metrics_with_single_new_axis_is_rejected(ready):
 
 
 def test_skin_builder_requires_full_footer_not_only_changed_metrics():
-    text = (Path(__file__).resolve().parents[1] / "runtime" / "scene_builder.md").read_text(encoding="utf-8")
-    section = text.split("\nОтношения:\n", 1)[1].split("\n\nХод ", 1)[0]
-    assert "все" in section.lower()
-    assert "неизменённый" in section.lower()
-    assert "значение/0" in section
-    assert "отсутствующих offscreen npc не показывай" in section.lower()
+    root = Path(__file__).resolve().parents[1] / "runtime"
+    builder = (root / "scene_builder.md").read_text(encoding="utf-8")
+    rules = (root / "rules.md").read_text(encoding="utf-8")
+    # The current Skin Builder uses Markdown section headings; the previous
+    # test searched for a retired plain-text footer template.
+    section = builder.split("## СОСТОЯНИЕ И ОТНОШЕНИЯ", 1)[1].split(
+        "# ПРИНЦИП СИМУЛЯЦИИ", 1
+    )[0]
+    assert "Показывай действующие показатели отношений NPC к POV" in section
+    assert "Изменение указывается относительно прошлого хода: +N, -N или 0" in section
+    assert "Отсутствующих персонажей не выводи" in section
+    assert "Покажи ВСЕ показатели, включая неизменившиеся (дельта 0)" in rules
