@@ -40,3 +40,24 @@ def test_player_agency_voice_and_format_are_preserved():
     rules = (ROOT / "runtime/rules.md").read_text(encoding="utf-8")
     assert "Новый параметр по умолчанию начинается не выше 3" in rules
     assert "Не удаляй фактически заслуженный показатель" in rules
+
+
+def test_all_nine_options_follow_current_pov_state_not_idealized_reactions():
+    skin = (ROOT / "runtime/scene_builder.md").read_text(encoding="utf-8")
+    choices = skin.split("## ВАРИАНТЫ ВЫБОРА", 1)[1].split(
+        "## СОСТОЯНИЕ И ОТНОШЕНИЯ", 1
+    )[0]
+    assert "Все девять вариантов строго отражают текущее состояние именно этой POV" in choices
+    assert "Не приукрашай и не исправляй персонажа" in choices
+    assert "не придумывай противоположные чувства и поступки ради разнообразия" in choices
+    assert "доступные знания" in choices
+    assert "на которые POV сейчас действительно склонна и способна" in choices
+    assert "которые POV сказала бы сейчас своим языком и тоном" in choices
+    assert "её настоящим внутренним голосом" in choices
+    for label in ("сделать", "сказать", "подумать"):
+        section = choices.split(f"**Что я могу {label}:**", 1)[1]
+        end = section.find("**Что я могу ")
+        if end >= 0:
+            section = section[:end]
+        assert len([line for line in section.splitlines() if line.startswith(("1. ", "2. ", "3. "))]) == 3
+
