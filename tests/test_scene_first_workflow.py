@@ -11,20 +11,21 @@ from test_prepare_turn import ready
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_custom_gpt_instructions_are_synced_and_stage_scene_before_json():
+def test_custom_gpt_instructions_are_synced_and_use_direct_scene_commit():
     canonical = (ROOT / "gpt/custom_gpt_instructions.md").read_text(encoding="utf-8")
     paste_version = (ROOT / "gpt/ВСТАВИТЬ_В_ПОЛЕ_INSTRUCTIONS.txt").read_text(encoding="utf-8")
     assert canonical == paste_version
     assert len(canonical) < 8_000
 
-    stages = (
+    direct = "Создай сцену по Skin Builder, затем передай текст и только фактически произошедшие обновления через commitTurn."
+    assert direct in canonical
+    assert canonical.index("вызови prepareTurn") < canonical.index(direct)
+    assert not any(marker in canonical for marker in (
         "1. **Художественная сцена.**",
         "2. **Проверка готового текста.**",
         "3. **Техническая фиксация.**",
         "4. **Сохранение.**",
-    )
-    positions = [canonical.index(marker) for marker in stages]
-    assert positions == sorted(positions)
+    ))
 
     rules = (ROOT / "runtime/rules.md").read_text(encoding="utf-8")
     assert "RELATIONSHIP_CHANGE_TOO_LARGE" in canonical
