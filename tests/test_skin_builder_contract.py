@@ -61,3 +61,19 @@ def test_all_nine_options_follow_current_pov_state_not_idealized_reactions():
             section = section[:end]
         assert len([line for line in section.splitlines() if line.startswith(("1. ", "2. ", "3. "))]) == 3
 
+
+def test_npc_schedules_do_not_auto_align_to_pov_availability():
+    skin = (ROOT / "runtime/scene_builder.md").read_text(encoding="utf-8")
+    world = skin.split("## 1. ЖИВОЙ МИР И САМОСТОЯТЕЛЬНЫЕ СОБЫТИЯ", 1)[1].split(
+        "## 2. ХАРАКТЕР И ИНИЦИАТИВА ПЕРСОНАЖЕЙ", 1
+    )[0]
+    required = (
+        "У NPC собственное расписание, не вычисленное по календарю POV",
+        "планов, возможностей и знаний самого NPC",
+        "не подбирает удобную дату по скрытому календарю POV",
+        "Уже назначенные чужие дела не исчезают",
+        "Совпадения возможны, накладки и несостоявшиеся встречи тоже",
+        "это его выбор, а не обязанность мира",
+    )
+    for phrase in required:
+        assert phrase in world, phrase
