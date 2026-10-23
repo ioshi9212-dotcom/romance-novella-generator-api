@@ -107,12 +107,12 @@ def test_skin_builder_requires_full_footer_not_only_changed_metrics():
     root = Path(__file__).resolve().parents[1] / "runtime"
     builder = (root / "scene_builder.md").read_text(encoding="utf-8")
     rules = (root / "rules.md").read_text(encoding="utf-8")
-    # The current Skin Builder uses Markdown section headings; the previous
-    # test searched for a retired plain-text footer template.
-    section = builder.split("## СОСТОЯНИЕ И ОТНОШЕНИЯ", 1)[1].split(
-        "# ПРИНЦИП СИМУЛЯЦИИ", 1
+    section = builder.split("## 8. СОСТОЯНИЕ И ОТНОШЕНИЯ", 1)[1].split(
+        "## 9. ТЕХНИЧЕСКИЙ КОНТРОЛЬ", 1
     )[0]
-    assert "Показывай действующие показатели отношений NPC к POV" in section
-    assert "Изменение указывается относительно прошлого хода: +N, -N или 0" in section
-    assert "Отсутствующих персонажей не выводи" in section
+    assert "все активные показатели" in section
+    assert "включая неизменившиеся" in section
+    assert "изменённый: `итог/+N` или `итог/-N`" in section
+    assert "Отсутствующих offscreen NPC не выводи" in section
+    assert "Каждое имя выводи отдельной строкой" in section
     assert "Покажи ВСЕ показатели, включая неизменившиеся (дельта 0)" in rules
