@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+from time import perf_counter
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -720,6 +721,7 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
     """
     from .turn_context import build_packet
 
+    started = perf_counter()
     folder = session_dir(session_id)
     with locked(folder):
         meta = load(folder)
@@ -731,7 +733,7 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
         from .session_continuity import compaction_due
         if compaction_due(meta):
             raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
-        return present(build_packet(
+        packet = build_packet(
             root=folder,
             meta=meta,
             user_input=payload.user_input,
@@ -741,7 +743,10 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
             additional_location_ids=payload.additional_location_ids,
             full_memory_character_ids=payload.full_memory_character_ids,
             full_chronology=payload.full_chronology,
-        ), "prepare-turn")
+        )
+        result = present(packet, "prepare-turn")
+        result["server_prepare_ms"] = round((perf_counter() - started) * 1000, 2)
+        return result
 
 
 @app.post("/sessions/{session_id}/commit-turn")
@@ -750,6 +755,7 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
     from .turn_commit import save_turn
     from .turn_context import build_packet
 
+    started = perf_counter()
     folder = session_dir(session_id)
     with locked(folder):
         meta = load(folder)
@@ -768,7 +774,7 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
                 raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
         if not payload.scene.strip():
             raise HTTPException(422, "Scene must not be blank")
-        return save_turn(
+        saved = save_turn(
             root=folder,
             meta=meta,
             payload=payload.model_dump(),
@@ -776,6 +782,8 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
             foundation_check=validate_foundation,
             build_packet=build_packet,
         )
+        saved["server_commit_ms"] = round((perf_counter() - started) * 1000, 2)
+        return saved
 
 
 @app.post("/sessions/{session_id}/prepare-audit")
