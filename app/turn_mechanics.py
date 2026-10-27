@@ -14,7 +14,8 @@ from fastapi import HTTPException
 
 
 _SPEECH = re.compile(
-    r"(?m)^\s*\*\*(?P<name>[^*\n]+)\*\*\s*[-—]\s*(?P<spoken>[^\n]*)"
+    r"(?m)^\s*(?:>\s*)?\*\*(?P<name>[^*\n]+)\*\*\s*"
+    r"(?:[-—]\s*(?P<dash>[^\n]*)|\*(?P<italic>[^*\n]+)\*)"
 )
 
 
@@ -67,7 +68,7 @@ def _spoken_in_scene(scene: str, speaker: str, registry: dict[str, dict[str, Any
             aliases.add(label.strip().casefold())
             aliases.add(label.strip().split()[0].casefold())
     return "\n".join(
-        match.group("spoken")
+        (match.group("dash") or match.group("italic") or "")
         for match in _SPEECH.finditer(scene)
         if match.group("name").strip().casefold() in aliases
     )
