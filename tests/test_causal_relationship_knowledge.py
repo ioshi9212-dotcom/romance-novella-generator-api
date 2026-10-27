@@ -231,3 +231,24 @@ def test_direct_message_cannot_leak_to_other_remote_participant(ready):
     ])
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "HEARD_STATEMENT_SOURCE_MISSING"
+
+
+def test_italic_dialogue_is_valid_heard_evidence_not_a_private_thought(ready):
+    # The current Skin Builder uses italic spoken lines. Previously the
+    # knowledge guard only recognized old "Name — speech" dialogue.
+    _, _, root = ready
+    _put_aiden_in_scene(root)
+    prepared = packet(ready)
+    quote = "Я обещал не выдавать тайну."
+    response, _ = commit(
+        ready, prepared,
+        scene="**Эйден** *" + quote + "* (отвёл взгляд)",
+        heard_statements=[{
+            "listener_id": "pov", "speaker_id": "aiden", "quote": quote,
+        }],
+    )
+    assert response.status_code == 200, response.text
+    memory = json.loads((root / "память/pov.json").read_text(encoding="utf-8"))
+    assert "Со слов Эйден: «" + quote + "»" in memory["знания"]["03.09.2026"]
+    # Director cannot automatically treat his claim as confirmed objective lore.
+    assert quote not in (root / "память/veronica.json").read_text(encoding="utf-8")

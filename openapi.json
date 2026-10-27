@@ -79,6 +79,12 @@
             "type": "object",
             "additionalProperties": true,
             "properties": {}
+          },
+          "source_quotes": {
+            "type": "object",
+            "description": "RAW-exact author quotes by JSON Pointer to text fields in document. Each field must equal its quote exactly. GPT-created details stay separate and must not replace these.",
+            "properties": {},
+            "additionalProperties": {"type": "string"}
           }
         },
         "required": [

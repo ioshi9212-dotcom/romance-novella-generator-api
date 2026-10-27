@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+from time import perf_counter
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,6 +22,7 @@ from .initial_state import canonicalize_initial_state
 from .initial_relationships import verify_initial_relationship_review
 from .raw_file_transfer import fetch_openai_file, repair_placeholder, placeholder_events, reject_placeholder
 from .raw_chunk_transfer import ingest_part
+from .verbatim_canon import verify_verbatim_fields
 
 app = FastAPI(title="Novella Generator API", version="0.6.6")
 
@@ -72,6 +74,10 @@ class StageCommand(BaseModel):
 class SaveDocument(BaseModel):
     path: str
     document: dict[str, Any]
+    source_quotes: dict[str, str] = Field(
+        default_factory=dict,
+        description="Exact RAW excerpts keyed by JSON Pointer to a text field in document. Server verifies and permanently protects these original author wordings.",
+    )
 
 
 class PrepareTurn(BaseModel):
@@ -587,7 +593,7 @@ def advance(session_id: uuid.UUID, payload: StageCommand) -> dict[str, Any]:
 
 
 @app.put("/sessions/{session_id}/data")
-def put_document(session_id: uuid.UUID, payload: SaveDocument) -> dict[str, str]:
+def put_document(session_id: uuid.UUID, payload: SaveDocument) -> dict[str, Any]:
     if not valid_path(payload.path):
         raise HTTPException(400, "Invalid document path")
     folder = session_dir(session_id)
@@ -620,8 +626,24 @@ def put_document(session_id: uuid.UUID, payload: SaveDocument) -> dict[str, str]
                     "code": "RELATIONSHIP_REVIEW_REQUIRED",
                     "issues": problems,
                 })
+        # The GPT may enrich empty fields, but may not soften/rephrase an
+        # AUTHOR quote. Existing locks survive every subsequent document save.
+        protected = meta.get("_verbatim_locks") if isinstance(meta.get("_verbatim_locks"), dict) else {}
+        previous = protected.get(payload.path) if isinstance(protected.get(payload.path), dict) else {}
+        try:
+            original_raw = (folder / "raw.txt").read_bytes().decode("utf-8") if (folder / "raw.txt").exists() else ""
+            locks = verify_verbatim_fields(
+                payload.document, payload.source_quotes, original_raw,
+                previously_locked=previous,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={"code": str(exc), "path": payload.path}) from None
         atomic_json(folder / payload.path, payload.document)
-        return {"path": payload.path, "status": "saved"}
+        if locks != previous:
+            protected[payload.path] = locks
+            meta["_verbatim_locks"] = protected
+            atomic_json(folder / "сессия.json", meta)
+        return {"path": payload.path, "status": "saved", "verbatim_locked": len(locks)}
 
 
 @app.get("/sessions/{session_id}/data")
@@ -699,6 +721,7 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
     """
     from .turn_context import build_packet
 
+    started = perf_counter()
     folder = session_dir(session_id)
     with locked(folder):
         meta = load(folder)
@@ -710,7 +733,7 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
         from .session_continuity import compaction_due
         if compaction_due(meta):
             raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
-        return present(build_packet(
+        packet = build_packet(
             root=folder,
             meta=meta,
             user_input=payload.user_input,
@@ -720,7 +743,10 @@ def prepare_turn(session_id: uuid.UUID, payload: PrepareTurn) -> dict[str, Any]:
             additional_location_ids=payload.additional_location_ids,
             full_memory_character_ids=payload.full_memory_character_ids,
             full_chronology=payload.full_chronology,
-        ), "prepare-turn")
+        )
+        result = present(packet, "prepare-turn")
+        result["server_prepare_ms"] = round((perf_counter() - started) * 1000, 2)
+        return result
 
 
 @app.post("/sessions/{session_id}/commit-turn")
@@ -729,6 +755,7 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
     from .turn_commit import save_turn
     from .turn_context import build_packet
 
+    started = perf_counter()
     folder = session_dir(session_id)
     with locked(folder):
         meta = load(folder)
@@ -747,7 +774,7 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
                 raise HTTPException(409, {"code": "COMPACTION_REQUIRED", "through_turn": meta["последний_ход"]})
         if not payload.scene.strip():
             raise HTTPException(422, "Scene must not be blank")
-        return save_turn(
+        saved = save_turn(
             root=folder,
             meta=meta,
             payload=payload.model_dump(),
@@ -755,6 +782,8 @@ def commit_turn(session_id: uuid.UUID, payload: CommitTurn) -> dict[str, Any]:
             foundation_check=validate_foundation,
             build_packet=build_packet,
         )
+        saved["server_commit_ms"] = round((perf_counter() - started) * 1000, 2)
+        return saved
 
 
 @app.post("/sessions/{session_id}/prepare-audit")
