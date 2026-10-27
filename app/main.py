@@ -593,7 +593,7 @@ def advance(session_id: uuid.UUID, payload: StageCommand) -> dict[str, Any]:
 
 
 @app.put("/sessions/{session_id}/data")
-def put_document(session_id: uuid.UUID, payload: SaveDocument) -> dict[str, str]:
+def put_document(session_id: uuid.UUID, payload: SaveDocument) -> dict[str, Any]:
     if not valid_path(payload.path):
         raise HTTPException(400, "Invalid document path")
     folder = session_dir(session_id)
