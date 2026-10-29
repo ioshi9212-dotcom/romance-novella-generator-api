@@ -1,5 +1,6 @@
 """Literal RAW coverage is an honest diagnostic, not a semantic oracle."""
 from app.source_line_coverage import source_line_coverage
+from test_prepare_turn import ready  # pytest fixture lives in its own test module
 
 
 def test_original_rough_wording_is_not_counted_when_only_softened():
