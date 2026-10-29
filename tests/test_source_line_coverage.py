@@ -39,3 +39,18 @@ def test_no_saved_original_is_reported_as_unavailable():
     report = source_line_coverage([], {"novel": {"character": "foo"}})
     assert report["available"] is False
     assert report["reason"] == "RAW_NOT_SAVED"
+
+
+def test_generator_session_status_opt_in_only_exposes_safe_line_indices(ready):
+    client, base, _ = ready
+    baseline = client.get(base)
+    assert baseline.status_code == 200
+    assert "literal_raw_coverage" not in baseline.json()
+
+    audit = client.get(base, params={"include_literal_coverage": "true"})
+    assert audit.status_code == 200, audit.text
+    report = audit.json()["literal_raw_coverage"]
+    assert report["available"]
+    assert report["eligible_source_lines"] >= 1
+    assert isinstance(report["unmatched_line_locations"], list)
+    assert "raw_text" not in audit.json()
