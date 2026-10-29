@@ -744,6 +744,16 @@
               "type": "string",
               "description": "UUID returned by createNovel."
             }
+          },
+          {
+            "name": "include_literal_coverage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Opt-in literal RAW line comparison; normal status does not read cards or RAW."
           }
         ],
         "responses": {
@@ -754,6 +764,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "literal_raw_coverage": {
+                      "type": "object",
+                      "description": "Present only if include_literal_coverage=true; diagnostic, NOT semantic proof.",
+                      "properties": {},
+                      "additionalProperties": true
+                    },
                     "session_id": {
                       "type": "string",
                       "description": "Persistent session UUID"

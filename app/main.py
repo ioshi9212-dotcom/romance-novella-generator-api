@@ -22,6 +22,7 @@ from .initial_state import canonicalize_initial_state
 from .initial_relationships import verify_initial_relationship_review
 from .raw_file_transfer import fetch_openai_file, repair_placeholder, placeholder_events, reject_placeholder
 from .raw_chunk_transfer import ingest_part
+from .source_line_coverage import source_line_coverage
 from .verbatim_canon import verify_verbatim_fields
 
 app = FastAPI(title="Novella Generator API", version="0.6.6")
@@ -501,10 +502,34 @@ def create_novel(payload: CreateNovel) -> dict[str, Any]:
 
 
 @app.get("/sessions/{session_id}")
-def get_session(session_id: uuid.UUID) -> dict[str, Any]:
+def get_session(
+    session_id: uuid.UUID, include_literal_coverage: bool = False
+) -> dict[str, Any]:
     folder = session_dir(session_id)
     with locked(folder):
-        return summary(load(folder))
+        result = summary(load(folder))
+        if not include_literal_coverage:
+            return result
+        raw = (folder / "raw.txt")
+        # This is deliberately OPT-IN. Normal session status stays fast and
+        # never scans the RAW or character files on every turn.
+        documents: dict[str, Any] = {}
+        for name in sorted(CORE):
+            path = folder / name
+            if path.is_file():
+                documents[name] = json.loads(path.read_text(encoding="utf-8"))
+        cards = folder / "карточки"
+        if cards.is_dir():
+            for path in cards.glob("*.json"):
+                documents[f"карточки/{path.stem}"] = json.loads(
+                    path.read_text(encoding="utf-8")
+                )
+        source = raw.read_text(encoding="utf-8") if raw.is_file() else ""
+        result["literal_raw_coverage"] = source_line_coverage(
+            [{"block_id": "session_raw", "raw_text": source}],
+            documents,
+        )
+        return result
 
 
 @app.post("/sessions/{session_id}/raw")
